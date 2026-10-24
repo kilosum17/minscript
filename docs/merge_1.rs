@@ -247,7 +247,7 @@ pub type ReadWriter = Reader & Writer
 
 // in std.log
 pub inter Stringer = {
-    pub fun to_string() -> string
+    pub fun to_string(this) -> string // passing this means it will only work on structs
 }
 
 impl log{
@@ -701,3 +701,6 @@ async fun process_file(path: string, password: string, mode: Mode) -> Result<nil
     println("All operations completed.")
 
     
+// iterators are compiler magic eg stuct just need to implemet a next<T>()->Option<T> method to qualify as an iterator
+// interfaces are implicity implemented if type implements the methods like in golang
+

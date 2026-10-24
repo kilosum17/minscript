@@ -14,26 +14,26 @@ pub type CryptoResult =
 
 // Process an individual file based on the selected mode
 async fun process_file(path: string, password: string, mode: Mode) -> Result<nil, string> {
-    const file_bytes_res = await std.fs.read_file(path)
+    let file_bytes_res = await std.fs.read_file(path)
     let Result.Ok(data) = file_bytes_res else {
         return Result.Err("Failed to read file: ${path}")
     }
 
     match mode {
         "encrypt" => {
-            const encrypted = std.crypto.encrypt_aes_gcm(data, password)
-            const out_path = "${path}.enc"
+            let encrypted = std.crypto.encrypt_aes_gcm(data, password)
+            let out_path = "${path}.enc"
             await std.fs.write_file(out_path, encrypted)
             println("Encrypted: ${path} -> ${out_path}")
         },
         "decrypt" => {
-            const decrypted_res = std.crypto.decrypt_aes_gcm(data, password)
+            let decrypted_res = std.crypto.decrypt_aes_gcm(data, password)
             let CryptoResult.Ok(decrypted) = decrypted_res else {
                 return Result.Err("Decryption failed (incorrect password or corrupted file): ${path}")
             }
             
             // strip_suffix returns string?, so we safely unwrap or fallback using .or()
-            const out_path = path.strip_suffix(".enc").or(path)
+            let out_path = path.strip_suffix(".enc").or(path)
             await std.fs.write_file(out_path, decrypted)
             println("Decrypted: ${path} -> ${out_path}")
         },
@@ -47,7 +47,7 @@ async fun main() {
     
     print("Enter mode (encrypt / decrypt): ")
     // read_line() is async because stdin I/O blocks the thread
-    const mode_input = (await std.io.read_line()).trim()
+    let mode_input = (await std.io.read_line()).trim()
     
     if mode_input != "encrypt" and mode_input != "decrypt" {
         println("Invalid mode. Please select 'encrypt' or 'decrypt'.")
@@ -55,10 +55,10 @@ async fun main() {
     }
 
     print("Enter target file or directory path: ")
-    const target_path = (await std.io.read_line()).trim()
+    let target_path = (await std.io.read_line()).trim()
 
     print("Enter password: ")
-    const password = (await std.io.read_line()).trim()
+    let password = (await std.io.read_line()).trim()
 
     if password.length() == 0 {
         println("Password cannot be empty.")
@@ -66,7 +66,7 @@ async fun main() {
     }
 
     // Inspect target path
-    const stat_res = std.fs.stat(target_path)
+    let stat_res = await std.fs.stat(target_path)
     let Result.Ok(info) = stat_res else {
         println("Path does not exist or cannot be accessed: ${target_path}")
         return
@@ -74,14 +74,14 @@ async fun main() {
 
     if info.is_dir() {
         // Recursively walk directory to find files
-        const files_res = std.fs.walk_dir(target_path)
+        let files_res = await std.fs.walk_dir(target_path)
         let Result.Ok(files) = files_res else {
             println("Failed to read directory contents.")
             return
         }
 
         // Standard .map() works natively because async functions return a Promise<T> value
-        const promises = files
+        let promises = files
             .filter(fun(file_path) {
                 if mode_input == "encrypt" and file_path.ends_with(".enc") { return false }
                 if mode_input == "decrypt" and not file_path.ends_with(".enc") { return false }
@@ -92,7 +92,7 @@ async fun main() {
             })
 
         // Await all concurrent operations in a single go using Promise.all
-        const results = await Promise.all(promises)
+        let results = await Promise.all(promises)
 
         // Handle any errors reported across the batch
         for res in results {
@@ -103,7 +103,7 @@ async fun main() {
         }
     } else {
         // Handle single file path
-        const res = await process_file(target_path, password, mode_input)
+        let res = await process_file(target_path, password, mode_input)
         let Result.Err(err_msg) = res else {
             println("Operation completed successfully.")
             return
