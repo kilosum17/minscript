@@ -204,6 +204,7 @@ async fun main() {
 
     log.println("Receipt: ${receipt}")
 }
+
 impl User {
     pub fun record_login(mut this) {
         this.login_count = this.login_count + 1
@@ -275,10 +276,10 @@ pub type Config = {
 
 async fun main() {
     // Allocated on the heap with reference counter = 1
-    const app_config = Ref(Config { host: "127.0.0.1", port: 8080 })
+    let app_config = Ref(Config { host: "127.0.0.1", port: 8080 })
 
     // Assigning/cloning passes a shared handle; counter increments automatically
-    const worker_config = app_config
+    let worker_config = app_config
 
     // In-place interior mutability using closure updates
     app_config.update((cfg) => {
@@ -518,5 +519,185 @@ pub type NetworkResponse =
     active_sessions.update((sessions) => {
         sessions.set("admin_session", 1)
     })
+
+pub fun calculateTotalValue(baseAmount: f32, multiplier: i32) -> f32 {
+    // Implicit numeric promotion: `multiplier` (int32) is automatically 
+    // promoted to f32 to match `baseAmount`, avoiding any manual casting boilerplate.
+    return baseAmount * multiplier
+}
+
+    let request_payload = r{
+        endpoint: "/api/submit",
+        timeout_ms: 500 as u16,        // Overriding default int32 literal to u16
+        retry_count: 3 as u8,          // Overriding default int32 literal to u8
+        weight: 1.5 as f32,            // Overriding default f64 literal to f32
+    }
+
+    println("Request to ${request_payload.endpoint} with timeout ${request_payload.timeout_ms}ms")
+
+
+pub type SystemStatus = "Online" | "Degraded" | "Offline"
+
+// 2. METADATA TYPE DEFINITIONS (Prelude)
+pub type FieldInfo = {
+    pub name: string,
+    pub type_kind: string,  // "string", "int32", "bool", "struct", "list", "map", etc.
+    pub is_pub: bool,
+}
+
+pub type TypeInfo = {
+    pub name: string,
+    pub kind: string,       // "struct", "union", "enum", "primitive"
+    pub fields: List<FieldInfo>,
+}
+
+// 3. ZERO-CONFIG SERIALIZER LIBRARY (`std.json`)
+pub fun stringify<T>(val: T) -> string {
+    // T._get_info() is a compiler intrinsic resolved entirely at compile-time.
+    // Call-site visibility rules apply: external callers only see `pub` fields.
+    let info = T._get_info() // TODO is this on type or value?
+
+    if info.kind != "struct" {
+        return "${val}"
+    }
+
+    let fields_json: List<string> = []
+
+    // Compile-time unrolled iteration over public fields
+    for field in info.fields {
+        // Safe compile-time field value access
+        let field_val = val.get_field(field.name)
+        fields_json.push("\"${field.name}\": \"${field_val}\"")
+    }
+
+    return "{ " + fields_json.join(", ") + " }"
+}
+
+// serialize is in Serializer inter-face
+impl User {
+    pub fun serialize(this) -> string {
+        // Explicitly omit sensitive fields like password_hash or email without struct tags
+        return "{ \"id\": \"${this.id}\", \"name\": \"${this.name}\" }"
+    }
+}
+
+    let user = User {
+        id: "usr_101",
+        name: "Teddy",
+        email: "teddy@example.com",
+        password_hash: "super_secret_hash_123",
+    }
+
+    // --- A. Direct Introspection ---
+    let type_info = User._get_info()
+    println("Type Name: ${type_info.name}")           // "User"
+    println("Type Kind: ${type_info.kind}")           // "struct"
+    println("Public Fields Size: ${type_info.fields.size()}") // 3 (password_hash is private and excluded)
+
+    // Iterate through field definitions
+    for field in type_info.fields {
+        println(" - Field: ${field.name} (${field.type_kind})")
+    }
+
+    // --- B. Automatic Zero-Config Serialization ---
+    let auto_json = stringify(user)
+    println("Auto JSON: ${auto_json}")
+    // Output: { "id": "usr_101", "name": "Teddy", "email": "teddy@example.com" }
+
+    // --- C. Explicit Custom Serialization ---
+    let custom_json = user.serialize()
+    println("Custom JSON: ${custom_json}")
+    // Output: { "id": "usr_101", "name": "Teddy" }
+
+
+import "std.fs"
+import "std.io"
+import "std.crypto"
+
+pub type Mode = "encrypt" | "decrypt"
+pub type CryptoResult = 
+    | Ok(Bytes)
+    | Err(string)
+
+async fun process_file(path: string, password: string, mode: Mode) -> Result<nil, string> {
+    let file_bytes_res = await std.fs.read_file(path)
+    let Result.Ok(data) = file_bytes_res else {
+        return Result.Err("Failed to read file: ${path}")
+    }
+
+    match mode {
+        "encrypt" => {
+            let encrypted = std.crypto.encrypt_aes_gcm(data, password)
+            let out_path = "${path}.enc"
+            await std.fs.write_file(out_path, encrypted)
+            println("Encrypted: ${path} -> ${out_path}")
+        },
+        "decrypt" => {
+            let decrypted_res = std.crypto.decrypt_aes_gcm(data, password)
+            let CryptoResult.Ok(decrypted) = decrypted_res else {
+                return Result.Err("Decryption failed (incorrect password or corrupted file): ${path}")
+            }
+            
+            // strip_suffix returns string?, so we safely unwrap or fallback using .or()
+            let out_path = path.strip_suffix(".enc").or(path)
+            await std.fs.write_file(out_path, decrypted)
+            println("Decrypted: ${path} -> ${out_path}")
+        },
+    }
+
+    return Result.Ok(nil)
+}
+
+// AUTO implemented .clone, to_string, _get_info, _get_value, _get_field() when needed 
+
+    print("Enter mode (encrypt / decrypt): ")
+    let mode_input = (await std.io.read_line()).trim()
+
+    let stat_res = await std.fs.stat(target_path)
+    let Result.Ok(info) = stat_res else {
+        println("Path does not exist or cannot be accessed: ${target_path}")
+        return
+    }
+
+    if info.is_dir() {
+        let files_res = std.fs.walk_dir(target_path)
+        let Result.Ok(files) = files_res else {
+            println("Failed to read directory contents.")
+            return
+        }
+
+        // Standard .map() works natively because async functions return a Promise<T> value
+        // TODO we may need an .iter() or .into_iter() so all collection types share the same implementation 
+        let promises = files
+            .filter(fun(file_path) {
+                if mode_input == "encrypt" and file_path.ends_with(".enc") { return false }
+                if mode_input == "decrypt" and not file_path.ends_with(".enc") { return false }
+                return true
+            })
+            .map(fun(file_path) {
+                return process_file(file_path, password, mode_input)
+            })
+
+        // Await all concurrent operations in a single go using Promise.all
+        let results = await Promise.all(promises)
+
+        // Handle any errors reported across the batch
+        for res in results {
+            let Result.Err(err_msg) = res else {
+                continue
+            }
+            println("Warning: ${err_msg}")
+        }
+    } else {
+        // Handle single file path
+        let res = await process_file(target_path, password, mode_input)
+        let Result.Err(err_msg) = res else {
+            println("Operation completed successfully.")
+            return
+        }
+        println("Error: ${err_msg}")
+    }
+
+    println("All operations completed.")
 
     
