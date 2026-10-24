@@ -430,7 +430,93 @@ impl ServerConfig {
     }
     println("Task loop finished successfully.")
 
+pub type ServerConfig = {
+    pub host: string,
+    pub port: int32,
+    secret_key: string, // Private field: restricted from external package access & introspection
+}
 
+pub type Box<T> = {
+    pub value: T,
+}
 
+impl<T> Box<T> {
+    pub fun get(this) -> T {
+        return this.value
+    }
+}
 
+    let explicit_cfg = ServerConfig { 
+        host: "127.0.0.1", 
+        port: 8080, 
+        secret_key: "abc_123" 
+    }
 
+    // 2. Positional initialization (matches field declaration order)
+    let positional_cfg = ServerConfig("0.0.0.0", 3000, "xyz_789")
+
+    // 3. Context-Inferred Shorthand (infers type from target expression)
+    let host = "localhost"
+    let port = 9000
+    let secret_key = "default_secret"
+    
+    configure_server({ host, port, secret_key })
+
+    let int_box = Box { value: 42 }
+    println("Box value: ${int_box.get()}")
+
+    // Rule: Closures are pure and non-capturing. All external dependencies 
+    // must be passed explicitly as arguments (no hidden captures or heap bloat).
+
+    let compute_sum = (a: i32, b: i32) -> i32 {
+        let total = a + b
+        return total
+    }
+    println("Sum via block closure: ${compute_sum(15, 25)}")
+    let multiply = (a: i32, b: i32) => a * b
+    println("Product via shorthand closure: ${multiply(6, 7)}")
+
+    // A. ANONYMOUS RECORDS (`r{...}`)
+    let user_profile = r{
+        name: "Kilo",
+        age: 32 as i64,
+        active: true,
+        skills: t("running", "football"), // Using tuple prefix inside record
+    }
+
+    // Fully typed dot-notation access (resolved statically at compile-time)
+    println("User Profile Name: ${user_profile.name}")
+    println("User Profile Age: ${user_profile.age}")
+
+// DESIGN CHOICES SUMMARY:
+// 1. NO LIFETIME ANNOTATIONS: Closures cannot capture environment variables, eliminating 
+//    hidden references and lifetime tracking overhead. All closure inputs must be passed explicitly.
+// 2. MEMORY SAFETY: Heap types (Vec, String, anonymous records `r{}`) enforce exclusive ownership 
+//    and move semantics. Stack types (Array `a[...]`, Tuple `t[...]`, primitives) are copied by value.
+// 3. THREAD SAFETY & GLOBALS: Raw mutable global variables are banned at compile-time to prevent 
+//    data races. Globals are strictly either immutable constants (`let`) or thread-safe atomic 
+//    reference-counted handles (`Ref<T>`). No thread-local storage is used.
+// 4. EXPLICIT MUTABILITY: Variables use `let` (immutable) or `var` (mutable). Parameters and 
+//    receivers modifying data must explicitly declare `mut`.
+// ==========================================
+
+// Global Constants (Thread-safe read-only sharing)
+pub let MAX_CONNECTIONS: int32 = 10_000
+pub let SYSTEM_NAME: string = "MinScript-Engine"
+
+// Global Mutable State (Strictly forced to use Ref<T> for thread safety)
+pub let active_sessions: Ref<Map<string, int32>> = Ref(m{})
+
+// Tagged Union (Algebraic Data Type with zero-cost discriminant jump tables)
+pub type NetworkResponse = 
+    | Success(string)
+    | Error(int32)
+
+    let raw_buffer: Array<u8, 4> = a[0x00, 0xFF, 0x10, 0x20]
+    let first_byte = raw_buffer[0]
+
+    active_sessions.update((sessions) => {
+        sessions.set("admin_session", 1)
+    })
+
+    
