@@ -702,5 +702,349 @@ async fun process_file(path: string, password: string, mode: Mode) -> Result<nil
 
     
 // iterators are compiler magic eg stuct just need to implemet a next<T>()->Option<T> method to qualify as an iterator
-// interfaces are implicity implemented if type implements the methods like in golang
+// Due to generic which makes searching alot of type a slow operation, interface must be explicitly implemented
+
+
+
+// Interface Definition
+pub inter Reader = {
+    pub fun read(mut this, buffer: List<u8>) -> Result<int, string>
+}
+
+pub inter Writer = {
+    pub fun write(mut this, buffer: List<u8>) -> Result<int, string>
+}
+
+// Composition using `&`
+pub inter ReadWriter = Reader & Writer
+
+// Explicit Implementation
+impl Reader for FileStream {
+    pub fun read(mut this, buffer: List<u8>) -> Result<int, string> {
+        // Implementation
+    }
+}
+
+// 2. Records: Structural merging & patching
+let base_opts = r{ host: "localhost", port: 8080, debug: false }
+let dev_opts = r{ ...base_opts, port: 3000, debug: true } // do we allow this to add new fields?
+
+// In-place record update for mutable (`var`) records
+var session = r{ id: "s1", active: true }
+session.patch({ active: false }) // we need a Partial<T>, Omit<T> etc?
+
+// Recursive types MUST use Box<T> to give the type a known pointer size
+pub type Node<T> = {
+    pub value: T,
+    pub next: Box<Node<T>>?, // Optional recursive boxed pointer
+}
+    let boxed_val = Box(100) 
+    let new_owner = boxed_val 
+
+pub type BinaryNode<T> = {
+    pub value: T,
+    pub left: Box<BinaryNode<T>>?,  // Boxed pointer for recursive types
+    pub right: Box<BinaryNode<T>>?,
+}
+
+    scores["bob"] += 10
+    let base_config = r{ host: "127.0.0.1", port: 8080 }
+    // we need a way to mark can addd new fields or not, so it doesn't introduce errors
+    let override_config = r{ ...base_config, port: 9090 } // r{ host: "127.0.0.1", port: 9090 } 
+
+// 2. KEYWORD `or` (Control Flow & Early Return)
+// Intercepts `Err` or `None`, exposing the payload via implicit `it`, 
+// and immediately returns the right-hand side expression from the function.
+pub async fun load_config(path: string) -> Result<Config, string> { // Should this be Result<Config,Err>?
+    let bytes = await std.fs.read_file(path) or Err("IO Failed: ${it}") //Result
+    let env_prefix = get_env_prefix() or return Err("Environment prefix missing") // Option, using return is optional
+    let config = std.json.parse<Config>(bytes) or Err(it.to_string())
+    // to prevent confusing or and .or we may need to force use of .or() value or assign them to _
+    return Ok(config)
+}
+
+// 3. METHOD `.or()` (Data Fallbacks: Literal or Lazy Closure)
+fun get_fallback_values() {
+    let timeout: int? = None
+    let default_timeout = timeout.or(30)
+    let computed_timeout = timeout.or(() => compute_expensive_default())
+}
+
+// 4. COMPILER MAGIC: `_get_info()` & `std.json.parse<T>` implementation
+// in package std.json 
+    pub fun parse<T>(data: Bytes) -> Result<T, string> {
+        // `_get_info()` is a compiler intrinsic executed statically at compile-time 
+        // on type `T` via monomorphization. It returns metadata (name, fields, visibility).
+        let type_info = T._get_info()
+
+        if type_info.kind != "struct" {
+            return Err("Target type must be a struct")
+        }
+
+        // The compiler uses `type_info.fields` to auto-generate direct, zero-allocation 
+        // field assignment code specifically optimized for type `T`.
+        return internal_fast_deserialize<T>(data, type_info)
+    }
+
+// `Ok`, `Err`, `Some`, `None`, `Result`, and `Option` are built-in everywhere.
+// Explicit `impl` blocks preserve O(1) typechecking and compiler speed.
+// Generic Type Bounds (`<T: Interface>`)
+pub fun read_all<T: Reader>(mut reader: T) -> Result<List<u8>, string> {
+    let buf = List.new<u8>()
+    reader.read(buf) or Err(it)
+    return Ok(buf)
+}
+// 4. RESOURCE MANAGEMENT (`Drop` Interface)
+// Replaces `defer` to eliminate borrow-checker conflicts; compiler auto-drops at scope exit.
+
+pub inter Drop = {
+    pub fun drop(mut this)
+}
+
+impl Drop for FileStream { // maybe allow impl Drop,Add,PartialEq for FileStream as these only have 1 methods each and redeclaring block for each?
+    pub fun drop(mut this) {
+        this.close()
+    }
+}
+
+// 5. EXPRESSIONS & CONTROL FLOW
+// `if`, `switch`, and `match` act as expressions. Last expression in a block wins.
+let grade = if score >= 90 {
+    let bonus = calc_bonus(score)
+    "A"
+} else if score >= 75 {
+    "B"
+} else {
+    "C"
+}
+
+let tier = switch role {
+    "Admin" => "Full Access",
+    "Operator" => "Standard Access",
+    _ => "Read Only",
+}
+
+let status = match result {
+    Ok(val) => "Success: ${val}",
+    Err(e) => "Error: ${e}",
+}
+
+// 6. COMPILE-TIME INTROSPECTION & JSON
+// `_get_info()` runs statically on types (`T._get_info()`) and instances (`val._get_info()`).
+
+pub fun serialize_generic<T>(val: T) -> string {
+    let info = T._get_info() // Static metadata resolution
+    if info.kind != "struct" {
+        return "${val}"
+    }
+    return std.json.stringify(val)
+}
+
+
+// 1. VARIABLE BINDINGS
+
+// Functions declare mutable parameters directly using `mut`
+pub fun reset_point(mut x: int32, mut y: int32) {
+    x = 0
+    y = 0
+}
+
+// 2. ERGONOMIC INDEXING (`Index` & `IndexMut`)
+// ==========================================
+// Indexing syntax desugars via interfaces. References (`&` / `&mut`) are compiler-managed
+// restricted primitives used strictly for indexing and internal reference passing.
+
+pub inter Index<Idx, Target> = {
+    pub fun index(this, index: Idx) -> &Target
+}
+
+pub inter IndexMut<Idx, Target> = {
+    pub fun index_mut(var this, index: Idx) -> &mut Target
+}
+
+// Usage requires no explicit pointer dereferencing (`*`):
+var numbers = [10, 20, 30]
+numbers[0] = 120 // Desugars into: (*numbers.index_mut(0)) = 120
+
+// 3. LOW-LEVEL FFI, SYSCALLS & C INTEROP
+// Direct OS interfacing and C library linkage require explicit `extern` and `unsafe` blocks.
+
+extern "C" {
+    pub fun malloc(size: usize) -> *mut u8
+    pub fun free(ptr: *mut u8)
+    pub fun open(path: *u8, flags: i32, mode: i32) -> i32
+}
+
+pub fun open_file_descriptor(path: string) -> Result<i32, string> {
+    // Strings expose `.as_ptr()` for C-compatible null-terminated raw byte buffers
+    let fd = unsafe { open(path.as_ptr(), 0, 0) }
+    if fd < 0 {
+        return Err("Failed to open file descriptor: ${fd}")
+    }
+    return Ok(fd)
+}
+
+// Low-level system calls using architectural compiler intrinsics
+//inside std.sys 
+    pub fun write(fd: i32, buf: *u8, count: usize) -> isize {
+        return unsafe { intrinsic_syscall3(1, fd as int64, buf as int64, count as int64) as isize }
+    }
+
+// 4. RESOURCE MANAGEMENT (`Drop` Interface)
+pub inter Drop = {
+    pub fun drop(var this)
+}
+
+impl Drop for FileStream {
+    pub fun drop(var this) {
+        unsafe { close(this.fd) }
+    }
+}
+
+
+
+
+// 5. UNRECOVERABLE ERRORS & PANICS
+// Panics immediately abort process execution (fast abort), outputting source line numbers and messages.
+// No unwinding, exceptions, or `recover()` mechanisms.
+
+pub fun process_array_element(items: List<i32>, index: i32) -> i32 {
+    // Runtime assertions
+    assert(index >= 0, "Index must be non-negative")
+    
+    if index >= items.len() {
+        // Direct process abort
+        panic("Index out of bounds: length ${items.len()}, got ${index}")
+    }
+    
+    return items[index]
+}
+
+// Low-level system calls using architectural compiler intrinsics
+namespace std.sys {
+    pub fun write(fd: int32, buf: *u8, count: usize) -> isize {
+        return unsafe { intrinsic_syscall3(1, fd as int64, buf as int64, count as int64) as isize }
+    }
+}
+
+// ==========================================
+// 9. EXPLICIT INTERFACES & COMPILE-TIME INTROSPECTION
+// ==========================================
+
+// literal type syntax for quick 1 time use like for json returns instead of declaring 1 time use type for each response type?
+// at the top of file, this ensures co-existance of code
+res := await net.fetch<r{name:string,age:i32}>("https://example.com/json") // return Result<r{name:string,age:i32}>
+
+fun returnEarly(){
+    res := await getData() or return 
+    res := await getData2() or return 0
+}
+
+    var routes = [
+        '1{ name: "TRM, Thika Road", lat: -1.2194756, lon: 36.8879763, volume: 80 },
+        '1{ name: "Kasarani, Thika Road", lat: -1.22889, lon: 36.90444, volume: 100 },
+        '1{ name: "Kasarani-Mwiki Road", lat: -1.225805, lon: 36.915674, volume: 120 },
+    ]
+
+    // maybe we need more helpers like Ref and Type, Type() only usable when declaration is in scope to avoid slow searches
+    pub type TRoutes = Type(routes) // can be exported
+
+    total_volume := (routes: Type(routes))=>{ 
+        return routes.reduce(0,(r,cur)=>r+cur)
+    }
+    
+    routes.push({name:'', lat : 0, lon: 0 })// missing keys get default values
+
+
+// Allows reading from a collection via index (e.g., let x = list[0])
+pub inter Index<Idx, Target> = {
+    pub fun index(this, index: Idx) -> &Target
+}
+
+// Allows getting a mutable reference to a slot (used for assignment)
+pub inter IndexMut<Idx, Target> = {
+    pub fun index_mut(mut this, index: Idx) -> &mut Target
+}
+
+// Allows in-place addition assignment (+=)
+pub inter AddAssign<RHS> = {
+    pub fun add_assign(mut this, rhs: RHS)
+}
+
+
+pub inter SubAssign<RHS> = {
+    pub fun sub_assign(mut this, rhs: RHS)
+}
+
+pub inter MulAssign<RHS> = {
+    pub fun mul_assign(mut this, rhs: RHS)
+}
+
+pub inter DivAssign<RHS> = {
+    pub fun div_assign(mut this, rhs: RHS)
+}
+
+pub inter RemAssign<RHS> = {
+    pub fun rem_assign(mut this, rhs: RHS)
+}
+
+pub inter Add<RHS, Output> = {
+    pub fun add(this, rhs: RHS) -> Output
+}
+
+pub inter Sub<RHS, Output> = {
+    pub fun sub(this, rhs: RHS) -> Output
+}
+
+pub inter Mul<RHS, Output> = {
+    pub fun mul(this, rhs: RHS) -> Output
+}
+
+pub inter Div<RHS, Output> = {
+    pub fun div(this, rhs: RHS) -> Output
+}
+
+
+// Enables `==` and `!=`
+pub inter PartialEq<T> = {
+    pub fun eq(this, other: T) -> bool
+}
+
+// Enables `<`, `<=`, `>`, `>=`
+pub inter PartialOrd<T> : PartialEq<T> = {
+    pub fun partial_cmp(this, other: T) -> Option<Ordering>
+}
+
+pub inter Len = {
+    pub fun len(this) -> usize
+}
+
+pub inter Iterator<Item> = {
+    pub fun next(mut this) -> Option<Item>
+}
+
+pub inter Iterable<Item> = {
+    pub fun iter(this) -> Iterator<Item>
+}
+
+
+user_scores["alice"] += 50
+// Desugared execution:
+(*user_scores.index_mut("alice")).add_assign(50)
+
+var numbers = [1, 2, 3, 4]
+
+// You write:
+numbers[0] += 10
+
+// Compiler desugars to:
+(*numbers.index_mut(0)).add_assign(10)
+
+// numbers is now [11, 2, 3, 4]
+
+
+
+// records mayneed to not grow since then we can'  store them on stack? spread that growns should be annoted specially eg g{...base, newfield}?
+let bytes = await std.fs.read_file(path)? // Automatically propagates Err up the call stack
+
 
