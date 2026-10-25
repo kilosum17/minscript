@@ -39,7 +39,7 @@ fun get_fallback_values() {
 }
 
 // 4. COMPILER MAGIC: `_get_info()` & `std.json.parse<T>` implementation
-namespace std.json {
+//in package std.json 
     pub fun parse<T>(data: Bytes) -> Result<T, string> {
         // `_get_info()` is a compiler intrinsic executed statically at compile-time 
         // on type `T` via monomorphization. It returns metadata (name, fields, visibility).
@@ -53,4 +53,4 @@ namespace std.json {
         // field assignment code specifically optimized for type `T`.
         return internal_fast_deserialize<T>(data, type_info)
     }
-}
+
