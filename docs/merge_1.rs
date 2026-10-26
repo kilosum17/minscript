@@ -1015,6 +1015,11 @@ pub inter PartialOrd<T> : PartialEq<T> = {
     pub fun partial_cmp(this, other: T) -> Option<Ordering>
 }
 
+// Maps and set need these
+pub inter Hash<T> = {
+    pub fun hash(this) -> string
+}
+
 pub inter Len = {
     pub fun len(this) -> usize
 }

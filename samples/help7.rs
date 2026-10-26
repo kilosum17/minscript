@@ -13,3 +13,6 @@ Error handling. Still a TODO, and it’s central. You need ? semantics, error ty
 Cycle handling (Weak<T>) for Ref
 
 Panic = abort. Fine for CLIs, but a server running thousands of tasks dies on one bad index. Consider task-level isolation or at least a documented stance.
+
+
+
