@@ -74,7 +74,7 @@ pub inter Iterable<Item> = {
 
 user_scores["alice"] += 50
 // Desugared execution:
-(*user_scores.index_mut("alice")).add_assign(50)
+(*user_scores.index_mut("alice")).add_assign(50)// index_mut will panic for missing keys
 
 var numbers = [1, 2, 3, 4]
 
@@ -85,3 +85,17 @@ numbers[0] += 10
 (*numbers.index_mut(0)).add_assign(10)
 
 // numbers is now [11, 2, 3, 4]
+// Safely inserts 0 if "alice" doesn't exist, then applies the modification
+user_scores.upsert("alice", 0, (score) => {
+    score += 50
+})
+
+let config: Config = r{
+    name:"Bob",
+    skills:t("shopping", "walking")
+}
+ or 
+pub type Config = Type(config)
+pub type ConfigKeys = KeyOf<Config>
+
+// tuples of the same structure are auto assigned the same type

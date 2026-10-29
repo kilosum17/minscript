@@ -15,34 +15,34 @@ pub type Counter = {
 }
 
 impl Counter {
-    pub fun new(initialValue: int32) -> Counter { // static no this
+    pub fun new(initialValue: i32) -> Counter { // static no this
         return Counter { value: initialValue }
     }
 
-    pub fun increment(mut this, amount: int32) -> int32 {
-        return this.value + amount
+    pub fun increment(&mut this, amount: i32) -> i32 {
+        this.value += amount
+        return  this.value
     }
 
-    pub fun printValue(this) {
+    pub fun printValue(&this) {
         log.println("Current Counter Value: ${this.value}")
     }
 }
 
-// Mandatory parentheses `()` are required around parameter lists for parser simplicity.
 async fun main() {
     let numbers = [10, 25, 40, 5, 90, 110]
     let scores = [85.5, 92.0, 78.5, 95.0]
 
-    let doubledNumbers = numbers.map((n) => n * 2)
-    let highNumbers = numbers.filter((n) => n > 50)
-    let hasHonorRoll = scores.any((score) => score >= 90.0)
+    let doubledNumbers = numbers.map(#{it * 2})
+    let highNumbers = numbers.filter(#{n,idx => n > 50}) //n==it==it1,idx=it2
+    let hasHonorRoll = scores.any((score) => score >= 90.0) // () in arrow function always required
     let allPassing = scores.all((score) => score >= 50.0)
-
+    // these return elements as &T what if we want &mut T? 
     let processedValues = numbers.map((n) => {
         let squared = n * n
         let offset = squared + 5
         return offset
-    })
+    }) // function returns must always be marked uisng return  
 
     log.println("Processed complex values: ${processedValues}")
 
@@ -61,13 +61,14 @@ import "std.time"
 import "std.log"
 import "std.col.vec"
 import "app.models"  //  app. refers to current src folder
+                    // relative refs are allowed
 
 // 1. Structural Unions & Sum Types
 pub type Role = "Admin" | "Operator" | "Guest"
 
 pub type Result<T, E> = 
-    | Ok { value: T }
-    | Err { error: E }
+    | Ok (T)
+    | Err (E)
 
 pub type PaymentMethod = 
     | CreditCard { number: string, exp: string }
@@ -97,7 +98,7 @@ impl User {
         return User {...opts}
     }
 
-    pub fun get_email(this) -> string {
+    pub fun get_email(&this) -> string {
         return this.email.or("no-email@minscript.dev")
     }
 }
@@ -122,8 +123,8 @@ pub async fun process_payment(method: PaymentMethod) -> Result<string, string> {
 }
 
 async fun main() {
-    let app_name = "MinScript"
-    var count = 0
+    app_name := "MinScript" // := let
+    count :== 0      // :== var
     count += 1
 
     let (width, height) = get_dimensions()
@@ -171,8 +172,8 @@ async fun main() {
     }
 
     // functions to allow anonymous to ignore params
-    vec.from(0,10).forEach((n,idx)=>{ // passes n, idx, user can ignore idx
-        lo.print("No:",n," idx:",idx, "\n")
+    vec.from(0, 10).forEach((n, idx)=>{ // passes n, idx, user can ignore idx
+        log.print("No:",n," idx:",idx, "\n")
     })
 
     squares := (0..5).vec().map((n)=>n*n)
@@ -185,8 +186,8 @@ async fun main() {
     }
 
     // Null Helpers (.or static and closure)
-    let raw_email: string? = nil
-    let fallback_1 = raw_email.or("guest@minscript.dev")
+    let raw_email: string? = nil // nil/none are same Option type
+    let fallback_1 = raw_email.or("guest@minscript.dev") //.or(v:T|(()->T))
     let fallback_2 = raw_email.or(() => "computed@minscript.dev")
 
     // Result & let...else Guard
@@ -206,7 +207,7 @@ async fun main() {
 }
 
 impl User {
-    pub fun record_login(mut this) {
+    pub fun record_login(&mut this) {
         this.login_count = this.login_count + 1
     }
 }
@@ -221,7 +222,7 @@ impl User {
     // Strings are first-class immutable value types (Go/JS style, no .clone() needed)
     let username: string = user.name
 
-// Implicit structural interfaces (Go-style duck typing)
+// Interfaces must be implemented explicitly to speed up compiler
 pub type Reader = {
     fun read(mut this, buffer: List<byte>) -> Result<int, string>
 }
@@ -234,41 +235,37 @@ pub type Writer = {
 pub type ReadWriter = Reader & Writer
 
     // Async execution from non-async context via `.then()` or `.ignore()`
-    process_payment(payment).then(fun(res) {
+    process_payment(payment).then((res) =>{
         // `let ... else` guard for early return pattern matching on tuple variants
         let Result.Ok(receipt) = res else {
             log.println("Payment failed")
             return
         }
         log.println("Receipt: ${receipt}")
+    }).catch((err)=>{
+        // on panic
     })
 
     process_payment(payment).ignore() // Fire-and-forget background task
+    // .ignore will ignore even errors preventing crash, but prints error logs
 
 // in std.log
 pub inter Stringer = {
-    pub fun to_string(this) -> string // passing this means it will only work on structs
+    pub fun to_string(&this) -> string 
 }
 
 impl log{
     pub print(args: Vec<Stringer>...){}
 }
 
-// error propagation
-TODO
-
-// helpers for record, maps to avoid unncessary copies eg update .set
-TODO
-
-// we need heap helpers like Box<T>, or compiler intrinsics?
-
 // ==========================================
 // 1. PRELUDE TYPES (Built-in Everywhere)
 // ==========================================
 // Result<T, E>  -> Ok(T) | Err(E)
-// Option<T>     -> T? (Shorthand for optional values)
-// Ref<T>        -> Reference-counted heap handle with interior mutability
+// Option<T>     -> T?/Some(T)|(None|nil) (Shorthand for optional values) 
+// Ref<T>        -> Arc<Mutex<T>> Reference-counted heap handle with interior mutability
 // Box<T>        -> heap data
+// Weak<T>       -> prevent cycles
 pub type Config = {
     pub host: string,
     pub port: int,
@@ -282,9 +279,12 @@ async fun main() {
     let worker_config = app_config
 
     // In-place interior mutability using closure updates
-    app_config.update((cfg) => {
+    app_config.update((cfg) => {// cfg is &mut Config
         cfg.port = 9090 // Mutates the underlying shared heap value directly
     })
+    
+    // TODO 
+    // built in signals so we have pub sub? or push which only runs on one callback eg MCSP mupliple consumer,single-producer
 
     // Reflected automatically in worker_config without copying or lifetime annotations
     log.println("Worker Port: ${worker_config.get().port}") // 9090
@@ -293,9 +293,12 @@ async fun main() {
     var metrics = r{ "app1": '1{ no: 100 }, "app2": '1{ no: 20} } // Record<'app1'|'app2',{no:i32}>
 
     // `.update(key, closure)` mutates values in-place without releasing references
-    metrics.update("app1", (val) => { //typechecked to be app1 or app2
-        val.no += 1
-    })
+    var app2_str:string = "app2"
+    var app2_key+app2_key.as<KeyOf(TypeOf(metric))>().or("app1")
+    var app_key = "app1" // must be app1 or app2 
+
+    metrics[app_key].no += 1 // anon records are stored as structs and use Index()->&mut T
+    metrics["app2"].no += 1
 
     scores := m{"ted":20, "shem":30}
     if scores.has("ted") {
@@ -303,9 +306,8 @@ async fun main() {
     }
 
     let ports = [8080, 8081, 8082]
-    ports.update_at(0, (p) => { // no mut p, mutability is determined by the update_at
-        p = 9000
-    })
+    ports[0] = 9000
+    n3 := ports.at(-1) // 8082 negative indexing
     let port_1 = ports[0] // index check and will panic
     let port_2 = ports.get(1).or(8080) // returns Option
 
@@ -331,26 +333,21 @@ async fun main() {
     log.println("Size: ${title.size()}")                 // 30
     log.println("Trimmed: ${title.trim()}")             // "MinScript Systems Language"
     log.println("Lower: ${title.trim().to_lower()}")    // "minscript systems language"
-    
+    // TODO
+    // we need sting slices that behave like full strings but are scope bound and don't escape
+    // apart from Drop called by compiler can we have like Escaping/Commit? so string slices clone to be independent?
+    // method that modify the string eg .upper().lower() will probably mostly create new strings
+
     if title.has("Systems") {                       // `has()` checks substring existence
-        let clean = title.trim().strip_suffix(" Language").or(title)
+        let clean = title.trim().strip_suffix(" Language").or(title) // shoul return slice
         log.println(clean)                              // "MinScript Systems"
     }
 
     let words = title.trim().split(" ")           // ["MinScript", "Systems", "Language"]
     let sub = title.substring(2, 11)              // "MinScript"
-
-    let numbers = [10, 20, 30]
-    log.println("List size: ${numbers.size()}")          // 3
+    
     numbers.push(40)                                // Appends to list
     let popped: int? = numbers.pop()              // Removes and returns last item (40)
-
-    // In-place update by index
-    numbers.update_at(0,(n,idx)=> { // closures don't captures
-        n.set(idx, 99) // could have used set directly
-    })
-
-    log.println("Index 0 after update: ${numbers[0].or(0)}") // 99
 
     let permissions: Set<string> = s{ "read", "write" }
     log.println("Set size: ${permissions.size()}")        // 2
@@ -363,7 +360,7 @@ async fun main() {
     let default_perms: Set<string> = s{ "read", "execute" }
     let shared_perms = permissions.intersection(default_perms)
 
-    let user_roles: Map<string, string> = {
+    let user_roles: Map<string, string> = m{
         "alice": "admin",
         "bob": "developer",
     }
@@ -376,18 +373,13 @@ async fun main() {
     }
 
     // In-place value update for a specific key
-    user_roles.update("alice", (role) => {
-        return "super_admin"
-    })
-
+    user_roles["alice"] = "super_admin" // will panic
     user_roles.remove("bob")
 
     // Extracting keys and values as lists
     let keys: List<string> = user_roles.keys()
     let values: List<string> = user_roles.values()
     let entries:List<Tuple<string,string>> = user_roles.entries()
-
-
 
 import "std.json"
 import "std.runtime"
@@ -400,12 +392,12 @@ impl ServerConfig {
     }
 }
 
-    // Tuple<T1, T2, ...>: Heterogeneous Stack Record (using `t[...]` prefix)
+    // Tuple<T1, T2, ...>: Heterogeneous Stack Record (using `t(...)` prefix)
     let user_record = t(777, "Teddy", true)
     let uid = user_record.0
     let uname = user_record.1
 
-    // Array<T, N>: Fixed-Size Stack Buffer (using `a[...]` prefix)
+    // Array<T; N>: Fixed-Size Stack Buffer (using `a[...]` prefix)
     let fixed_buffer = a[100, 200, 300, 400]
     let first_val = fixed_buffer[0]
 
@@ -415,9 +407,9 @@ impl ServerConfig {
     let server_cfg = ServerConfig { host: "localhost", port: 443 }
     let type_info = ServerConfig._get_info()
     
-    println("Intpected Type: ${type_info.name}")
+    log.println("Intpected Type: ${type_info.name}")
     let auto_json = json.stringify(server_cfg)
-    println("Serialized JSON: ${auto_json}")
+    log.println("Serialized JSON: ${auto_json}")
 
     // ------------------------------------------
     // G. COOPERATIVE PREEMPTION YIELD
@@ -429,7 +421,7 @@ impl ServerConfig {
             await runtime.yield()
         }
     }
-    println("Task loop finished successfully.")
+    log.println("Task loop finished successfully.")
 
 pub type ServerConfig = {
     pub host: string,
@@ -442,8 +434,11 @@ pub type Box<T> = {
 }
 
 impl<T> Box<T> {
-    pub fun get(this) -> T {
+    pub fun get(&this) -> T {
         return this.value
+    }
+    pub fun set(&mut this, newVal:T){
+        this.value = newVal
     }
 }
 
@@ -464,18 +459,18 @@ impl<T> Box<T> {
     configure_server({ host, port, secret_key })
 
     let int_box = Box { value: 42 }
-    println("Box value: ${int_box.get()}")
+    log.println("Box value: ${int_box.get()}")
 
-    // Rule: Closures are pure and non-capturing. All external dependencies 
-    // must be passed explicitly as arguments (no hidden captures or heap bloat).
+    // Closure that escape must explicity name their values which will be copied,
+    // non escaping closures can capture local environment & global scope in readonly mode, but can still clone/copy them
 
     let compute_sum = (a: i32, b: i32) -> i32 {
         let total = a + b
         return total
     }
-    println("Sum via block closure: ${compute_sum(15, 25)}")
+    log.println("Sum via block closure: ${compute_sum(15, 25)}")
     let multiply = (a: i32, b: i32) => a * b
-    println("Product via shorthand closure: ${multiply(6, 7)}")
+    log.println("Product via shorthand closure: ${multiply(6, 7)}")
 
     // A. ANONYMOUS RECORDS (`r{...}`)
     let user_profile = r{
@@ -486,26 +481,14 @@ impl<T> Box<T> {
     }
 
     // Fully typed dot-notation access (resolved statically at compile-time)
-    println("User Profile Name: ${user_profile.name}")
-    println("User Profile Age: ${user_profile.age}")
-
-// DESIGN CHOICES SUMMARY:
-// 1. NO LIFETIME ANNOTATIONS: Closures cannot capture environment variables, eliminating 
-//    hidden references and lifetime tracking overhead. All closure inputs must be passed explicitly.
-// 2. MEMORY SAFETY: Heap types (Vec, String, anonymous records `r{}`) enforce exclusive ownership 
-//    and move semantics. Stack types (Array `a[...]`, Tuple `t[...]`, primitives) are copied by value.
-// 3. THREAD SAFETY & GLOBALS: Raw mutable global variables are banned at compile-time to prevent 
-//    data races. Globals are strictly either immutable constants (`let`) or thread-safe atomic 
-//    reference-counted handles (`Ref<T>`). No thread-local storage is used.
-// 4. EXPLICIT MUTABILITY: Variables use `let` (immutable) or `var` (mutable). Parameters and 
-//    receivers modifying data must explicitly declare `mut`.
-// ==========================================
+    log.println("User Profile Name: ${user_profile.name}")
+    log.println("User Profile Age: ${user_profile.age}")
 
 // Global Constants (Thread-safe read-only sharing)
 pub let MAX_CONNECTIONS: int32 = 10_000
 pub let SYSTEM_NAME: string = "MinScript-Engine"
 
-// Global Mutable State (Strictly forced to use Ref<T> for thread safety)
+// Global Mutable State (Strictly forced to use Ref<T> for thread safety Ref<T> is Arc<Mutex<T>>)
 pub let active_sessions: Ref<Map<string, int32>> = Ref(m{})
 
 // Tagged Union (Algebraic Data Type with zero-cost discriminant jump tables)
@@ -513,11 +496,8 @@ pub type NetworkResponse =
     | Success(string)
     | Error(int32)
 
-    let raw_buffer: Array<u8, 4> = a[0x00, 0xFF, 0x10, 0x20]
-    let first_byte = raw_buffer[0]
-
     active_sessions.update((sessions) => {
-        sessions.set("admin_session", 1)
+        sessions.set("admin_session", sessions.get("admin_session").or(0) + 1)
     })
 
 pub fun calculateTotalValue(baseAmount: f32, multiplier: i32) -> f32 {
@@ -533,7 +513,7 @@ pub fun calculateTotalValue(baseAmount: f32, multiplier: i32) -> f32 {
         weight: 1.5 as f32,            // Overriding default f64 literal to f32
     }
 
-    println("Request to ${request_payload.endpoint} with timeout ${request_payload.timeout_ms}ms")
+    log.println("Request to ${request_payload.endpoint} with timeout ${request_payload.timeout_ms}ms")
 
 
 pub type SystemStatus = "Online" | "Degraded" | "Offline"
@@ -555,7 +535,7 @@ pub type TypeInfo = {
 pub fun stringify<T>(val: T) -> string {
     // T._get_info() is a compiler intrinsic resolved entirely at compile-time.
     // Call-site visibility rules apply: external callers only see `pub` fields.
-    let info = T._get_info() // TODO is this on type or value?
+    let info = T._get_info() // this works on types and instances?
 
     if info.kind != "struct" {
         return "${val}"
@@ -574,8 +554,8 @@ pub fun stringify<T>(val: T) -> string {
 }
 
 // serialize is in Serializer inter-face
-impl User {
-    pub fun serialize(this) -> string {
+impl Serializer for User {
+    pub fun serialize(&this) -> string {
         // Explicitly omit sensitive fields like password_hash or email without struct tags
         return "{ \"id\": \"${this.id}\", \"name\": \"${this.name}\" }"
     }
@@ -588,27 +568,31 @@ impl User {
         password_hash: "super_secret_hash_123",
     }
 
-    // --- A. Direct Introspection ---
+    // --- A. Direct Introspection --- 
     let type_info = User._get_info()
-    println("Type Name: ${type_info.name}")           // "User"
-    println("Type Kind: ${type_info.kind}")           // "struct"
-    println("Public Fields Size: ${type_info.fields.size()}") // 3 (password_hash is private and excluded)
+    log.println("Type Name: ${type_info.name}")           // "User"
+    log.println("Type Kind: ${type_info.kind}")           // "struct"
+    log.println("Public Fields Size: ${type_info.fields.size()}") // 3 (password_hash is private and excluded)
 
     // Iterate through field definitions
     for field in type_info.fields {
-        println(" - Field: ${field.name} (${field.type_kind})")
+        log.println(" - Field: ${field.name} (${field.type_kind})")
     }
+
+    // TODO
+    // strong def of what _get_infor() should return eg on Type and instance
 
     // --- B. Automatic Zero-Config Serialization ---
     let auto_json = stringify(user)
-    println("Auto JSON: ${auto_json}")
+    log.println("Auto JSON: ${auto_json}")
     // Output: { "id": "usr_101", "name": "Teddy", "email": "teddy@example.com" }
 
     // --- C. Explicit Custom Serialization ---
     let custom_json = user.serialize()
-    println("Custom JSON: ${custom_json}")
+    log.println("Custom JSON: ${custom_json}")
     // Output: { "id": "usr_101", "name": "Teddy" }
 
+// pub alias nil = None
 
 import "std.fs"
 import "std.io"
@@ -630,7 +614,7 @@ async fun process_file(path: string, password: string, mode: Mode) -> Result<nil
             let encrypted = std.crypto.encrypt_aes_gcm(data, password)
             let out_path = "${path}.enc"
             await std.fs.write_file(out_path, encrypted)
-            println("Encrypted: ${path} -> ${out_path}")
+            log.println("Encrypted: ${path} -> ${out_path}")
         },
         "decrypt" => {
             let decrypted_res = std.crypto.decrypt_aes_gcm(data, password)
@@ -641,7 +625,7 @@ async fun process_file(path: string, password: string, mode: Mode) -> Result<nil
             // strip_suffix returns string?, so we safely unwrap or fallback using .or()
             let out_path = path.strip_suffix(".enc").or(path)
             await std.fs.write_file(out_path, decrypted)
-            println("Decrypted: ${path} -> ${out_path}")
+            log.println("Decrypted: ${path} -> ${out_path}")
         },
     }
 
@@ -655,23 +639,23 @@ async fun process_file(path: string, password: string, mode: Mode) -> Result<nil
 
     let stat_res = await std.fs.stat(target_path)
     let Result.Ok(info) = stat_res else {
-        println("Path does not exist or cannot be accessed: ${target_path}")
+        log.println("Path does not exist or cannot be accessed: ${target_path}")
         return
     }
 
     if info.is_dir() {
         let files_res = std.fs.walk_dir(target_path)
         let Result.Ok(files) = files_res else {
-            println("Failed to read directory contents.")
+            log.println("Failed to read directory contents.")
             return
         }
 
         // Standard .map() works natively because async functions return a Promise<T> value
-        // TODO we may need an .iter() or .into_iter() so all collection types share the same implementation 
+        // Any class with .next(&this)->Option<&T> or .next_mut(&mut this)->Option<&mut T> auto implements iterator 
         let promises = files
-            .filter(fun(file_path) {
-                if mode_input == "encrypt" and file_path.ends_with(".enc") { return false }
-                if mode_input == "decrypt" and not file_path.ends_with(".enc") { return false }
+            .filter((file_path) => { 
+                if mode_input == "encrypt" && file_path.ends_with(".enc") { return false }
+                if mode_input == "decrypt" && !file_path.ends_with(".enc") { return false }
                 return true
             })
             .map(fun(file_path) {
@@ -686,25 +670,23 @@ async fun process_file(path: string, password: string, mode: Mode) -> Result<nil
             let Result.Err(err_msg) = res else {
                 continue
             }
-            println("Warning: ${err_msg}")
+            log.println("Warning: ${err_msg}")
         }
     } else {
         // Handle single file path
         let res = await process_file(target_path, password, mode_input)
         let Result.Err(err_msg) = res else {
-            println("Operation completed successfully.")
+            log.println("Operation completed successfully.")
             return
         }
-        println("Error: ${err_msg}")
+        log.println("Error: ${err_msg}")
     }
 
-    println("All operations completed.")
+    log.println("All operations completed.")
 
     
-// iterators are compiler magic eg stuct just need to implemet a next<T>()->Option<T> method to qualify as an iterator
+// iterators are compiler magic eg stuct just need to implemet a next<T>(&this)->Option<T> method to qualify as an iterator
 // Due to generic which makes searching alot of type a slow operation, interface must be explicitly implemented
-
-
 
 // Interface Definition
 pub inter Reader = {
@@ -727,11 +709,12 @@ impl Reader for FileStream {
 
 // 2. Records: Structural merging & patching
 let base_opts = r{ host: "localhost", port: 8080, debug: false }
-let dev_opts = r{ ...base_opts, port: 3000, debug: true } // do we allow this to add new fields?
-
+// do we allow this to add new fields? maybe using r{} means new anon-record, and {} with r means spreading?
+let dev_opts = r{ ...base_opts, port: 3000, debug: true } 
 // In-place record update for mutable (`var`) records
 var session = r{ id: "s1", active: true }
 session.patch({ active: false }) // we need a Partial<T>, Omit<T> etc?
+session.active = false
 
 // Recursive types MUST use Box<T> to give the type a known pointer size
 pub type Node<T> = {
@@ -750,15 +733,16 @@ pub type BinaryNode<T> = {
     scores["bob"] += 10
     let base_config = r{ host: "127.0.0.1", port: 8080 }
     // we need a way to mark can addd new fields or not, so it doesn't introduce errors
-    let override_config = r{ ...base_config, port: 9090 } // r{ host: "127.0.0.1", port: 9090 } 
+    //  since recs are fixed sized and stored as structs
+    let override_config = r{ ...base_config, port: 9090 } // this is a copy, r{ host: "127.0.0.1", port: 9090 } 
 
 // 2. KEYWORD `or` (Control Flow & Early Return)
 // Intercepts `Err` or `None`, exposing the payload via implicit `it`, 
 // and immediately returns the right-hand side expression from the function.
 pub async fun load_config(path: string) -> Result<Config, string> { // Should this be Result<Config,Err>?
-    let bytes = await std.fs.read_file(path) or Err("IO Failed: ${it}") //Result
-    let env_prefix = get_env_prefix() or return Err("Environment prefix missing") // Option, using return is optional
-    let config = std.json.parse<Config>(bytes) or Err(it.to_string())
+    let bytes = await std.fs.read_file(path) or Err("IO Failed: ${it}") // Result<T,E> or keyword auto returns its value no need for return
+    let env_prefix = get_env_prefix() or return Err("Environment prefix missing") // Option<T>, using return is optional
+    let config = std.json.parse<Config>(bytes) or Err(it.to_string())  // returns Err if parse failed
     // to prevent confusing or and .or we may need to force use of .or() value or assign them to _
     return Ok(config)
 }
@@ -767,7 +751,7 @@ pub async fun load_config(path: string) -> Result<Config, string> { // Should th
 fun get_fallback_values() {
     let timeout: int? = None
     let default_timeout = timeout.or(30)
-    let computed_timeout = timeout.or(() => compute_expensive_default())
+    let computed_timeout = timeout.or(#{compute_expensive_default()})
 }
 
 // 4. COMPILER MAGIC: `_get_info()` & `std.json.parse<T>` implementation
@@ -777,13 +761,14 @@ fun get_fallback_values() {
         // on type `T` via monomorphization. It returns metadata (name, fields, visibility).
         let type_info = T._get_info()
 
-        if type_info.kind != "struct" {
+        if type_info.kind != "struct" { // kind should be an Union not string, records are also struct,
+        //  so we can have a field for exact type?
             return Err("Target type must be a struct")
         }
-
+        // type_info could have a keys field and ._new<Map<string,any>>({}) so ucould create instance from map
         // The compiler uses `type_info.fields` to auto-generate direct, zero-allocation 
         // field assignment code specifically optimized for type `T`.
-        return internal_fast_deserialize<T>(data, type_info)
+        return Ok("...")
     }
 
 // `Ok`, `Err`, `Some`, `None`, `Result`, and `Option` are built-in everywhere.
@@ -795,7 +780,8 @@ pub fun read_all<T: Reader>(mut reader: T) -> Result<List<u8>, string> {
     return Ok(buf)
 }
 // 4. RESOURCE MANAGEMENT (`Drop` Interface)
-// Replaces `defer` to eliminate borrow-checker conflicts; compiler auto-drops at scope exit.
+// no `defer` to eliminate borrow-checker conflicts; compiler auto-drops at scope exit.
+// drop can be ovveriden for custom heap types etc
 
 pub inter Drop = {
     pub fun drop(mut this)
@@ -808,7 +794,7 @@ impl Drop for FileStream { // maybe allow impl Drop,Add,PartialEq for FileStream
 }
 
 // 5. EXPRESSIONS & CONTROL FLOW
-// `if`, `switch`, and `match` act as expressions. Last expression in a block wins.
+// `if` and `match` act as expressions. Last expression in a block wins.
 let grade = if score >= 90 {
     let bonus = calc_bonus(score)
     "A"
@@ -818,7 +804,7 @@ let grade = if score >= 90 {
     "C"
 }
 
-let tier = switch role {
+let tier = match role {
     "Admin" => "Full Access",
     "Operator" => "Standard Access",
     _ => "Read Only",
@@ -844,26 +830,22 @@ pub fun serialize_generic<T>(val: T) -> string {
 // 1. VARIABLE BINDINGS
 
 // Functions declare mutable parameters directly using `mut`
-pub fun reset_point(mut x: int32, mut y: int32) {
+pub fun reset_point(mut x: int32, &mut y: int32) { // takes ownership of x, borrows y mutable
     x = 0
     y = 0
 }
 
 // 2. ERGONOMIC INDEXING (`Index` & `IndexMut`)
-// ==========================================
-// Indexing syntax desugars via interfaces. References (`&` / `&mut`) are compiler-managed
-// restricted primitives used strictly for indexing and internal reference passing.
-
 pub inter Index<Idx, Target> = {
-    pub fun index(this, index: Idx) -> &Target
+    pub fun index(&this, index: Idx) -> &Target
 }
 
 pub inter IndexMut<Idx, Target> = {
-    pub fun index_mut(var this, index: Idx) -> &mut Target
+    pub fun index_mut(&mut this, index: Idx) -> &mut Target
 }
 
 // Usage requires no explicit pointer dereferencing (`*`):
-var numbers = [10, 20, 30]
+numbers :== [10, 20, 30]
 numbers[0] = 120 // Desugars into: (*numbers.index_mut(0)) = 120
 
 // 3. LOW-LEVEL FFI, SYSCALLS & C INTEROP
@@ -885,30 +867,14 @@ pub fun open_file_descriptor(path: string) -> Result<i32, string> {
 }
 
 // Low-level system calls using architectural compiler intrinsics
-//inside std.sys 
+// inside std.sys 
     pub fun write(fd: i32, buf: *u8, count: usize) -> isize {
         return unsafe { intrinsic_syscall3(1, fd as int64, buf as int64, count as int64) as isize }
     }
 
-// 4. RESOURCE MANAGEMENT (`Drop` Interface)
-pub inter Drop = {
-    pub fun drop(var this)
-}
-
-impl Drop for FileStream {
-    pub fun drop(var this) {
-        unsafe { close(this.fd) }
-    }
-}
-
-
-
-
 // 5. UNRECOVERABLE ERRORS & PANICS
-// Panics immediately abort process execution (fast abort), outputting source line numbers and messages.
-// No unwinding, exceptions, or `recover()` mechanisms.
-
-pub fun process_array_element(items: List<i32>, index: i32) -> i32 {
+// panics can recover using a recover{} block that ruturns Err() or Ok(nil|ready)
+pub fun process_array_element(&items: List<i32>, index: i32) -> i32 {
     // Runtime assertions
     assert(index >= 0, "Index must be non-negative")
     
@@ -919,11 +885,17 @@ pub fun process_array_element(items: List<i32>, index: i32) -> i32 {
     
     return items[index]
 }
+ 
+res: = recover{  // res is Result<i32, Err>// Err can be info like file,line, package etc, message,
+    // recover unwinds not sure yet though, so a recover block is also like a function?
+    items := [1,3,5,7,11] 
+    return process_array_element(items,10) // will panice, if no panic returns result of block 
+}
 
 // Low-level system calls using architectural compiler intrinsics
 namespace std.sys {
-    pub fun write(fd: int32, buf: *u8, count: usize) -> isize {
-        return unsafe { intrinsic_syscall3(1, fd as int64, buf as int64, count as int64) as isize }
+    pub fun write(fd: i32, buf: *u8, count: usize) -> isize {
+        return unsafe { intrinsic_syscall3(1, fd as i64, buf as i64, count as i64) as isize }
     }
 }
 
@@ -933,123 +905,169 @@ namespace std.sys {
 
 // literal type syntax for quick 1 time use like for json returns instead of declaring 1 time use type for each response type?
 // at the top of file, this ensures co-existance of code
+// maybe fetch returns std.JsonObject which has a obj.as<r{name:string,age:i32}>() should we use t{} since r{} is record
 res := await net.fetch<r{name:string,age:i32}>("https://example.com/json") // return Result<r{name:string,age:i32}>
 
 fun returnEarly(){
-    res := await getData() or return 
+    res := await getData() or return  // or block will be called on nil/None or Err with it as implicity arg
     res := await getData2() or return 0
 }
 
-    var routes = [
+    var routes = [ // infers Vec<{name:string,lat:f32,lon:f32,volume:int}>// if f32 or f64 the default?
         '1{ name: "TRM, Thika Road", lat: -1.2194756, lon: 36.8879763, volume: 80 },
         '1{ name: "Kasarani, Thika Road", lat: -1.22889, lon: 36.90444, volume: 100 },
         '1{ name: "Kasarani-Mwiki Road", lat: -1.225805, lon: 36.915674, volume: 120 },
-    ]
+    ] //'
 
-    // maybe we need more helpers like Ref and Type, Type() only usable when declaration is in scope to avoid slow searches
-    pub type TRoutes = Type(routes) // can be exported
+    // maybe we need more helpers like Ref and Type, TypeOf() only usable when declaration is in scope to avoid slow searches
+    pub type TRoutes = TypeOf(routes) // can be exported
+    pub type TRouteItem = IndexOf(TRoutes) // IndexOf(TypeOf(routes))
 
-    total_volume := (routes: Type(routes))=>{ 
-        return routes.reduce(0,(r,cur)=>r+cur)
+    total_volume := (routes: TypeOf(routes))=>{ 
+        return routes.reduce(0, (acc,cur) => acc + cur.volume)
     }
     
-    routes.push({name:'', lat : 0, lon: 0 })// missing keys get default values
+    routes.push({ name:'', lat : 0, lon: 0 })// missing keys get default values
 
+pub inter<Self> Default={ // Self is the instance implementing the interface
+    pub fun default() -> Self
+}
 
 // Allows reading from a collection via index (e.g., let x = list[0])
 pub inter Index<Idx, Target> = {
-    pub fun index(this, index: Idx) -> &Target
+    pub fun index(&this, index: Idx) -> &Target
 }
 
 // Allows getting a mutable reference to a slot (used for assignment)
 pub inter IndexMut<Idx, Target> = {
-    pub fun index_mut(mut this, index: Idx) -> &mut Target
+    pub fun index_mut(&mut this, index: Idx) -> &mut Target
 }
 
 // Allows in-place addition assignment (+=)
 pub inter AddAssign<RHS> = {
-    pub fun add_assign(mut this, rhs: RHS)
+    pub fun add_assign(&mut this, &rhs: RHS)
 }
 
-
 pub inter SubAssign<RHS> = {
-    pub fun sub_assign(mut this, rhs: RHS)
+    pub fun sub_assign(&mut this, rhs: RHS)
 }
 
 pub inter MulAssign<RHS> = {
-    pub fun mul_assign(mut this, rhs: RHS)
+    pub fun mul_assign(&mut this, rhs: RHS)
 }
 
 pub inter DivAssign<RHS> = {
-    pub fun div_assign(mut this, rhs: RHS)
+    pub fun div_assign(&mut this, rhs: RHS)
 }
 
 pub inter RemAssign<RHS> = {
-    pub fun rem_assign(mut this, rhs: RHS)
+    pub fun rem_assign(&mut this, rhs: RHS)
 }
 
 pub inter Add<RHS, Output> = {
-    pub fun add(this, rhs: RHS) -> Output
+    pub fun add(&this, rhs: RHS) -> Output
 }
 
 pub inter Sub<RHS, Output> = {
-    pub fun sub(this, rhs: RHS) -> Output
+    pub fun sub(&this, rhs: RHS) -> Output
 }
 
 pub inter Mul<RHS, Output> = {
-    pub fun mul(this, rhs: RHS) -> Output
+    pub fun mul(&this, rhs: RHS) -> Output
 }
 
 pub inter Div<RHS, Output> = {
-    pub fun div(this, rhs: RHS) -> Output
+    pub fun div(&this, rhs: RHS) -> Output
 }
 
 
 // Enables `==` and `!=`
 pub inter PartialEq<T> = {
-    pub fun eq(this, other: T) -> bool
+    pub fun eq(&this, &other: T) -> bool
 }
 
 // Enables `<`, `<=`, `>`, `>=`
 pub inter PartialOrd<T> : PartialEq<T> = {
-    pub fun partial_cmp(this, other: T) -> Option<Ordering>
+    pub fun partial_cmp(this, &other: T) -> Option<Ordering>
 }
 
 // Maps and set need these
 pub inter Hash<T> = {
-    pub fun hash(this) -> string
+    pub fun hash(&this) -> string
 }
 
 pub inter Len = {
-    pub fun len(this) -> usize
+    pub fun len(&this) -> usize
 }
 
 pub inter Iterator<Item> = {
-    pub fun next(mut this) -> Option<Item>
+    pub fun next(&mut this) -> Option<Item>
 }
 
 pub inter Iterable<Item> = {
-    pub fun iter(this) -> Iterator<Item>
+    pub fun iter(&this) -> Iterator<Item>
 }
 
 
 user_scores["alice"] += 50
-// Desugared execution:
 (*user_scores.index_mut("alice")).add_assign(50)
 
-var numbers = [1, 2, 3, 4]
-
-// You write:
 numbers[0] += 10
-
-// Compiler desugars to:
 (*numbers.index_mut(0)).add_assign(10)
 
-// numbers is now [11, 2, 3, 4]
-
-
-
-// records mayneed to not grow since then we can'  store them on stack? spread that growns should be annoted specially eg g{...base, newfield}?
+// records mayneed to not grow since then we can'  store them on stack?
 let bytes = await std.fs.read_file(path)? // Automatically propagates Err up the call stack
 
+// what if we want to ignore the argument to a closure eg
+s := "Am Ted"
+s2 := s.if_empty(#{"Ted Shem"}) // #{} auto returns last expression unlike a ()=>{}
+
+sum := (a:i32, b:i32) -> i32 {
+    return a + b
+}
+
+fun adder(a:i32, b:i32, cbk: (i32,i32)->i32){
+    return cbk(a, b)
+}
+
+n := adder(10, 12, (a, b) => {
+    return a + b
+})
+
+// or 
+n := adder(10,12, #{it1 + it2}) // # makes parsing easier reduces overload on naked {}, it1 == it
+n := adder(10,12, #{
+    let a = it1 // it1 == it
+    let b = it2
+    a + b // last exp auto returned if function returns
+})
+// allow typescript like function matching eg a callback can only use what it wants, and return 
+// types match if user uses it, otherwise return type is ignored, compiler config for such warning
+
+let description = match payment {  // we can use PaymentMethod.CreditCard, or _.CreditCard
+    PaymentMethod.CreditCard { number, exp } => "Card: ${number}",
+    _.MobileMoney { phone, provider } => "${provider} account",
+    _.Cash => "Cash payment",
+    // Compiler error if any variant of PaymentMethod is unhandled
+    // _=>{} handles all other cases
+}
+
+// add .is_ok(), .is_err() .is_some(), is_none() etc to Result/Option
+
+
+let config: Config = r{
+    name:"Bob",
+    skills:t("shopping", "walking")
+}
+ or 
+pub type Config = Type(config)
+pub type ConfigKeys = KeyOf<Config> == "name" | "skills"
+
+// structs/records support .set(mut KeyOf<Self>)->self
+config.set("name","Ted") // used by serializers in combination to _get_info(),
+//  with T.new() that creates an empty structure 
+// this seems like an heavy or slow process?
+
+// tuples of the same structure are auto assigned the same type
+// TypeOf(t(1,"")) == TypeOf(t(2,"--")) //true
 

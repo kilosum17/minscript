@@ -155,6 +155,7 @@
 
 - ### Ref<T>
     - It is Arc<Mutex> so atomic-ref-counted and has a mutex, so both thread safe and memory-safe
+    - This uses RwLock so many readr but 1 writer lock
 
     -methods:
         -clone():T
