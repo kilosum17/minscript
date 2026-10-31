@@ -24,7 +24,11 @@ class Lexer {
                 break
             }
             this.pos = lex.endPos
-            console.log(text, " ", lex.startPos, lex.endPos)
+            if (lex.nl_before) {
+                process.stdout.write(` \n`)
+            }
+            process.stdout.write(` ${text}`)
+            // console.log(text, " ", lex.startPos, lex.endPos)
         }
 
     }
@@ -38,7 +42,7 @@ class Lexer {
         const isNotEnd = (cur: number) => cur < this.endPos
 
         // skip spaces
-        while (isNotEnd(cur) && isSpace(this.source[cur]) || isNewLine(this.source[cur])) {
+        while (isNotEnd(cur) && (isSpace(this.source[cur]) || isNewLine(this.source[cur]))) {
             ws_before = true
             if (isNewLine(this.source[cur])) nl_before = true
             cur++
