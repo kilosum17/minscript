@@ -1,0 +1,3488 @@
+{
+  "kind": "Program",
+  "items": [
+    {
+      "kind": "PackageDecl",
+      "name": "lexer_demo",
+      "public": false,
+      "span": {
+        "start": 0,
+        "end": 18,
+        "line": 1,
+        "column": 1,
+        "endLine": 1,
+        "endColumn": 19
+      }
+    },
+    {
+      "kind": "ImportDecl",
+      "path": "std.io",
+      "public": false,
+      "span": {
+        "start": 20,
+        "end": 35,
+        "line": 3,
+        "column": 1,
+        "endLine": 3,
+        "endColumn": 16
+      }
+    },
+    {
+      "kind": "DocComment",
+      "text": "/// Generic type arguments now use square brackets.",
+      "span": {
+        "start": 37,
+        "end": 88,
+        "line": 5,
+        "column": 1,
+        "endLine": 5,
+        "endColumn": 52
+      }
+    },
+    {
+      "kind": "TypeDecl",
+      "name": "Box",
+      "generics": [
+        {
+          "kind": "GenericParam",
+          "name": "T",
+          "const": false,
+          "bounds": [],
+          "span": {
+            "start": 98,
+            "end": 99,
+            "line": 6,
+            "column": 10,
+            "endLine": 6,
+            "endColumn": 11
+          }
+        }
+      ],
+      "value": {
+        "kind": "StructType",
+        "fields": [
+          {
+            "kind": "TypeField",
+            "name": "value",
+            "type": {
+              "kind": "Type",
+              "form": "Path",
+              "name": "T",
+              "args": [],
+              "span": {
+                "start": 112,
+                "end": 113,
+                "line": 6,
+                "column": 24,
+                "endLine": 6,
+                "endColumn": 25
+              }
+            },
+            "public": false,
+            "span": {
+              "start": 105,
+              "end": 113,
+              "line": 6,
+              "column": 17,
+              "endLine": 6,
+              "endColumn": 25
+            }
+          }
+        ],
+        "span": {
+          "start": 89,
+          "end": 115,
+          "line": 6,
+          "column": 1,
+          "endLine": 6,
+          "endColumn": 27
+        }
+      },
+      "public": false,
+      "span": {
+        "start": 89,
+        "end": 115,
+        "line": 6,
+        "column": 1,
+        "endLine": 6,
+        "endColumn": 27
+      }
+    },
+    {
+      "kind": "InterfaceDecl",
+      "name": "Convert",
+      "generics": [
+        {
+          "kind": "GenericParam",
+          "name": "From",
+          "const": false,
+          "bounds": [],
+          "span": {
+            "start": 131,
+            "end": 135,
+            "line": 8,
+            "column": 15,
+            "endLine": 8,
+            "endColumn": 19
+          }
+        },
+        {
+          "kind": "GenericParam",
+          "name": "To",
+          "const": false,
+          "bounds": [],
+          "span": {
+            "start": 137,
+            "end": 139,
+            "line": 8,
+            "column": 21,
+            "endLine": 8,
+            "endColumn": 23
+          }
+        }
+      ],
+      "supers": [],
+      "members": [
+        {
+          "kind": "FunctionDecl",
+          "name": "convert",
+          "generics": [],
+          "params": [
+            {
+              "kind": "Receiver",
+              "receiver": "this",
+              "span": {
+                "start": 161,
+                "end": 165,
+                "line": 9,
+                "column": 17,
+                "endLine": 9,
+                "endColumn": 21
+              }
+            },
+            {
+              "kind": "Parameter",
+              "name": "value",
+              "type": {
+                "kind": "Type",
+                "form": "Path",
+                "name": "From",
+                "args": [],
+                "span": {
+                  "start": 174,
+                  "end": 178,
+                  "line": 9,
+                  "column": 30,
+                  "endLine": 9,
+                  "endColumn": 34
+                }
+              },
+              "mutable": false,
+              "variadic": false,
+              "span": {
+                "start": 167,
+                "end": 178,
+                "line": 9,
+                "column": 23,
+                "endLine": 9,
+                "endColumn": 34
+              }
+            }
+          ],
+          "result": {
+            "kind": "Type",
+            "form": "Path",
+            "name": "To",
+            "args": [],
+            "span": {
+              "start": 183,
+              "end": 185,
+              "line": 9,
+              "column": 39,
+              "endLine": 9,
+              "endColumn": 41
+            }
+          },
+          "public": false,
+          "async": false,
+          "span": {
+            "start": 149,
+            "end": 185,
+            "line": 9,
+            "column": 5,
+            "endLine": 9,
+            "endColumn": 41
+          }
+        }
+      ],
+      "public": false,
+      "span": {
+        "start": 117,
+        "end": 187,
+        "line": 8,
+        "column": 1,
+        "endLine": 10,
+        "endColumn": 2
+      }
+    },
+    {
+      "kind": "TypeDecl",
+      "name": "User",
+      "generics": [],
+      "value": {
+        "kind": "StructType",
+        "fields": [
+          {
+            "kind": "TypeField",
+            "name": "id",
+            "type": {
+              "kind": "Type",
+              "form": "Path",
+              "name": "i64",
+              "args": [],
+              "span": {
+                "start": 211,
+                "end": 214,
+                "line": 13,
+                "column": 9,
+                "endLine": 13,
+                "endColumn": 12
+              }
+            },
+            "public": false,
+            "span": {
+              "start": 207,
+              "end": 214,
+              "line": 13,
+              "column": 5,
+              "endLine": 13,
+              "endColumn": 12
+            }
+          },
+          {
+            "kind": "TypeField",
+            "name": "name",
+            "type": {
+              "kind": "Type",
+              "form": "Path",
+              "name": "string",
+              "args": [],
+              "span": {
+                "start": 225,
+                "end": 231,
+                "line": 14,
+                "column": 11,
+                "endLine": 14,
+                "endColumn": 17
+              }
+            },
+            "public": false,
+            "span": {
+              "start": 219,
+              "end": 231,
+              "line": 14,
+              "column": 5,
+              "endLine": 14,
+              "endColumn": 17
+            }
+          },
+          {
+            "kind": "TypeField",
+            "name": "roles",
+            "type": {
+              "kind": "Type",
+              "form": "Path",
+              "name": "Vec",
+              "args": [
+                {
+                  "kind": "Type",
+                  "form": "Path",
+                  "name": "string",
+                  "args": [],
+                  "span": {
+                    "start": 247,
+                    "end": 253,
+                    "line": 15,
+                    "column": 16,
+                    "endLine": 15,
+                    "endColumn": 22
+                  }
+                }
+              ],
+              "span": {
+                "start": 243,
+                "end": 254,
+                "line": 15,
+                "column": 12,
+                "endLine": 15,
+                "endColumn": 23
+              }
+            },
+            "public": false,
+            "span": {
+              "start": 236,
+              "end": 254,
+              "line": 15,
+              "column": 5,
+              "endLine": 15,
+              "endColumn": 23
+            }
+          },
+          {
+            "kind": "TypeField",
+            "name": "matrix",
+            "type": {
+              "kind": "Type",
+              "form": "Path",
+              "name": "Array",
+              "args": [
+                {
+                  "kind": "Type",
+                  "form": "Path",
+                  "name": "i32",
+                  "args": [],
+                  "span": {
+                    "start": 273,
+                    "end": 276,
+                    "line": 16,
+                    "column": 19,
+                    "endLine": 16,
+                    "endColumn": 22
+                  }
+                },
+                4
+              ],
+              "span": {
+                "start": 267,
+                "end": 280,
+                "line": 16,
+                "column": 13,
+                "endLine": 16,
+                "endColumn": 26
+              }
+            },
+            "public": false,
+            "span": {
+              "start": 259,
+              "end": 280,
+              "line": 16,
+              "column": 5,
+              "endLine": 16,
+              "endColumn": 26
+            }
+          }
+        ],
+        "span": {
+          "start": 189,
+          "end": 282,
+          "line": 12,
+          "column": 1,
+          "endLine": 17,
+          "endColumn": 2
+        }
+      },
+      "public": false,
+      "span": {
+        "start": 189,
+        "end": 282,
+        "line": 12,
+        "column": 1,
+        "endLine": 17,
+        "endColumn": 2
+      }
+    },
+    {
+      "kind": "FunctionDecl",
+      "name": "identity",
+      "generics": [
+        {
+          "kind": "GenericParam",
+          "name": "T",
+          "const": false,
+          "bounds": [],
+          "span": {
+            "start": 297,
+            "end": 298,
+            "line": 19,
+            "column": 14,
+            "endLine": 19,
+            "endColumn": 15
+          }
+        }
+      ],
+      "params": [
+        {
+          "kind": "Parameter",
+          "name": "value",
+          "type": {
+            "kind": "Type",
+            "form": "Path",
+            "name": "T",
+            "args": [],
+            "span": {
+              "start": 307,
+              "end": 308,
+              "line": 19,
+              "column": 24,
+              "endLine": 19,
+              "endColumn": 25
+            }
+          },
+          "mutable": false,
+          "variadic": false,
+          "span": {
+            "start": 300,
+            "end": 308,
+            "line": 19,
+            "column": 17,
+            "endLine": 19,
+            "endColumn": 25
+          }
+        }
+      ],
+      "result": {
+        "kind": "Type",
+        "form": "Path",
+        "name": "T",
+        "args": [],
+        "span": {
+          "start": 313,
+          "end": 314,
+          "line": 19,
+          "column": 30,
+          "endLine": 19,
+          "endColumn": 31
+        }
+      },
+      "body": {
+        "kind": "BlockExpr",
+        "statements": [],
+        "tail": {
+          "kind": "NameExpr",
+          "name": "value",
+          "span": {
+            "start": 317,
+            "end": 322,
+            "line": 19,
+            "column": 34,
+            "endLine": 19,
+            "endColumn": 39
+          }
+        },
+        "span": {
+          "start": 315,
+          "end": 324,
+          "line": 19,
+          "column": 32,
+          "endLine": 19,
+          "endColumn": 41
+        }
+      },
+      "public": false,
+      "async": false,
+      "span": {
+        "start": 284,
+        "end": 324,
+        "line": 19,
+        "column": 1,
+        "endLine": 19,
+        "endColumn": 41
+      }
+    },
+    {
+      "kind": "FunctionDecl",
+      "name": "parse_user",
+      "generics": [],
+      "params": [
+        {
+          "kind": "Parameter",
+          "name": "input",
+          "type": {
+            "kind": "Type",
+            "form": "Path",
+            "name": "string",
+            "args": [],
+            "span": {
+              "start": 348,
+              "end": 354,
+              "line": 21,
+              "column": 23,
+              "endLine": 21,
+              "endColumn": 29
+            }
+          },
+          "mutable": false,
+          "variadic": false,
+          "span": {
+            "start": 341,
+            "end": 354,
+            "line": 21,
+            "column": 16,
+            "endLine": 21,
+            "endColumn": 29
+          }
+        }
+      ],
+      "result": {
+        "kind": "Type",
+        "form": "Path",
+        "name": "Result",
+        "args": [
+          {
+            "kind": "Type",
+            "form": "Path",
+            "name": "User",
+            "args": [],
+            "span": {
+              "start": 366,
+              "end": 370,
+              "line": 21,
+              "column": 41,
+              "endLine": 21,
+              "endColumn": 45
+            }
+          },
+          {
+            "kind": "Type",
+            "form": "Path",
+            "name": "string",
+            "args": [],
+            "span": {
+              "start": 372,
+              "end": 378,
+              "line": 21,
+              "column": 47,
+              "endLine": 21,
+              "endColumn": 53
+            }
+          }
+        ],
+        "span": {
+          "start": 359,
+          "end": 379,
+          "line": 21,
+          "column": 34,
+          "endLine": 21,
+          "endColumn": 54
+        }
+      },
+      "body": {
+        "kind": "BlockExpr",
+        "statements": [],
+        "tail": {
+          "kind": "CallExpr",
+          "callee": {
+            "kind": "GenericExpr",
+            "expression": {
+              "kind": "MemberExpr",
+              "object": {
+                "kind": "NameExpr",
+                "name": "json",
+                "span": {
+                  "start": 386,
+                  "end": 390,
+                  "line": 22,
+                  "column": 5,
+                  "endLine": 22,
+                  "endColumn": 9
+                }
+              },
+              "property": "parse",
+              "span": {
+                "start": 386,
+                "end": 396,
+                "line": 22,
+                "column": 5,
+                "endLine": 22,
+                "endColumn": 15
+              }
+            },
+            "typeArgs": [
+              {
+                "kind": "Type",
+                "form": "Path",
+                "name": "User",
+                "args": [],
+                "span": {
+                  "start": 397,
+                  "end": 401,
+                  "line": 22,
+                  "column": 16,
+                  "endLine": 22,
+                  "endColumn": 20
+                }
+              }
+            ],
+            "span": {
+              "start": 386,
+              "end": 402,
+              "line": 22,
+              "column": 5,
+              "endLine": 22,
+              "endColumn": 21
+            }
+          },
+          "args": [
+            {
+              "kind": "NameExpr",
+              "name": "input",
+              "span": {
+                "start": 403,
+                "end": 408,
+                "line": 22,
+                "column": 22,
+                "endLine": 22,
+                "endColumn": 27
+              }
+            }
+          ],
+          "span": {
+            "start": 386,
+            "end": 409,
+            "line": 22,
+            "column": 5,
+            "endLine": 22,
+            "endColumn": 28
+          }
+        },
+        "span": {
+          "start": 380,
+          "end": 411,
+          "line": 21,
+          "column": 55,
+          "endLine": 23,
+          "endColumn": 2
+        }
+      },
+      "public": false,
+      "async": false,
+      "span": {
+        "start": 326,
+        "end": 411,
+        "line": 21,
+        "column": 1,
+        "endLine": 23,
+        "endColumn": 2
+      }
+    },
+    {
+      "kind": "FunctionDecl",
+      "name": "collect_ids",
+      "generics": [],
+      "params": [
+        {
+          "kind": "Parameter",
+          "name": "users",
+          "type": {
+            "kind": "Type",
+            "form": "Path",
+            "name": "Vec",
+            "args": [
+              {
+                "kind": "Type",
+                "form": "Path",
+                "name": "User",
+                "args": [],
+                "span": {
+                  "start": 440,
+                  "end": 444,
+                  "line": 25,
+                  "column": 28,
+                  "endLine": 25,
+                  "endColumn": 32
+                }
+              }
+            ],
+            "span": {
+              "start": 436,
+              "end": 445,
+              "line": 25,
+              "column": 24,
+              "endLine": 25,
+              "endColumn": 33
+            }
+          },
+          "mutable": false,
+          "variadic": false,
+          "span": {
+            "start": 429,
+            "end": 445,
+            "line": 25,
+            "column": 17,
+            "endLine": 25,
+            "endColumn": 33
+          }
+        }
+      ],
+      "result": {
+        "kind": "Type",
+        "form": "Path",
+        "name": "Vec",
+        "args": [
+          {
+            "kind": "Type",
+            "form": "Path",
+            "name": "i64",
+            "args": [],
+            "span": {
+              "start": 454,
+              "end": 457,
+              "line": 25,
+              "column": 42,
+              "endLine": 25,
+              "endColumn": 45
+            }
+          }
+        ],
+        "span": {
+          "start": 450,
+          "end": 458,
+          "line": 25,
+          "column": 38,
+          "endLine": 25,
+          "endColumn": 46
+        }
+      },
+      "body": {
+        "kind": "BlockExpr",
+        "statements": [],
+        "tail": {
+          "kind": "CallExpr",
+          "callee": {
+            "kind": "GenericExpr",
+            "expression": {
+              "kind": "MemberExpr",
+              "object": {
+                "kind": "NameExpr",
+                "name": "users",
+                "span": {
+                  "start": 465,
+                  "end": 470,
+                  "line": 26,
+                  "column": 5,
+                  "endLine": 26,
+                  "endColumn": 10
+                }
+              },
+              "property": "map",
+              "span": {
+                "start": 465,
+                "end": 474,
+                "line": 26,
+                "column": 5,
+                "endLine": 26,
+                "endColumn": 14
+              }
+            },
+            "typeArgs": [
+              {
+                "kind": "Type",
+                "form": "Path",
+                "name": "i64",
+                "args": [],
+                "span": {
+                  "start": 475,
+                  "end": 478,
+                  "line": 26,
+                  "column": 15,
+                  "endLine": 26,
+                  "endColumn": 18
+                }
+              }
+            ],
+            "span": {
+              "start": 465,
+              "end": 479,
+              "line": 26,
+              "column": 5,
+              "endLine": 26,
+              "endColumn": 19
+            }
+          },
+          "args": [
+            {
+              "kind": "ImplicitClosureExpr",
+              "params": [
+                "it"
+              ],
+              "body": {
+                "kind": "MemberExpr",
+                "object": {
+                  "kind": "NameExpr",
+                  "name": "it",
+                  "span": {
+                    "start": 483,
+                    "end": 485,
+                    "line": 26,
+                    "column": 23,
+                    "endLine": 26,
+                    "endColumn": 25
+                  }
+                },
+                "property": "id",
+                "span": {
+                  "start": 483,
+                  "end": 488,
+                  "line": 26,
+                  "column": 23,
+                  "endLine": 26,
+                  "endColumn": 28
+                }
+              },
+              "span": {
+                "start": 480,
+                "end": 490,
+                "line": 26,
+                "column": 20,
+                "endLine": 26,
+                "endColumn": 30
+              }
+            }
+          ],
+          "span": {
+            "start": 465,
+            "end": 491,
+            "line": 26,
+            "column": 5,
+            "endLine": 26,
+            "endColumn": 31
+          }
+        },
+        "span": {
+          "start": 459,
+          "end": 493,
+          "line": 25,
+          "column": 47,
+          "endLine": 27,
+          "endColumn": 2
+        }
+      },
+      "public": false,
+      "async": false,
+      "span": {
+        "start": 413,
+        "end": 493,
+        "line": 25,
+        "column": 1,
+        "endLine": 27,
+        "endColumn": 2
+      }
+    },
+    {
+      "kind": "FunctionDecl",
+      "name": "main",
+      "generics": [],
+      "params": [],
+      "body": {
+        "kind": "BlockExpr",
+        "statements": [
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "parsed",
+              "span": {
+                "start": 589,
+                "end": 595,
+                "line": 31,
+                "column": 9,
+                "endLine": 31,
+                "endColumn": 15
+              }
+            },
+            "type": {
+              "kind": "Type",
+              "form": "Path",
+              "name": "Result",
+              "args": [
+                {
+                  "kind": "Type",
+                  "form": "Path",
+                  "name": "User",
+                  "args": [],
+                  "span": {
+                    "start": 604,
+                    "end": 608,
+                    "line": 31,
+                    "column": 24,
+                    "endLine": 31,
+                    "endColumn": 28
+                  }
+                },
+                {
+                  "kind": "Type",
+                  "form": "Path",
+                  "name": "string",
+                  "args": [],
+                  "span": {
+                    "start": 610,
+                    "end": 616,
+                    "line": 31,
+                    "column": 30,
+                    "endLine": 31,
+                    "endColumn": 36
+                  }
+                }
+              ],
+              "span": {
+                "start": 597,
+                "end": 617,
+                "line": 31,
+                "column": 17,
+                "endLine": 31,
+                "endColumn": 37
+              }
+            },
+            "value": {
+              "kind": "CallExpr",
+              "callee": {
+                "kind": "NameExpr",
+                "name": "parse_user",
+                "span": {
+                  "start": 620,
+                  "end": 630,
+                  "line": 31,
+                  "column": 40,
+                  "endLine": 31,
+                  "endColumn": 50
+                }
+              },
+              "args": [
+                {
+                  "kind": "StringExpr",
+                  "parts": [
+                    {
+                      "kind": "StringText",
+                      "value": "{\"id\":1}",
+                      "span": {
+                        "start": 632,
+                        "end": 642,
+                        "line": 31,
+                        "column": 52,
+                        "endLine": 31,
+                        "endColumn": 62
+                      }
+                    }
+                  ],
+                  "span": {
+                    "start": 631,
+                    "end": 643,
+                    "line": 31,
+                    "column": 51,
+                    "endLine": 31,
+                    "endColumn": 63
+                  }
+                }
+              ],
+              "span": {
+                "start": 620,
+                "end": 644,
+                "line": 31,
+                "column": 40,
+                "endLine": 31,
+                "endColumn": 64
+              }
+            },
+            "span": {
+              "start": 585,
+              "end": 644,
+              "line": 31,
+              "column": 5,
+              "endLine": 31,
+              "endColumn": 64
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "nested",
+              "span": {
+                "start": 653,
+                "end": 659,
+                "line": 32,
+                "column": 9,
+                "endLine": 32,
+                "endColumn": 15
+              }
+            },
+            "type": {
+              "kind": "Type",
+              "form": "Path",
+              "name": "Map",
+              "args": [
+                {
+                  "kind": "Type",
+                  "form": "Path",
+                  "name": "string",
+                  "args": [],
+                  "span": {
+                    "start": 665,
+                    "end": 671,
+                    "line": 32,
+                    "column": 21,
+                    "endLine": 32,
+                    "endColumn": 27
+                  }
+                },
+                {
+                  "kind": "Type",
+                  "form": "Path",
+                  "name": "Vec",
+                  "args": [
+                    {
+                      "kind": "Type",
+                      "form": "Path",
+                      "name": "Option",
+                      "args": [
+                        {
+                          "kind": "Type",
+                          "form": "Path",
+                          "name": "User",
+                          "args": [],
+                          "span": {
+                            "start": 684,
+                            "end": 688,
+                            "line": 32,
+                            "column": 40,
+                            "endLine": 32,
+                            "endColumn": 44
+                          }
+                        }
+                      ],
+                      "span": {
+                        "start": 677,
+                        "end": 689,
+                        "line": 32,
+                        "column": 33,
+                        "endLine": 32,
+                        "endColumn": 45
+                      }
+                    }
+                  ],
+                  "span": {
+                    "start": 673,
+                    "end": 690,
+                    "line": 32,
+                    "column": 29,
+                    "endLine": 32,
+                    "endColumn": 46
+                  }
+                }
+              ],
+              "span": {
+                "start": 661,
+                "end": 691,
+                "line": 32,
+                "column": 17,
+                "endLine": 32,
+                "endColumn": 47
+              }
+            },
+            "value": {
+              "kind": "MapExpr",
+              "entries": [
+                {
+                  "kind": "MapEntry",
+                  "key": {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "admins",
+                        "span": {
+                          "start": 706,
+                          "end": 712,
+                          "line": 33,
+                          "column": 10,
+                          "endLine": 33,
+                          "endColumn": 16
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 705,
+                      "end": 713,
+                      "line": 33,
+                      "column": 9,
+                      "endLine": 33,
+                      "endColumn": 17
+                    }
+                  },
+                  "value": {
+                    "kind": "VectorExpr",
+                    "elements": [
+                      {
+                        "kind": "CallExpr",
+                        "callee": {
+                          "kind": "MemberExpr",
+                          "object": {
+                            "kind": "NameExpr",
+                            "name": "User",
+                            "span": {
+                              "start": 717,
+                              "end": 721,
+                              "line": 33,
+                              "column": 21,
+                              "endLine": 33,
+                              "endColumn": 25
+                            }
+                          },
+                          "property": "new",
+                          "span": {
+                            "start": 717,
+                            "end": 725,
+                            "line": 33,
+                            "column": 21,
+                            "endLine": 33,
+                            "endColumn": 29
+                          }
+                        },
+                        "args": [
+                          {
+                            "kind": "InferredRecordExpr",
+                            "fields": [
+                              {
+                                "kind": "RecordField",
+                                "name": "id",
+                                "value": {
+                                  "kind": "LiteralExpr",
+                                  "value": 1,
+                                  "span": {
+                                    "start": 733,
+                                    "end": 734,
+                                    "line": 33,
+                                    "column": 37,
+                                    "endLine": 33,
+                                    "endColumn": 38
+                                  }
+                                },
+                                "span": {
+                                  "start": 729,
+                                  "end": 734,
+                                  "line": 33,
+                                  "column": 33,
+                                  "endLine": 33,
+                                  "endColumn": 38
+                                }
+                              },
+                              {
+                                "kind": "RecordField",
+                                "name": "name",
+                                "value": {
+                                  "kind": "StringExpr",
+                                  "parts": [
+                                    {
+                                      "kind": "StringText",
+                                      "value": "Ada",
+                                      "span": {
+                                        "start": 743,
+                                        "end": 746,
+                                        "line": 33,
+                                        "column": 47,
+                                        "endLine": 33,
+                                        "endColumn": 50
+                                      }
+                                    }
+                                  ],
+                                  "span": {
+                                    "start": 742,
+                                    "end": 747,
+                                    "line": 33,
+                                    "column": 46,
+                                    "endLine": 33,
+                                    "endColumn": 51
+                                  }
+                                },
+                                "span": {
+                                  "start": 736,
+                                  "end": 747,
+                                  "line": 33,
+                                  "column": 40,
+                                  "endLine": 33,
+                                  "endColumn": 51
+                                }
+                              },
+                              {
+                                "kind": "RecordField",
+                                "name": "roles",
+                                "value": {
+                                  "kind": "VectorExpr",
+                                  "elements": [
+                                    {
+                                      "kind": "StringExpr",
+                                      "parts": [
+                                        {
+                                          "kind": "StringText",
+                                          "value": "admin",
+                                          "span": {
+                                            "start": 759,
+                                            "end": 764,
+                                            "line": 33,
+                                            "column": 63,
+                                            "endLine": 33,
+                                            "endColumn": 68
+                                          }
+                                        }
+                                      ],
+                                      "span": {
+                                        "start": 758,
+                                        "end": 765,
+                                        "line": 33,
+                                        "column": 62,
+                                        "endLine": 33,
+                                        "endColumn": 69
+                                      }
+                                    }
+                                  ],
+                                  "span": {
+                                    "start": 756,
+                                    "end": 766,
+                                    "line": 33,
+                                    "column": 60,
+                                    "endLine": 33,
+                                    "endColumn": 70
+                                  }
+                                },
+                                "span": {
+                                  "start": 749,
+                                  "end": 766,
+                                  "line": 33,
+                                  "column": 53,
+                                  "endLine": 33,
+                                  "endColumn": 70
+                                }
+                              }
+                            ],
+                            "span": {
+                              "start": 726,
+                              "end": 768,
+                              "line": 33,
+                              "column": 30,
+                              "endLine": 33,
+                              "endColumn": 72
+                            }
+                          }
+                        ],
+                        "span": {
+                          "start": 717,
+                          "end": 769,
+                          "line": 33,
+                          "column": 21,
+                          "endLine": 33,
+                          "endColumn": 73
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 715,
+                      "end": 770,
+                      "line": 33,
+                      "column": 19,
+                      "endLine": 33,
+                      "endColumn": 74
+                    }
+                  },
+                  "span": {
+                    "start": 705,
+                    "end": 770,
+                    "line": 33,
+                    "column": 9,
+                    "endLine": 33,
+                    "endColumn": 74
+                  }
+                },
+                {
+                  "kind": "MapEntry",
+                  "key": {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "guests",
+                        "span": {
+                          "start": 781,
+                          "end": 787,
+                          "line": 34,
+                          "column": 10,
+                          "endLine": 34,
+                          "endColumn": 16
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 780,
+                      "end": 788,
+                      "line": 34,
+                      "column": 9,
+                      "endLine": 34,
+                      "endColumn": 17
+                    }
+                  },
+                  "value": {
+                    "kind": "VectorExpr",
+                    "elements": [],
+                    "span": {
+                      "start": 790,
+                      "end": 793,
+                      "line": 34,
+                      "column": 19,
+                      "endLine": 34,
+                      "endColumn": 22
+                    }
+                  },
+                  "span": {
+                    "start": 780,
+                    "end": 793,
+                    "line": 34,
+                    "column": 9,
+                    "endLine": 34,
+                    "endColumn": 22
+                  }
+                }
+              ],
+              "span": {
+                "start": 694,
+                "end": 800,
+                "line": 32,
+                "column": 50,
+                "endLine": 35,
+                "endColumn": 6
+              }
+            },
+            "span": {
+              "start": 649,
+              "end": 800,
+              "line": 32,
+              "column": 5,
+              "endLine": 35,
+              "endColumn": 6
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "fixed",
+              "span": {
+                "start": 895,
+                "end": 900,
+                "line": 38,
+                "column": 9,
+                "endLine": 38,
+                "endColumn": 14
+              }
+            },
+            "value": {
+              "kind": "ArrayExpr",
+              "elements": [
+                {
+                  "kind": "LiteralExpr",
+                  "value": 10,
+                  "span": {
+                    "start": 905,
+                    "end": 907,
+                    "line": 38,
+                    "column": 19,
+                    "endLine": 38,
+                    "endColumn": 21
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 20,
+                  "span": {
+                    "start": 909,
+                    "end": 911,
+                    "line": 38,
+                    "column": 23,
+                    "endLine": 38,
+                    "endColumn": 25
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 30,
+                  "span": {
+                    "start": 913,
+                    "end": 915,
+                    "line": 38,
+                    "column": 27,
+                    "endLine": 38,
+                    "endColumn": 29
+                  }
+                }
+              ],
+              "span": {
+                "start": 903,
+                "end": 916,
+                "line": 38,
+                "column": 17,
+                "endLine": 38,
+                "endColumn": 30
+              }
+            },
+            "span": {
+              "start": 891,
+              "end": 916,
+              "line": 38,
+              "column": 5,
+              "endLine": 38,
+              "endColumn": 30
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "growable",
+              "span": {
+                "start": 925,
+                "end": 933,
+                "line": 39,
+                "column": 9,
+                "endLine": 39,
+                "endColumn": 17
+              }
+            },
+            "value": {
+              "kind": "VectorExpr",
+              "elements": [
+                {
+                  "kind": "LiteralExpr",
+                  "value": 1,
+                  "span": {
+                    "start": 938,
+                    "end": 939,
+                    "line": 39,
+                    "column": 22,
+                    "endLine": 39,
+                    "endColumn": 23
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 2,
+                  "span": {
+                    "start": 941,
+                    "end": 942,
+                    "line": 39,
+                    "column": 25,
+                    "endLine": 39,
+                    "endColumn": 26
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 3,
+                  "span": {
+                    "start": 944,
+                    "end": 945,
+                    "line": 39,
+                    "column": 28,
+                    "endLine": 39,
+                    "endColumn": 29
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 4,
+                  "span": {
+                    "start": 947,
+                    "end": 948,
+                    "line": 39,
+                    "column": 31,
+                    "endLine": 39,
+                    "endColumn": 32
+                  }
+                }
+              ],
+              "span": {
+                "start": 936,
+                "end": 949,
+                "line": 39,
+                "column": 20,
+                "endLine": 39,
+                "endColumn": 33
+              }
+            },
+            "span": {
+              "start": 921,
+              "end": 949,
+              "line": 39,
+              "column": 5,
+              "endLine": 39,
+              "endColumn": 33
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "first",
+              "span": {
+                "start": 958,
+                "end": 963,
+                "line": 40,
+                "column": 9,
+                "endLine": 40,
+                "endColumn": 14
+              }
+            },
+            "value": {
+              "kind": "IndexExpr",
+              "object": {
+                "kind": "NameExpr",
+                "name": "growable",
+                "span": {
+                  "start": 966,
+                  "end": 974,
+                  "line": 40,
+                  "column": 17,
+                  "endLine": 40,
+                  "endColumn": 25
+                }
+              },
+              "index": {
+                "kind": "LiteralExpr",
+                "value": 0,
+                "span": {
+                  "start": 975,
+                  "end": 976,
+                  "line": 40,
+                  "column": 26,
+                  "endLine": 40,
+                  "endColumn": 27
+                }
+              },
+              "span": {
+                "start": 966,
+                "end": 977,
+                "line": 40,
+                "column": 17,
+                "endLine": 40,
+                "endColumn": 28
+              }
+            },
+            "span": {
+              "start": 954,
+              "end": 977,
+              "line": 40,
+              "column": 5,
+              "endLine": 40,
+              "endColumn": 28
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "record",
+              "span": {
+                "start": 986,
+                "end": 992,
+                "line": 41,
+                "column": 9,
+                "endLine": 41,
+                "endColumn": 15
+              }
+            },
+            "value": {
+              "kind": "RecordExpr",
+              "fields": [
+                {
+                  "kind": "RecordField",
+                  "name": "id",
+                  "value": {
+                    "kind": "LiteralExpr",
+                    "value": 7,
+                    "span": {
+                      "start": 1002,
+                      "end": 1003,
+                      "line": 41,
+                      "column": 25,
+                      "endLine": 41,
+                      "endColumn": 26
+                    }
+                  },
+                  "span": {
+                    "start": 998,
+                    "end": 1003,
+                    "line": 41,
+                    "column": 21,
+                    "endLine": 41,
+                    "endColumn": 26
+                  }
+                },
+                {
+                  "kind": "RecordField",
+                  "name": "name",
+                  "value": {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "Grace",
+                        "span": {
+                          "start": 1012,
+                          "end": 1017,
+                          "line": 41,
+                          "column": 35,
+                          "endLine": 41,
+                          "endColumn": 40
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 1011,
+                      "end": 1018,
+                      "line": 41,
+                      "column": 34,
+                      "endLine": 41,
+                      "endColumn": 41
+                    }
+                  },
+                  "span": {
+                    "start": 1005,
+                    "end": 1018,
+                    "line": 41,
+                    "column": 28,
+                    "endLine": 41,
+                    "endColumn": 41
+                  }
+                },
+                {
+                  "kind": "SpreadField",
+                  "value": {
+                    "kind": "NameExpr",
+                    "name": "base",
+                    "span": {
+                      "start": 1023,
+                      "end": 1027,
+                      "line": 41,
+                      "column": 46,
+                      "endLine": 41,
+                      "endColumn": 50
+                    }
+                  },
+                  "span": {
+                    "start": 1020,
+                    "end": 1027,
+                    "line": 41,
+                    "column": 43,
+                    "endLine": 41,
+                    "endColumn": 50
+                  }
+                }
+              ],
+              "span": {
+                "start": 995,
+                "end": 1029,
+                "line": 41,
+                "column": 18,
+                "endLine": 41,
+                "endColumn": 52
+              }
+            },
+            "span": {
+              "start": 982,
+              "end": 1029,
+              "line": 41,
+              "column": 5,
+              "endLine": 41,
+              "endColumn": 52
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "lookup",
+              "span": {
+                "start": 1038,
+                "end": 1044,
+                "line": 42,
+                "column": 9,
+                "endLine": 42,
+                "endColumn": 15
+              }
+            },
+            "value": {
+              "kind": "MapExpr",
+              "entries": [
+                {
+                  "kind": "MapEntry",
+                  "key": {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "one",
+                        "span": {
+                          "start": 1051,
+                          "end": 1054,
+                          "line": 42,
+                          "column": 22,
+                          "endLine": 42,
+                          "endColumn": 25
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 1050,
+                      "end": 1055,
+                      "line": 42,
+                      "column": 21,
+                      "endLine": 42,
+                      "endColumn": 26
+                    }
+                  },
+                  "value": {
+                    "kind": "LiteralExpr",
+                    "value": 1,
+                    "span": {
+                      "start": 1057,
+                      "end": 1058,
+                      "line": 42,
+                      "column": 28,
+                      "endLine": 42,
+                      "endColumn": 29
+                    }
+                  },
+                  "span": {
+                    "start": 1050,
+                    "end": 1058,
+                    "line": 42,
+                    "column": 21,
+                    "endLine": 42,
+                    "endColumn": 29
+                  }
+                },
+                {
+                  "kind": "MapEntry",
+                  "key": {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "two",
+                        "span": {
+                          "start": 1061,
+                          "end": 1064,
+                          "line": 42,
+                          "column": 32,
+                          "endLine": 42,
+                          "endColumn": 35
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 1060,
+                      "end": 1065,
+                      "line": 42,
+                      "column": 31,
+                      "endLine": 42,
+                      "endColumn": 36
+                    }
+                  },
+                  "value": {
+                    "kind": "LiteralExpr",
+                    "value": 2,
+                    "span": {
+                      "start": 1067,
+                      "end": 1068,
+                      "line": 42,
+                      "column": 38,
+                      "endLine": 42,
+                      "endColumn": 39
+                    }
+                  },
+                  "span": {
+                    "start": 1060,
+                    "end": 1068,
+                    "line": 42,
+                    "column": 31,
+                    "endLine": 42,
+                    "endColumn": 39
+                  }
+                }
+              ],
+              "span": {
+                "start": 1047,
+                "end": 1070,
+                "line": 42,
+                "column": 18,
+                "endLine": 42,
+                "endColumn": 41
+              }
+            },
+            "span": {
+              "start": 1034,
+              "end": 1070,
+              "line": 42,
+              "column": 5,
+              "endLine": 42,
+              "endColumn": 41
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "unique",
+              "span": {
+                "start": 1079,
+                "end": 1085,
+                "line": 43,
+                "column": 9,
+                "endLine": 43,
+                "endColumn": 15
+              }
+            },
+            "value": {
+              "kind": "SetExpr",
+              "elements": [
+                {
+                  "kind": "LiteralExpr",
+                  "value": 1,
+                  "span": {
+                    "start": 1091,
+                    "end": 1092,
+                    "line": 43,
+                    "column": 21,
+                    "endLine": 43,
+                    "endColumn": 22
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 2,
+                  "span": {
+                    "start": 1094,
+                    "end": 1095,
+                    "line": 43,
+                    "column": 24,
+                    "endLine": 43,
+                    "endColumn": 25
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 3,
+                  "span": {
+                    "start": 1097,
+                    "end": 1098,
+                    "line": 43,
+                    "column": 27,
+                    "endLine": 43,
+                    "endColumn": 28
+                  }
+                }
+              ],
+              "span": {
+                "start": 1088,
+                "end": 1100,
+                "line": 43,
+                "column": 18,
+                "endLine": 43,
+                "endColumn": 30
+              }
+            },
+            "span": {
+              "start": 1075,
+              "end": 1100,
+              "line": 43,
+              "column": 5,
+              "endLine": 43,
+              "endColumn": 30
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "pair",
+              "span": {
+                "start": 1109,
+                "end": 1113,
+                "line": 44,
+                "column": 9,
+                "endLine": 44,
+                "endColumn": 13
+              }
+            },
+            "value": {
+              "kind": "TupleExpr",
+              "elements": [
+                {
+                  "kind": "StringExpr",
+                  "parts": [
+                    {
+                      "kind": "StringText",
+                      "value": "age",
+                      "span": {
+                        "start": 1119,
+                        "end": 1122,
+                        "line": 44,
+                        "column": 19,
+                        "endLine": 44,
+                        "endColumn": 22
+                      }
+                    }
+                  ],
+                  "span": {
+                    "start": 1118,
+                    "end": 1123,
+                    "line": 44,
+                    "column": 18,
+                    "endLine": 44,
+                    "endColumn": 23
+                  }
+                },
+                {
+                  "kind": "LiteralExpr",
+                  "value": 42,
+                  "span": {
+                    "start": 1125,
+                    "end": 1127,
+                    "line": 44,
+                    "column": 25,
+                    "endLine": 44,
+                    "endColumn": 27
+                  }
+                }
+              ],
+              "span": {
+                "start": 1116,
+                "end": 1128,
+                "line": 44,
+                "column": 16,
+                "endLine": 44,
+                "endColumn": 28
+              }
+            },
+            "span": {
+              "start": 1105,
+              "end": 1128,
+              "line": 44,
+              "column": 5,
+              "endLine": 44,
+              "endColumn": 28
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "inferred",
+              "span": {
+                "start": 1137,
+                "end": 1145,
+                "line": 45,
+                "column": 9,
+                "endLine": 45,
+                "endColumn": 17
+              }
+            },
+            "value": {
+              "kind": "InferredRecordExpr",
+              "fields": [
+                {
+                  "kind": "RecordField",
+                  "name": "host",
+                  "value": {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "localhost",
+                        "span": {
+                          "start": 1158,
+                          "end": 1167,
+                          "line": 45,
+                          "column": 30,
+                          "endLine": 45,
+                          "endColumn": 39
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 1157,
+                      "end": 1168,
+                      "line": 45,
+                      "column": 29,
+                      "endLine": 45,
+                      "endColumn": 40
+                    }
+                  },
+                  "span": {
+                    "start": 1151,
+                    "end": 1168,
+                    "line": 45,
+                    "column": 23,
+                    "endLine": 45,
+                    "endColumn": 40
+                  }
+                },
+                {
+                  "kind": "RecordField",
+                  "name": "port",
+                  "value": {
+                    "kind": "LiteralExpr",
+                    "value": 8080,
+                    "span": {
+                      "start": 1176,
+                      "end": 1180,
+                      "line": 45,
+                      "column": 48,
+                      "endLine": 45,
+                      "endColumn": 52
+                    }
+                  },
+                  "span": {
+                    "start": 1170,
+                    "end": 1180,
+                    "line": 45,
+                    "column": 42,
+                    "endLine": 45,
+                    "endColumn": 52
+                  }
+                }
+              ],
+              "span": {
+                "start": 1148,
+                "end": 1182,
+                "line": 45,
+                "column": 20,
+                "endLine": 45,
+                "endColumn": 54
+              }
+            },
+            "span": {
+              "start": 1133,
+              "end": 1182,
+              "line": 45,
+              "column": 5,
+              "endLine": 45,
+              "endColumn": 54
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "tagged",
+              "span": {
+                "start": 1191,
+                "end": 1197,
+                "line": 46,
+                "column": 9,
+                "endLine": 46,
+                "endColumn": 15
+              }
+            },
+            "value": {
+              "kind": "TaggedRecordExpr",
+              "fields": [
+                {
+                  "kind": "RecordField",
+                  "name": "id",
+                  "value": {
+                    "kind": "LiteralExpr",
+                    "value": 1,
+                    "span": {
+                      "start": 1208,
+                      "end": 1209,
+                      "line": 46,
+                      "column": 26,
+                      "endLine": 46,
+                      "endColumn": 27
+                    }
+                  },
+                  "span": {
+                    "start": 1204,
+                    "end": 1209,
+                    "line": 46,
+                    "column": 22,
+                    "endLine": 46,
+                    "endColumn": 27
+                  }
+                },
+                {
+                  "kind": "RecordField",
+                  "name": "label",
+                  "value": {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "primary",
+                        "span": {
+                          "start": 1219,
+                          "end": 1226,
+                          "line": 46,
+                          "column": 37,
+                          "endLine": 46,
+                          "endColumn": 44
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 1218,
+                      "end": 1227,
+                      "line": 46,
+                      "column": 36,
+                      "endLine": 46,
+                      "endColumn": 45
+                    }
+                  },
+                  "span": {
+                    "start": 1211,
+                    "end": 1227,
+                    "line": 46,
+                    "column": 29,
+                    "endLine": 46,
+                    "endColumn": 45
+                  }
+                }
+              ],
+              "tag": "1",
+              "span": {
+                "start": 1200,
+                "end": 1229,
+                "line": 46,
+                "column": 18,
+                "endLine": 46,
+                "endColumn": 47
+              }
+            },
+            "span": {
+              "start": 1187,
+              "end": 1229,
+              "line": 46,
+              "column": 5,
+              "endLine": 46,
+              "endColumn": 47
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "doubled",
+              "span": {
+                "start": 1239,
+                "end": 1246,
+                "line": 48,
+                "column": 9,
+                "endLine": 48,
+                "endColumn": 16
+              }
+            },
+            "value": {
+              "kind": "ImplicitClosureExpr",
+              "params": [
+                "it"
+              ],
+              "body": {
+                "kind": "BinaryExpr",
+                "operator": "*",
+                "left": {
+                  "kind": "NameExpr",
+                  "name": "it",
+                  "span": {
+                    "start": 1252,
+                    "end": 1254,
+                    "line": 48,
+                    "column": 22,
+                    "endLine": 48,
+                    "endColumn": 24
+                  }
+                },
+                "right": {
+                  "kind": "LiteralExpr",
+                  "value": 2,
+                  "span": {
+                    "start": 1257,
+                    "end": 1258,
+                    "line": 48,
+                    "column": 27,
+                    "endLine": 48,
+                    "endColumn": 28
+                  }
+                },
+                "span": {
+                  "start": 1252,
+                  "end": 1258,
+                  "line": 48,
+                  "column": 22,
+                  "endLine": 48,
+                  "endColumn": 28
+                }
+              },
+              "span": {
+                "start": 1249,
+                "end": 1260,
+                "line": 48,
+                "column": 19,
+                "endLine": 48,
+                "endColumn": 30
+              }
+            },
+            "span": {
+              "start": 1235,
+              "end": 1260,
+              "line": 48,
+              "column": 5,
+              "endLine": 48,
+              "endColumn": 30
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "add",
+              "span": {
+                "start": 1269,
+                "end": 1272,
+                "line": 49,
+                "column": 9,
+                "endLine": 49,
+                "endColumn": 12
+              }
+            },
+            "value": {
+              "kind": "ImplicitClosureExpr",
+              "params": [
+                "left",
+                "right"
+              ],
+              "body": {
+                "kind": "BinaryExpr",
+                "operator": "+",
+                "left": {
+                  "kind": "NameExpr",
+                  "name": "left",
+                  "span": {
+                    "start": 1293,
+                    "end": 1297,
+                    "line": 49,
+                    "column": 33,
+                    "endLine": 49,
+                    "endColumn": 37
+                  }
+                },
+                "right": {
+                  "kind": "NameExpr",
+                  "name": "right",
+                  "span": {
+                    "start": 1300,
+                    "end": 1305,
+                    "line": 49,
+                    "column": 40,
+                    "endLine": 49,
+                    "endColumn": 45
+                  }
+                },
+                "span": {
+                  "start": 1293,
+                  "end": 1305,
+                  "line": 49,
+                  "column": 33,
+                  "endLine": 49,
+                  "endColumn": 45
+                }
+              },
+              "span": {
+                "start": 1275,
+                "end": 1307,
+                "line": 49,
+                "column": 15,
+                "endLine": 49,
+                "endColumn": 47
+              }
+            },
+            "span": {
+              "start": 1265,
+              "end": 1307,
+              "line": 49,
+              "column": 5,
+              "endLine": 49,
+              "endColumn": 47
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "capture",
+              "span": {
+                "start": 1316,
+                "end": 1323,
+                "line": 50,
+                "column": 9,
+                "endLine": 50,
+                "endColumn": 16
+              }
+            },
+            "value": {
+              "kind": "ClosureExpr",
+              "captures": [
+                "growable"
+              ],
+              "params": [
+                {
+                  "kind": "Parameter",
+                  "name": "x",
+                  "span": {
+                    "start": 1338,
+                    "end": 1339,
+                    "line": 50,
+                    "column": 31,
+                    "endLine": 50,
+                    "endColumn": 32
+                  }
+                }
+              ],
+              "body": {
+                "kind": "CallExpr",
+                "callee": {
+                  "kind": "MemberExpr",
+                  "object": {
+                    "kind": "NameExpr",
+                    "name": "growable",
+                    "span": {
+                      "start": 1344,
+                      "end": 1352,
+                      "line": 50,
+                      "column": 37,
+                      "endLine": 50,
+                      "endColumn": 45
+                    }
+                  },
+                  "property": "push",
+                  "span": {
+                    "start": 1344,
+                    "end": 1357,
+                    "line": 50,
+                    "column": 37,
+                    "endLine": 50,
+                    "endColumn": 50
+                  }
+                },
+                "args": [
+                  {
+                    "kind": "NameExpr",
+                    "name": "x",
+                    "span": {
+                      "start": 1358,
+                      "end": 1359,
+                      "line": 50,
+                      "column": 51,
+                      "endLine": 50,
+                      "endColumn": 52
+                    }
+                  }
+                ],
+                "span": {
+                  "start": 1344,
+                  "end": 1360,
+                  "line": 50,
+                  "column": 37,
+                  "endLine": 50,
+                  "endColumn": 53
+                }
+              },
+              "span": {
+                "start": 1326,
+                "end": 1360,
+                "line": 50,
+                "column": 19,
+                "endLine": 50,
+                "endColumn": 53
+              }
+            },
+            "span": {
+              "start": 1312,
+              "end": 1360,
+              "line": 50,
+              "column": 5,
+              "endLine": 50,
+              "endColumn": 53
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "explicit",
+              "span": {
+                "start": 1369,
+                "end": 1377,
+                "line": 51,
+                "column": 9,
+                "endLine": 51,
+                "endColumn": 17
+              }
+            },
+            "value": {
+              "kind": "ClosureExpr",
+              "params": [
+                {
+                  "kind": "Parameter",
+                  "name": "x",
+                  "type": {
+                    "kind": "Type",
+                    "form": "Path",
+                    "name": "i32",
+                    "args": [],
+                    "span": {
+                      "start": 1384,
+                      "end": 1387,
+                      "line": 51,
+                      "column": 24,
+                      "endLine": 51,
+                      "endColumn": 27
+                    }
+                  },
+                  "span": {
+                    "start": 1381,
+                    "end": 1387,
+                    "line": 51,
+                    "column": 21,
+                    "endLine": 51,
+                    "endColumn": 27
+                  }
+                },
+                {
+                  "kind": "Parameter",
+                  "name": "y",
+                  "type": {
+                    "kind": "Type",
+                    "form": "Path",
+                    "name": "i32",
+                    "args": [],
+                    "span": {
+                      "start": 1392,
+                      "end": 1395,
+                      "line": 51,
+                      "column": 32,
+                      "endLine": 51,
+                      "endColumn": 35
+                    }
+                  },
+                  "span": {
+                    "start": 1389,
+                    "end": 1395,
+                    "line": 51,
+                    "column": 29,
+                    "endLine": 51,
+                    "endColumn": 35
+                  }
+                }
+              ],
+              "result": {
+                "kind": "Type",
+                "form": "Path",
+                "name": "i32",
+                "args": [],
+                "span": {
+                  "start": 1400,
+                  "end": 1403,
+                  "line": 51,
+                  "column": 40,
+                  "endLine": 51,
+                  "endColumn": 43
+                }
+              },
+              "body": {
+                "kind": "BinaryExpr",
+                "operator": "+",
+                "left": {
+                  "kind": "NameExpr",
+                  "name": "x",
+                  "span": {
+                    "start": 1407,
+                    "end": 1408,
+                    "line": 51,
+                    "column": 47,
+                    "endLine": 51,
+                    "endColumn": 48
+                  }
+                },
+                "right": {
+                  "kind": "NameExpr",
+                  "name": "y",
+                  "span": {
+                    "start": 1411,
+                    "end": 1412,
+                    "line": 51,
+                    "column": 51,
+                    "endLine": 51,
+                    "endColumn": 52
+                  }
+                },
+                "span": {
+                  "start": 1407,
+                  "end": 1412,
+                  "line": 51,
+                  "column": 47,
+                  "endLine": 51,
+                  "endColumn": 52
+                }
+              },
+              "captures": [],
+              "span": {
+                "start": 1380,
+                "end": 1412,
+                "line": 51,
+                "column": 20,
+                "endLine": 51,
+                "endColumn": 52
+              }
+            },
+            "span": {
+              "start": 1365,
+              "end": 1412,
+              "line": 51,
+              "column": 5,
+              "endLine": 51,
+              "endColumn": 52
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "text",
+              "span": {
+                "start": 1422,
+                "end": 1426,
+                "line": 53,
+                "column": 9,
+                "endLine": 53,
+                "endColumn": 13
+              }
+            },
+            "value": {
+              "kind": "StringExpr",
+              "parts": [
+                {
+                  "kind": "StringText",
+                  "value": "Hello ",
+                  "span": {
+                    "start": 1430,
+                    "end": 1436,
+                    "line": 53,
+                    "column": 17,
+                    "endLine": 53,
+                    "endColumn": 23
+                  }
+                },
+                {
+                  "kind": "Interpolation",
+                  "expression": {
+                    "kind": "MemberExpr",
+                    "object": {
+                      "kind": "NameExpr",
+                      "name": "record",
+                      "span": {
+                        "start": 1438,
+                        "end": 1444,
+                        "line": 53,
+                        "column": 25,
+                        "endLine": 53,
+                        "endColumn": 31
+                      }
+                    },
+                    "property": "name",
+                    "span": {
+                      "start": 1438,
+                      "end": 1449,
+                      "line": 53,
+                      "column": 25,
+                      "endLine": 53,
+                      "endColumn": 36
+                    }
+                  },
+                  "span": {
+                    "start": 1449,
+                    "end": 1450,
+                    "line": 53,
+                    "column": 36,
+                    "endLine": 53,
+                    "endColumn": 37
+                  }
+                },
+                {
+                  "kind": "StringText",
+                  "value": ", count=",
+                  "span": {
+                    "start": 1450,
+                    "end": 1458,
+                    "line": 53,
+                    "column": 37,
+                    "endLine": 53,
+                    "endColumn": 45
+                  }
+                },
+                {
+                  "kind": "Interpolation",
+                  "expression": {
+                    "kind": "CallExpr",
+                    "callee": {
+                      "kind": "MemberExpr",
+                      "object": {
+                        "kind": "NameExpr",
+                        "name": "growable",
+                        "span": {
+                          "start": 1460,
+                          "end": 1468,
+                          "line": 53,
+                          "column": 47,
+                          "endLine": 53,
+                          "endColumn": 55
+                        }
+                      },
+                      "property": "len",
+                      "span": {
+                        "start": 1460,
+                        "end": 1472,
+                        "line": 53,
+                        "column": 47,
+                        "endLine": 53,
+                        "endColumn": 59
+                      }
+                    },
+                    "args": [],
+                    "span": {
+                      "start": 1460,
+                      "end": 1474,
+                      "line": 53,
+                      "column": 47,
+                      "endLine": 53,
+                      "endColumn": 61
+                    }
+                  },
+                  "span": {
+                    "start": 1474,
+                    "end": 1475,
+                    "line": 53,
+                    "column": 61,
+                    "endLine": 53,
+                    "endColumn": 62
+                  }
+                }
+              ],
+              "span": {
+                "start": 1429,
+                "end": 1476,
+                "line": 53,
+                "column": 16,
+                "endLine": 53,
+                "endColumn": 63
+              }
+            },
+            "span": {
+              "start": 1418,
+              "end": 1476,
+              "line": 53,
+              "column": 5,
+              "endLine": 53,
+              "endColumn": 63
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "multi",
+              "span": {
+                "start": 1485,
+                "end": 1490,
+                "line": 54,
+                "column": 9,
+                "endLine": 54,
+                "endColumn": 14
+              }
+            },
+            "value": {
+              "kind": "StringExpr",
+              "parts": [
+                {
+                  "kind": "StringText",
+                  "value": "first line\nsecond line ",
+                  "span": {
+                    "start": 1496,
+                    "end": 1519,
+                    "line": 54,
+                    "column": 20,
+                    "endLine": 55,
+                    "endColumn": 13
+                  }
+                },
+                {
+                  "kind": "Interpolation",
+                  "expression": {
+                    "kind": "NameExpr",
+                    "name": "first",
+                    "span": {
+                      "start": 1521,
+                      "end": 1526,
+                      "line": 55,
+                      "column": 15,
+                      "endLine": 55,
+                      "endColumn": 20
+                    }
+                  },
+                  "span": {
+                    "start": 1526,
+                    "end": 1527,
+                    "line": 55,
+                    "column": 20,
+                    "endLine": 55,
+                    "endColumn": 21
+                  }
+                },
+                {
+                  "kind": "StringText",
+                  "value": "\n",
+                  "span": {
+                    "start": 1527,
+                    "end": 1528,
+                    "line": 55,
+                    "column": 21,
+                    "endLine": 56,
+                    "endColumn": 1
+                  }
+                }
+              ],
+              "span": {
+                "start": 1493,
+                "end": 1531,
+                "line": 54,
+                "column": 17,
+                "endLine": 56,
+                "endColumn": 4
+              }
+            },
+            "span": {
+              "start": 1481,
+              "end": 1531,
+              "line": 54,
+              "column": 5,
+              "endLine": 56,
+              "endColumn": 4
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "raw",
+              "span": {
+                "start": 1540,
+                "end": 1543,
+                "line": 57,
+                "column": 9,
+                "endLine": 57,
+                "endColumn": 12
+              }
+            },
+            "value": {
+              "kind": "LiteralExpr",
+              "value": "C:\\users\\name\\file",
+              "span": {
+                "start": 1546,
+                "end": 1567,
+                "line": 57,
+                "column": 15,
+                "endLine": 57,
+                "endColumn": 36
+              }
+            },
+            "span": {
+              "start": 1536,
+              "end": 1567,
+              "line": 57,
+              "column": 5,
+              "endLine": 57,
+              "endColumn": 36
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "number",
+              "span": {
+                "start": 1577,
+                "end": 1583,
+                "line": 59,
+                "column": 9,
+                "endLine": 59,
+                "endColumn": 15
+              }
+            },
+            "value": {
+              "kind": "LiteralExpr",
+              "value": 10.005,
+              "span": {
+                "start": 1586,
+                "end": 1596,
+                "line": 59,
+                "column": 18,
+                "endLine": 59,
+                "endColumn": 28
+              }
+            },
+            "span": {
+              "start": 1573,
+              "end": 1596,
+              "line": 59,
+              "column": 5,
+              "endLine": 59,
+              "endColumn": 28
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "hex",
+              "span": {
+                "start": 1605,
+                "end": 1608,
+                "line": 60,
+                "column": 9,
+                "endLine": 60,
+                "endColumn": 12
+              }
+            },
+            "value": {
+              "kind": "LiteralExpr",
+              "value": 255,
+              "span": {
+                "start": 1611,
+                "end": 1615,
+                "line": 60,
+                "column": 15,
+                "endLine": 60,
+                "endColumn": 19
+              }
+            },
+            "span": {
+              "start": 1601,
+              "end": 1615,
+              "line": 60,
+              "column": 5,
+              "endLine": 60,
+              "endColumn": 19
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "binary",
+              "span": {
+                "start": 1624,
+                "end": 1630,
+                "line": 61,
+                "column": 9,
+                "endLine": 61,
+                "endColumn": 15
+              }
+            },
+            "value": {
+              "kind": "LiteralExpr",
+              "value": 10,
+              "span": {
+                "start": 1633,
+                "end": 1639,
+                "line": 61,
+                "column": 18,
+                "endLine": 61,
+                "endColumn": 24
+              }
+            },
+            "span": {
+              "start": 1620,
+              "end": 1639,
+              "line": 61,
+              "column": 5,
+              "endLine": 61,
+              "endColumn": 24
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "octal",
+              "span": {
+                "start": 1648,
+                "end": 1653,
+                "line": 62,
+                "column": 9,
+                "endLine": 62,
+                "endColumn": 14
+              }
+            },
+            "value": {
+              "kind": "LiteralExpr",
+              "value": 15,
+              "span": {
+                "start": 1656,
+                "end": 1660,
+                "line": 62,
+                "column": 17,
+                "endLine": 62,
+                "endColumn": 21
+              }
+            },
+            "span": {
+              "start": 1644,
+              "end": 1660,
+              "line": 62,
+              "column": 5,
+              "endLine": 62,
+              "endColumn": 21
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "tuple_index",
+              "span": {
+                "start": 1669,
+                "end": 1680,
+                "line": 63,
+                "column": 9,
+                "endLine": 63,
+                "endColumn": 20
+              }
+            },
+            "value": {
+              "kind": "MemberExpr",
+              "object": {
+                "kind": "MemberExpr",
+                "object": {
+                  "kind": "NameExpr",
+                  "name": "pair",
+                  "span": {
+                    "start": 1683,
+                    "end": 1687,
+                    "line": 63,
+                    "column": 23,
+                    "endLine": 63,
+                    "endColumn": 27
+                  }
+                },
+                "property": "0",
+                "span": {
+                  "start": 1683,
+                  "end": 1689,
+                  "line": 63,
+                  "column": 23,
+                  "endLine": 63,
+                  "endColumn": 29
+                }
+              },
+              "property": "1",
+              "span": {
+                "start": 1683,
+                "end": 1691,
+                "line": 63,
+                "column": 23,
+                "endLine": 63,
+                "endColumn": 31
+              }
+            },
+            "span": {
+              "start": 1665,
+              "end": 1691,
+              "line": 63,
+              "column": 5,
+              "endLine": 63,
+              "endColumn": 31
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "range",
+              "span": {
+                "start": 1700,
+                "end": 1705,
+                "line": 64,
+                "column": 9,
+                "endLine": 64,
+                "endColumn": 14
+              }
+            },
+            "value": {
+              "kind": "BinaryExpr",
+              "operator": "..",
+              "left": {
+                "kind": "LiteralExpr",
+                "value": 1,
+                "span": {
+                  "start": 1708,
+                  "end": 1709,
+                  "line": 64,
+                  "column": 17,
+                  "endLine": 64,
+                  "endColumn": 18
+                }
+              },
+              "right": {
+                "kind": "LiteralExpr",
+                "value": 10,
+                "span": {
+                  "start": 1711,
+                  "end": 1713,
+                  "line": 64,
+                  "column": 20,
+                  "endLine": 64,
+                  "endColumn": 22
+                }
+              },
+              "span": {
+                "start": 1708,
+                "end": 1713,
+                "line": 64,
+                "column": 17,
+                "endLine": 64,
+                "endColumn": 22
+              }
+            },
+            "span": {
+              "start": 1696,
+              "end": 1713,
+              "line": 64,
+              "column": 5,
+              "endLine": 64,
+              "endColumn": 22
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "inclusive",
+              "span": {
+                "start": 1722,
+                "end": 1731,
+                "line": 65,
+                "column": 9,
+                "endLine": 65,
+                "endColumn": 18
+              }
+            },
+            "value": {
+              "kind": "BinaryExpr",
+              "operator": "..=",
+              "left": {
+                "kind": "LiteralExpr",
+                "value": 1,
+                "span": {
+                  "start": 1734,
+                  "end": 1735,
+                  "line": 65,
+                  "column": 21,
+                  "endLine": 65,
+                  "endColumn": 22
+                }
+              },
+              "right": {
+                "kind": "LiteralExpr",
+                "value": 10,
+                "span": {
+                  "start": 1738,
+                  "end": 1740,
+                  "line": 65,
+                  "column": 25,
+                  "endLine": 65,
+                  "endColumn": 27
+                }
+              },
+              "span": {
+                "start": 1734,
+                "end": 1740,
+                "line": 65,
+                "column": 21,
+                "endLine": 65,
+                "endColumn": 27
+              }
+            },
+            "span": {
+              "start": 1718,
+              "end": 1740,
+              "line": 65,
+              "column": 5,
+              "endLine": 65,
+              "endColumn": 27
+            }
+          },
+          {
+            "kind": "IfExpr",
+            "condition": {
+              "kind": "CallExpr",
+              "callee": {
+                "kind": "MemberExpr",
+                "object": {
+                  "kind": "NameExpr",
+                  "name": "parsed",
+                  "span": {
+                    "start": 1749,
+                    "end": 1755,
+                    "line": 67,
+                    "column": 8,
+                    "endLine": 67,
+                    "endColumn": 14
+                  }
+                },
+                "property": "is_ok",
+                "span": {
+                  "start": 1749,
+                  "end": 1761,
+                  "line": 67,
+                  "column": 8,
+                  "endLine": 67,
+                  "endColumn": 20
+                }
+              },
+              "args": [],
+              "span": {
+                "start": 1749,
+                "end": 1763,
+                "line": 67,
+                "column": 8,
+                "endLine": 67,
+                "endColumn": 22
+              }
+            },
+            "then": {
+              "kind": "BlockExpr",
+              "statements": [],
+              "tail": {
+                "kind": "CallExpr",
+                "callee": {
+                  "kind": "NameExpr",
+                  "name": "println",
+                  "span": {
+                    "start": 1774,
+                    "end": 1781,
+                    "line": 68,
+                    "column": 9,
+                    "endLine": 68,
+                    "endColumn": 16
+                  }
+                },
+                "args": [
+                  {
+                    "kind": "NameExpr",
+                    "name": "text",
+                    "span": {
+                      "start": 1782,
+                      "end": 1786,
+                      "line": 68,
+                      "column": 17,
+                      "endLine": 68,
+                      "endColumn": 21
+                    }
+                  }
+                ],
+                "span": {
+                  "start": 1774,
+                  "end": 1787,
+                  "line": 68,
+                  "column": 9,
+                  "endLine": 68,
+                  "endColumn": 22
+                }
+              },
+              "span": {
+                "start": 1764,
+                "end": 1793,
+                "line": 67,
+                "column": 23,
+                "endLine": 69,
+                "endColumn": 6
+              }
+            },
+            "otherwise": {
+              "kind": "BlockExpr",
+              "statements": [],
+              "tail": {
+                "kind": "CallExpr",
+                "callee": {
+                  "kind": "NameExpr",
+                  "name": "println",
+                  "span": {
+                    "start": 1809,
+                    "end": 1816,
+                    "line": 70,
+                    "column": 9,
+                    "endLine": 70,
+                    "endColumn": 16
+                  }
+                },
+                "args": [
+                  {
+                    "kind": "StringExpr",
+                    "parts": [
+                      {
+                        "kind": "StringText",
+                        "value": "parse failed",
+                        "span": {
+                          "start": 1818,
+                          "end": 1830,
+                          "line": 70,
+                          "column": 18,
+                          "endLine": 70,
+                          "endColumn": 30
+                        }
+                      }
+                    ],
+                    "span": {
+                      "start": 1817,
+                      "end": 1831,
+                      "line": 70,
+                      "column": 17,
+                      "endLine": 70,
+                      "endColumn": 31
+                    }
+                  }
+                ],
+                "span": {
+                  "start": 1809,
+                  "end": 1832,
+                  "line": 70,
+                  "column": 9,
+                  "endLine": 70,
+                  "endColumn": 32
+                }
+              },
+              "span": {
+                "start": 1799,
+                "end": 1838,
+                "line": 69,
+                "column": 12,
+                "endLine": 71,
+                "endColumn": 6
+              }
+            },
+            "span": {
+              "start": 1746,
+              "end": 1838,
+              "line": 67,
+              "column": 5,
+              "endLine": 71,
+              "endColumn": 6
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "fallback",
+              "span": {
+                "start": 1903,
+                "end": 1911,
+                "line": 74,
+                "column": 9,
+                "endLine": 74,
+                "endColumn": 17
+              }
+            },
+            "value": {
+              "kind": "CallExpr",
+              "callee": {
+                "kind": "MemberExpr",
+                "object": {
+                  "kind": "NameExpr",
+                  "name": "parsed",
+                  "span": {
+                    "start": 1914,
+                    "end": 1920,
+                    "line": 74,
+                    "column": 20,
+                    "endLine": 74,
+                    "endColumn": 26
+                  }
+                },
+                "property": "or",
+                "span": {
+                  "start": 1914,
+                  "end": 1923,
+                  "line": 74,
+                  "column": 20,
+                  "endLine": 74,
+                  "endColumn": 29
+                }
+              },
+              "args": [
+                {
+                  "kind": "NameExpr",
+                  "name": "None",
+                  "span": {
+                    "start": 1924,
+                    "end": 1928,
+                    "line": 74,
+                    "column": 30,
+                    "endLine": 74,
+                    "endColumn": 34
+                  }
+                }
+              ],
+              "span": {
+                "start": 1914,
+                "end": 1929,
+                "line": 74,
+                "column": 20,
+                "endLine": 74,
+                "endColumn": 35
+              }
+            },
+            "span": {
+              "start": 1899,
+              "end": 1929,
+              "line": 74,
+              "column": 5,
+              "endLine": 74,
+              "endColumn": 35
+            }
+          },
+          {
+            "kind": "VariableDecl",
+            "mutable": false,
+            "pattern": {
+              "kind": "BindingPattern",
+              "name": "propagated",
+              "span": {
+                "start": 1938,
+                "end": 1948,
+                "line": 75,
+                "column": 9,
+                "endLine": 75,
+                "endColumn": 19
+              }
+            },
+            "value": {
+              "kind": "PropagateExpr",
+              "expression": {
+                "kind": "AwaitExpr",
+                "operator": "await",
+                "operand": {
+                  "kind": "CallExpr",
+                  "callee": {
+                    "kind": "NameExpr",
+                    "name": "load_user",
+                    "span": {
+                      "start": 1957,
+                      "end": 1966,
+                      "line": 75,
+                      "column": 28,
+                      "endLine": 75,
+                      "endColumn": 37
+                    }
+                  },
+                  "args": [],
+                  "span": {
+                    "start": 1957,
+                    "end": 1968,
+                    "line": 75,
+                    "column": 28,
+                    "endLine": 75,
+                    "endColumn": 39
+                  }
+                },
+                "span": {
+                  "start": 1951,
+                  "end": 1968,
+                  "line": 75,
+                  "column": 22,
+                  "endLine": 75,
+                  "endColumn": 39
+                }
+              },
+              "span": {
+                "start": 1951,
+                "end": 1969,
+                "line": 75,
+                "column": 22,
+                "endLine": 75,
+                "endColumn": 40
+              }
+            },
+            "span": {
+              "start": 1934,
+              "end": 1969,
+              "line": 75,
+              "column": 5,
+              "endLine": 75,
+              "endColumn": 40
+            }
+          }
+        ],
+        "span": {
+          "start": 506,
+          "end": 1972,
+          "line": 29,
+          "column": 12,
+          "endLine": 76,
+          "endColumn": 2
+        }
+      },
+      "public": false,
+      "async": false,
+      "span": {
+        "start": 495,
+        "end": 1972,
+        "line": 29,
+        "column": 1,
+        "endLine": 76,
+        "endColumn": 2
+      }
+    }
+  ],
+  "span": {
+    "start": 0,
+    "end": 1972,
+    "line": 1,
+    "column": 1,
+    "endLine": 76,
+    "endColumn": 2
+  }
+}
