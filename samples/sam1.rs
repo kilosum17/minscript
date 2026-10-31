@@ -7,14 +7,10 @@ import "std.crypto"
 // Mode definition using structural string union types
 pub type Mode = "encrypt" | "decrypt"
 
-// Custom result for cryptographic operations
-pub type CryptoResult = 
-    | Ok(Bytes)
-    | Err(string)
-
 // Process an individual file based on the selected mode
 async fun process_file(path: string, password: string, mode: Mode) -> Result<nil, string> {
     let file_bytes_res = await std.fs.read_file(path)
+    // or file_bytes_res = await std.fs.read_file(path) or Err("Read failed: ${it.message}")
     let Result.Ok(data) = file_bytes_res else {
         return Result.Err("Failed to read file: ${path}")
     }
@@ -28,7 +24,7 @@ async fun process_file(path: string, password: string, mode: Mode) -> Result<nil
         },
         "decrypt" => {
             let decrypted_res = std.crypto.decrypt_aes_gcm(data, password)
-            let CryptoResult.Ok(decrypted) = decrypted_res else {
+            let Ok(decrypted) = decrypted_res else {
                 return Result.Err("Decryption failed (incorrect password or corrupted file): ${path}")
             }
             

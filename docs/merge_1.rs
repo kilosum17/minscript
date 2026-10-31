@@ -1044,10 +1044,10 @@ n := adder(10,12, #{
 // allow typescript like function matching eg a callback can only use what it wants, and return 
 // types match if user uses it, otherwise return type is ignored, compiler config for such warning
 
-let description = match payment {  // we can use PaymentMethod.CreditCard, or _.CreditCard
+let description = match payment {  // we can use PaymentMethod.CreditCard, or CreditCard(match knows the type)
     PaymentMethod.CreditCard { number, exp } => "Card: ${number}",
-    _.MobileMoney { phone, provider } => "${provider} account",
-    _.Cash => "Cash payment",
+    MobileMoney { phone, provider } => "${provider} account",
+    Cash => "Cash payment",
     // Compiler error if any variant of PaymentMethod is unhandled
     // _=>{} handles all other cases
 }
@@ -1069,5 +1069,23 @@ config.set("name","Ted") // used by serializers in combination to _get_info(),
 // this seems like an heavy or slow process?
 
 // tuples of the same structure are auto assigned the same type
-// TypeOf(t(1,"")) == TypeOf(t(2,"--")) //true
+TypeOf(t(1,"")) == TypeOf(t(2,"--")) // true
+
+let title = "Hello"                 // Immutable string value
+let part = title.substring(0, 3)    // Borrowed view; no allocation
+
+var builder = StringBuilder()
+builder.push_str(title)
+builder.push_str(" World")
+let result = builder.to_string()    // Final owned string
+
+impl string {
+    fun trim(&this) -> Slice<char>       // Read-only; returns a view
+    fun substring(&this, start: int, end: int) -> Slice<char>
+    fun to_lower(&this) -> string       // Read-only input; creates owned output
+    fun push_str(&mut this, text: Slice<char>) // Modifies owned string
+}
+
+impl<T> Collection<T> for Vec<T> { ... }
+impl<T> Collection<T> for Slice<T> { ... }
 

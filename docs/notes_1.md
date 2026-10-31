@@ -76,7 +76,28 @@
     `impl Add,Sub for MyInt{...}` 
 - Supports generics
 
+## iterators
+```rust
+pub interface Iterator<T> {
+    fun next(mut this) -> Option<T>
+}
 
+pub interface Iterable<T> {
+    fun iter(&this) -> Iterator<&T>
+    fun iter_mut(&mut this) -> Iterator<&mut T>
+    fun into_iter(mut this) -> Iterator<T>
+}
+
+users.filter(u => u.active)
+users.iter_mut().for_each(u => u.active = false)
+users.into_iter().map(u => u.name)
+
+```
+- iter() yields &T, the collection remains usable.
+- iter_mut() yields &mut T, the collection remains usable.
+- into_iter() yields T — owned values; col consumed.
+- next(mut this) advances the iterator's internal position, so the iterator itself must be mutable.
+Usage: ordinary pipelines automatically call iter(), while mutation and ownership transfer are explicit:
 
 ## inbuilt type 
 - int, i32, i64, i16 i8, u32, u64, u16, u8, isize, usize  // int is platform depended
