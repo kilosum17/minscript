@@ -80,10 +80,14 @@ export type StatDecl =
         path: string,
         args: ArgsList | AstError,
     } | {
-        kind: 'expr'
+        kind: 'expr',
+        parts: (string | StatDecl | AstError)[],
     } | {
         kind: 'assign',
         rhs: StatDecl,
+    } | {
+        kind: "str_expr",
+        parts: (string | StatDecl | AstError)[]
     }
 
 

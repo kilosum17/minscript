@@ -80,7 +80,9 @@ export class Parser {
     }
 
     expect(expected: string, tok: Token): AstError {
-        return { kind: 'Error', message: `Expected '${expected}' got '${tok.lexeme}'` }
+        const extra = ` [${this.peek(-1).lexeme}] ${this.peek(0).lexeme} [${this.peek(1).lexeme}] `
+        const message = `Expected '${expected}' got '${tok.lexeme}' ${extra}`
+        return { kind: 'Error', message }
     }
 
     parsePackageDecl(): AstNode {
@@ -218,7 +220,7 @@ export class Parser {
         return { kind: 'Type', name, generics: [] }
     }
 
-    peekPath() {
+    peekPath(log_mes?: string) {
         let idx = 0
         const n1 = this.peek(idx)
         if (!isIdent(n1.lexeme)) return false
@@ -235,9 +237,10 @@ export class Parser {
             } else {
                 break
             }
+            prevIsDot = isDot
             idx += 1
         }
-        console.log('Path: ' + parts.join(''))
+        console.log(`Path: ${log_mes || ''} ` + parts.join(''), parts.length)
         return { path: parts.join(''), len: parts.length }
     }
 
@@ -355,7 +358,9 @@ export class Parser {
 
         const stats = [] as (StatDecl | AstError)[]
         while (this.peek().lexeme != '}') {
-            
+            const stat = this.parserStatement()
+            stats.push(stat)
+            break
         }
 
         // this.getNext()
@@ -395,18 +400,29 @@ export class Parser {
     }
 
     parseExpresion(): StatDecl | AstError {
-        const path = this.peekPath()
-        if (path) {
-            if (this.peek(path.len + 1).lexeme === '(') {
-                this.skip(path.len)
-                this.getNext()
-                const args = this.parseArgList()
-                const n1 = this.getNext()
-                if (n1.lexeme != ')') return this.expect(')', n1)
-                return { kind: 'call', args, path: path.path }
+        if (this.peek().lexeme == '"') {
+            return this.parseStringExpr()
+        } else {
+            // return this.expect('TODO', this.peek(), )
+            const path = this.peekPath('Desa')
+            if (path) {
+                if (this.peek(path.len + 1).lexeme === '(') {
+                    console.log('bf sk', path.len, path.path)
+                    this.skip(path.len)
+                    console.log('after sk', this.peek().lexeme)
+                    this.getNext()
+                    const args = this.parseArgList()
+                    const n1 = this.getNext()
+                    if (n1.lexeme != ')') return this.expect(')', n1)
+                    return { kind: 'call', args, path: path.path }
+                } else if (this.peek(path.len + 1).lexeme === '}') {
+                    this.skip(path.len)
+                    const parts = [path.path]
+                    return { kind: 'expr', parts }
+                }
             }
+            return { kind: 'Error', message: 'TODO' }
         }
-        return { kind: 'Error', message: 'TODO' }
     }
 
     parseArgList(): ArgsList | AstError {
@@ -415,6 +431,7 @@ export class Parser {
         const args = [] as (StatDecl | AstError)[]
         let isStart = true
         while (true) {
+            console.log('args-22', args, this.peek().lexeme)
             args.push(this.parseExpresion())
             if (isStart) isStart = false
             else {
@@ -428,6 +445,33 @@ export class Parser {
             }
         }
         return { kind: 'ArgsList', args }
+    }
+
+    parseStringExpr(): StatDecl | AstError {
+        console.log('str_ss')
+
+        const n1 = this.getNext()
+        if (n1.lexeme != '"') return this.expect('"', n1)
+        let parts = [] as (string | StatDecl | AstError)[]
+        while (this.peek().lexeme != '"') {
+            console.log('fed', this.peek().lexeme)
+            // const p1 = this.peek(1)
+            // if (this.peek().lexeme === '$' && p1.lexeme === '{' && !p1.ws_before) {
+            //     this.skip(2)
+            //     parts.push(this.parseExpresion())
+            //     const n2 = this.getNext()
+            //     if (n2.lexeme != '}') return this.expect('}', n2)
+            // } else {
+            //     const n3 = this.getNext()
+            //     console.log({ n3, p1 })
+            //     parts.push(n3.lexeme)
+            // }
+            this.getNext()
+        }
+        const n4 = this.getNext()
+        if (n4.lexeme != '"') return this.expect('"', n4)
+        console.log('Afters', { n4 })
+        return { kind: 'str_expr', parts }
     }
 
 }
