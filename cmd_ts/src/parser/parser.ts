@@ -160,6 +160,9 @@ export class Parser {
     }
 
     parseParamsList(): (FuncParamsList | AstError) {
+        if (this.peek().lexeme === ')') {
+            return { kind: 'ParamsList', params: [] }
+        }
         let params: (FuncParam | AstError)[] = [
             this.parseParam()
         ]
@@ -170,22 +173,40 @@ export class Parser {
             cur = this.peek()
         }
         console.log(params)
-        return {
-            kind: 'ParamsList', params,
-        }
+        return { kind: 'ParamsList', params }
     }
 
     parseParam(): (FuncParam | AstError) {
-        const n1 = this.getNext()
-        if (!isIdent(n1.lexeme)) {
-            return this.expect(`identifier`, n1)
+        let n1 = this.getNext()
+        if (n1.lexeme == "&" || n1.lexeme === 'mut' || n1.lexeme === 'this') {
+            let is_borrow = false
+            if (n1.lexeme === '&') {
+                is_borrow = true
+                n1 = this.getNext()
+            }
+            let is_muttable = false
+            if (n1.getKwd() === 'mut') {
+                is_muttable = true
+                n1 = this.getNext()
+            }
+            if (n1.getKwd() !== 'this') {
+                return this.expect('this', n1)
+            }
+            return { kind: 'Param', name: 'this', is_receiver: true, is_borrow, is_muttable }
+        } else {
+            if (!isIdent(n1.lexeme)) {
+                return this.expect(`identifier`, n1)
+            }
+            const n2 = this.getNext()
+            if (n2.lexeme != ':') {
+                return this.expect(`:`, n2)
+            }
+            const type = this.parseType()
+            return {
+                kind: 'Param', name: n1.lexeme, type, is_receiver: false,
+                is_borrow: false, is_muttable: false,
+            }
         }
-        const n2 = this.getNext()
-        if (n2.lexeme != ':') {
-            return this.expect(`:`, n2)
-        }
-        const type = this.parseType()
-        return { kind: 'Param', name: n1.lexeme, type }
     }
 
     parseType(): (FuncType | AstError) {

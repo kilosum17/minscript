@@ -47,7 +47,10 @@ export type FuncParamsList = {
 export type FuncParam = {
     kind: 'Param'
     name: string,
-    type: FuncType | AstError,
+    type?: FuncType | AstError,
+    is_borrow: boolean,
+    is_muttable: boolean,
+    is_receiver: boolean,
 }
 
 export type FuncType = {
