@@ -1,7 +1,7 @@
 import type { Lexer } from "../lexer/lexer";
 import type { Token } from "../lexer/lexer_types";
 import { isIdent } from "../utils/char_helpers";
-import type { AstError, AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, ImplBlock, StructDecl, StructField, StructFieldList } from "./parser_types";
+import type { ArgsList, AstError, AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, ImplBlock, StatDecl, StructDecl, StructField, StructFieldList } from "./parser_types";
 
 export class Parser {
     nodes: AstNode[] = []
@@ -218,45 +218,26 @@ export class Parser {
         return { kind: 'Type', name, generics: [] }
     }
 
-    parserBlock(): BlockDecl | AstError {
-        const n1 = this.getNext()
-        if (n1.lexeme != '{') {
-            return this.expect('{', n1)
-        }
-        let cur = this.getNext()
-        let nos = 0
-        while (cur.lexeme != '}' || nos > 0) {
-            if (cur.lexeme === '{') nos += 1
-            if (cur.lexeme === '}') nos -= 1
-            console.log("Skip", cur.lexeme)
-            cur = this.getNext()
-        }
-
-        // this.getNext()
-
-        return { kind: 'BlockDecl', statements: [] }
-    }
-
-    parserStatement() {
-        const path = this.peekPath()
-        if (path) {
-            this.skip(path.len)
-        }
-    }
-
     peekPath() {
         let idx = 0
         const n1 = this.peek(idx)
         if (!isIdent(n1.lexeme)) return false
         let parts = [n1.lexeme]
+        idx += 1
         let prevIsDot = false
-        while (isIdent(this.peek(idx).lexeme) || this.peek(idx).lexeme == '.') {
+        while (true) {
             const part = this.peek(idx).lexeme
             const isDot = part === '.'
-            if (prevIsDot && isDot) return false
-            if (isDot) prevIsDot = true
-            parts.push(part)
+            if (isDot && !prevIsDot) {
+                parts.push(part)
+            } else if (prevIsDot && isIdent(part)) {
+                parts.push(part)
+            } else {
+                break
+            }
+            idx += 1
         }
+        console.log('Path: ' + parts.join(''))
         return { path: parts.join(''), len: parts.length }
     }
 
@@ -291,7 +272,7 @@ export class Parser {
             return this.expect("=", n3)
         }
         const fields = this.parseStructFieldList()
-        return { kind: 'StructDecl', name: n2.lexeme, fields, generics: [] }
+        return { kind: 'StructDecl', name: n2.lexeme, fields, is_public, generics: [] }
     }
 
     parseStructFieldList(): StructFieldList | AstError {
@@ -365,5 +346,88 @@ export class Parser {
         return { kind: 'ImplBlock', name: n2.lexeme, interfaces: [], methods }
     }
 
+
+    parserBlock(): BlockDecl | AstError {
+        const n1 = this.getNext()
+        if (n1.lexeme != '{') {
+            return this.expect('{', n1)
+        }
+
+        const stats = [] as (StatDecl | AstError)[]
+        while (this.peek().lexeme != '}') {
+            
+        }
+
+        // this.getNext()
+
+        return { kind: 'BlockDecl', statements: stats }
+    }
+
+    parserStatement(): StatDecl | AstError {
+        const p1 = this.peek()
+        const p2 = this.peek(1)
+        if (p1.getKwd() == "let" || p1.getKwd() === 'var') {
+            return this.parsseBinding()
+        } else if (isIdent(p1.lexeme) && [":=", ":=="].includes(p2.lexeme)) {
+            return this.parsseBinding()
+        } else {
+            const path = this.peekPath()
+            if (path) {
+                const assigns = ["=", "+=", '-=', '*=', '/=', '%=']
+                if (assigns.includes(this.peek(path.len + 1).lexeme)) {
+                    this.skip(path.len)
+                    return this.parseAssign()
+                } else {
+                    return this.parseExpresion()
+                }
+            } else {
+                return { kind: "Error", message: 'TODO' }
+            }
+        }
+    }
+
+    parsseBinding(): AstError {
+        return { kind: 'Error', message: 'TODO' }
+    }
+
+    parseAssign(): AstError {
+        return { kind: 'Error', message: 'TODO' }
+    }
+
+    parseExpresion(): StatDecl | AstError {
+        const path = this.peekPath()
+        if (path) {
+            if (this.peek(path.len + 1).lexeme === '(') {
+                this.skip(path.len)
+                this.getNext()
+                const args = this.parseArgList()
+                const n1 = this.getNext()
+                if (n1.lexeme != ')') return this.expect(')', n1)
+                return { kind: 'call', args, path: path.path }
+            }
+        }
+        return { kind: 'Error', message: 'TODO' }
+    }
+
+    parseArgList(): ArgsList | AstError {
+        if (this.peek().lexeme == ')') return { kind: "ArgsList", args: [] }
+
+        const args = [] as (StatDecl | AstError)[]
+        let isStart = true
+        while (true) {
+            args.push(this.parseExpresion())
+            if (isStart) isStart = false
+            else {
+                if (this.peek().lexeme == ')') {
+                    break;
+                }
+                const n1 = this.getNext()
+                if (n1.lexeme !== ',') {
+                    return this.expect(', or )', n1)
+                }
+            }
+        }
+        return { kind: 'ArgsList', args }
+    }
 
 }
