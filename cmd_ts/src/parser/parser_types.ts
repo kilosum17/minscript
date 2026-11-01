@@ -9,6 +9,9 @@ export type AstNode =
     | FuncParamsList
     | FuncParam
     | BlockDecl
+    | StructDecl
+    | StructFieldList
+    | StructField
 
 export type AstError = {
     kind: 'Error',
@@ -43,6 +46,7 @@ export type FuncParamsList = {
 
 export type FuncParam = {
     kind: 'Param'
+    name: string,
     type: FuncType | AstError,
 }
 
@@ -78,5 +82,32 @@ export type StatDecl =
     }
 
 export type StatArgsList = {
+
+}
+
+export type StructDecl = {
+    kind: 'StructDecl',
+    name: string,
+    generics: [],
+    fields: StructFieldList | AstError
+}
+
+export type StructFieldList = {
+    kind: "StructFieldList"
+    fields: (StructField | AstError)[]
+}
+
+export type StructField = {
+    kind: "StructField"
+    name: string,
+    is_public: boolean
+    type: FuncType | AstError,
+}
+
+export type ImplBlock = {
+    kind: 'ImplBlock'
+    name: string
+    interfaces: [],
+    methods: (FuncDecl | AstError)[]
 
 }

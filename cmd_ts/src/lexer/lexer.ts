@@ -70,7 +70,7 @@ export class Lexer {
                 // process.stdout.write(` \n`)
             }
             // process.stdout.write(` ${lex.text}`)
-            
+
             const tok = new Token()
             tok.kind = kwsSet.has(lex.text as any) ? 'KWD' :
                 sigSet.has(lex.text as any) ? 'SIG' :
@@ -120,7 +120,7 @@ export class Lexer {
             }
         } else {
             // get-word
-            while (isNotEnd(cur) && isAlphaNumeric(this.source[cur])) {
+            while (isNotEnd(cur) && isAlphaNumeric(this.source[cur]) || this.source[cur] == '_') {
                 this.col += 1
                 cur++
             }

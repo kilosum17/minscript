@@ -1,7 +1,7 @@
 import type { Lexer } from "../lexer/lexer";
 import type { Token } from "../lexer/lexer_types";
 import { isIdent } from "../utils/char_helpers";
-import type { AstError, AstNode, BlockDecl, FuncParam, FuncParamsList, FuncType } from "./parser_types";
+import type { AstError, AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, ImplBlock, StructDecl, StructField, StructFieldList } from "./parser_types";
 
 export class Parser {
     nodes: AstNode[] = []
@@ -49,6 +49,11 @@ export class Parser {
                 } else if (kwd === 'fun') {
                     this.skips = 0
                     node = this.parseFuncDecl()
+                } else if (kwd === 'type') {
+                    this.skips = 0
+                    node = this.parseStruct()
+                } else if (kwd === 'impl') {
+                    node = this.parseImplBlock()
                 }
                 console.log(node)
             } else {
@@ -107,7 +112,7 @@ export class Parser {
         }
     }
 
-    parseFuncDecl(): AstNode {
+    parseFuncDecl(): FuncDecl | AstError {
         let n1 = this.getNext()
         let is_public = false
         let is_async = false
@@ -140,6 +145,7 @@ export class Parser {
         const p1 = this.peek()
         let return_: FuncType | AstError
         if (p1.lexeme == '->') {
+            this.getNext()
             return_ = this.parseType()
         } else {
             return_ = { kind: 'Type', name: 'void', generics: [] }
@@ -154,13 +160,16 @@ export class Parser {
     }
 
     parseParamsList(): (FuncParamsList | AstError) {
-        let cur = this.peek()
         let params: (FuncParam | AstError)[] = [
             this.parseParam()
         ]
+        let cur = this.peek()
         while (cur.lexeme == ',') {
+            this.getNext()
             params.push(this.parseParam())
+            cur = this.peek()
         }
+        console.log(params)
         return {
             kind: 'ParamsList', params,
         }
@@ -176,7 +185,7 @@ export class Parser {
             return this.expect(`:`, n2)
         }
         const type = this.parseType()
-        return { kind: 'Param', type }
+        return { kind: 'Param', name: n1.lexeme, type }
     }
 
     parseType(): (FuncType | AstError) {
@@ -193,10 +202,16 @@ export class Parser {
         if (n1.lexeme != '{') {
             return this.expect('{', n1)
         }
-        let cur
-        do {
+        let cur = this.getNext()
+        let nos = 0
+        while (cur.lexeme != '}' || nos > 0) {
+            if (cur.lexeme === '{') nos += 1
+            if (cur.lexeme === '}') nos -= 1
+            console.log("Skip", cur.lexeme)
             cur = this.getNext()
-        } while (cur.lexeme != '}')
+        }
+
+        // this.getNext()
 
         return { kind: 'BlockDecl', statements: [] }
     }
@@ -205,7 +220,6 @@ export class Parser {
         const path = this.peekPath()
         if (path) {
             this.skip(path.len)
-
         }
     }
 
@@ -236,5 +250,99 @@ export class Parser {
         }
         return true
     }
+
+    parseStruct(): StructDecl | AstError {
+        let n1 = this.getNext()
+        let is_public = false
+        if (n1.getKwd() === 'pub') {
+            is_public = true
+            n1 = this.getNext()
+        }
+        if (n1.getKwd() != 'type') {
+            return this.expect('type', n1)
+        }
+        const n2 = this.getNext()
+        if (!isIdent(n2.lexeme)) {
+            return this.expect('identifier', n2)
+        }
+        const n3 = this.getNext()
+        if (n3.lexeme !== '=') {
+            return this.expect("=", n3)
+        }
+        const fields = this.parseStructFieldList()
+        return { kind: 'StructDecl', name: n2.lexeme, fields, generics: [] }
+    }
+
+    parseStructFieldList(): StructFieldList | AstError {
+        const n1 = this.getNext()
+        if (n1.lexeme != "{") {
+            return this.expect("{", n1)
+        }
+        const fields: (StructField | AstError)[] = [
+            this.parseStructField()
+        ]
+        while (this.peek().lexeme != '}') {
+            fields.push(this.parseStructField())
+        }
+        const n2 = this.getNext()
+        if (n2.lexeme != '}') {
+            return this.expect("}", n2)
+        }
+        return { kind: 'StructFieldList', fields }
+    }
+
+    parseStructField(): StructField | AstError {
+        let n1 = this.getNext()
+        let is_public = false
+        if (n1.getKwd() === 'pub') {
+            is_public = true
+            n1 = this.getNext()
+        }
+        if (!isIdent(n1.lexeme)) {
+            return this.expect('identifier', n1)
+        }
+        const n3 = this.getNext()
+        // console.log({ n1, is_public, n3 })
+
+        if (n3.lexeme != ':') {
+            return this.expect(':', n3)
+        }
+        const type_ = this.parseType()
+        if (this.peek().lexeme == ',') {
+            this.getNext()
+        }
+        console.log("Done", n1.lexeme)
+        return { kind: 'StructField', is_public, name: n1.lexeme, type: type_ }
+    }
+
+    parseImplBlock(): ImplBlock | AstError {
+        let n1 = this.getNext()
+        if (n1.lexeme !== 'impl') {
+            return this.expect("impl", n1)
+        }
+
+        let n2 = this.getNext()
+        if (!isIdent(n2.lexeme)) {
+            return this.expect("identifier", n2)
+        }
+        let n3 = this.getNext()
+        if (n3.lexeme != '{') {
+            return this.expect("{", n3)
+        }
+
+
+        const methods = [] as (FuncDecl | AstError)[]
+        while (this.peek().lexeme != '}') {
+            this.tryParseComment()
+            methods.push(this.parseFuncDecl())
+        }
+
+        const n4 = this.getNext()
+        if (n4.lexeme != '}') {
+            return this.expect("}", n4)
+        }
+        return { kind: 'ImplBlock', name: n2.lexeme, interfaces: [], methods }
+    }
+
 
 }

@@ -14,6 +14,7 @@ pub fun calculateArea(width: f32, height: f32) -> f32 {
 
 pub type Counter = {
     value: int32,
+    pub test_field: f32, 
 }
 
 impl Counter {
