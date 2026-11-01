@@ -3,12 +3,13 @@ package main
 
 import "std.log"
 
-pub fun calculateArea(width: f32, height: f32) -> f32 {
-    width * height
+// returns void
+pub fun logMessage(msg: string) {  
+    log.println("LOG: ${msg}")
 }
 
-pub fun logMessage(msg: string) {  // returns void
-    log.println("LOG: ${msg}")
+pub fun calculateArea(width: f32, height: f32) -> f32 {
+    width * height
 }
 
 pub type Counter = {
@@ -16,7 +17,8 @@ pub type Counter = {
 }
 
 impl Counter {
-    pub fun new(initialValue: i32) -> Counter { // static no this
+    // static no this
+    pub fun new(initialValue: i32) -> Counter { 
         return Counter { value: initialValue }
     }
 
@@ -35,20 +37,24 @@ async fun main() {
     scores := v[85.5, 92.0, 78.5, 95.0]
 
     let doubledNumbers = numbers.map(#{it * 2})
-    let highNumbers = numbers.filter(#{n,idx => n > 50}) //n==it==it1,idx=it2
-    let hasHonorRoll = scores.any((score) => score >= 90.0) // () in arrow function always required
+    //n==it==it1,idx=it2
+    let highNumbers = numbers.filter(#{n,idx => n > 50}) 
+    // () in arrow function always required
+    let hasHonorRoll = scores.any((score) => score >= 90.0) 
     let allPassing = scores.all((score) => score >= 50.0)
     // these return elements as &T what if we want &mut T? 
     let processedValues = numbers.map((n) => {
         let squared = n * n
         let offset = squared + 5
         return offset
-    }) // function returns must always be marked uisng return  
+    }) 
+    // function returns must always be marked uisng return  
 
     log.println("Processed complex values: ${processedValues}")
 
 
-    var myCounter = Counter.new(10) // var so .increment(mut) can be called
+    // var so .increment(mut) can be called
+    var myCounter = Counter.new(10) 
     myCounter.printValue()
 
     let newTotal = myCounter.increment(15)

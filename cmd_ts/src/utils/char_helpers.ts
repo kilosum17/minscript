@@ -1,3 +1,4 @@
+import { mergeMap } from "./merge_map"
 
 export const isAlpha = (c: string) => {
     const n = c.charCodeAt(0)
@@ -36,5 +37,18 @@ const specialSet = new Set([
 
 export const isSpecial = (c: string) => {
     return specialSet.has(c)
+}
+
+export const isIdent = (value: string): boolean => {
+    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)
+}
+
+export const tryMerge = (c: string) => {
+    return !!mergeMap[c]
+}
+export const canMerge = (c1: string, c2: string) => {
+    if (!mergeMap[c1]) return false
+    if (typeof mergeMap[c1] === 'string') return mergeMap[c1] === c2
+    return mergeMap[c1].has(c2)
 }
 
