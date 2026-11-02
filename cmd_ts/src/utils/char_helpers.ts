@@ -43,6 +43,10 @@ export const isIdent = (value: string): boolean => {
     return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)
 }
 
+export const isNum = (value: string): boolean => {
+    return /^-?\d+(\.\d+)?$/.test(value)
+}
+
 export const tryMerge = (c: string) => {
     return !!mergeMap[c]
 }

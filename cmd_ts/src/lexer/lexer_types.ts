@@ -1,3 +1,4 @@
+import { isIdent, isNum } from "../utils/char_helpers"
 
 const DEF_SPAN = {
     startLine: 0,
@@ -12,7 +13,7 @@ export const KWS = [
     "if", "else", "match", "for", "in", "while", "loop", "break", "continue", "return",
     "await", "or", "as", "unsafe", "recover", "true", "false", "nil", "this", "Self", "TypeOf",
 ] as const
-export const kwsSet = new Set(KWS)
+export const kwsSet = new Set(KWS as any as string[])
 
 export const SIG = [
     "r{", "m{", "s{", "t(", "v[", 'a[',
@@ -21,33 +22,59 @@ export const SIG = [
 export const sigSet = new Set(SIG)
 
 export const OPERATORS = [
-    ">>=", "<<=", "...", "..=", "?.", "??", ":==", ":=", "->", "=>", "==", "!=", "<=", ">=", "&&", "||",
-    "<<", ">>", "+=", "-=", "*=", "/=", "%=", "..", "++", "--",
-    "=", "+", "-", "*", "/", "%", "<", ">", "!", "&", "|", "^", "~", "?", ".", ":", ";", ",", "@",
+    ">>=", "<<=",
+    "...", "..=",
+    "?.", "??",
+    ":==", ":=", "->", "=>",
+    "<<", ">>",
+    "+=", "-=", "*=", "/=", "%=",
+    "==", "!=", "<=", ">=", "&&", "||",
+    "<", ">", "!", "&", "|",
+    "..",
+    "=", "+", "-", "*", "/", "%",
+    "^", "~", "?", ".", ":", ";", ",", "@",
     "(", ")", "[", "]", "{", "}",
 ] as const;
-export const operSet = new Set(OPERATORS)
+export const operSet = new Set(OPERATORS as any as string[])
 
-export type TokenKind =
-    | 'KWD' | "SIG" | 'OPER' | 'ID'
-    | '"' | '//' | '///'
-    | 'INT' | 'FLOAT' | '<ERR>'
+const OTHERS = [
+    'UNK', 'EOF', 'ID', 'NUM'
+] as const
+export const othersSet = new Set(OTHERS)
+
+export type TokenType =
+    | typeof OTHERS
+    | typeof KWS
+    | typeof SIG
+    | typeof OPERATORS
+
+export function getTokenType(_val: string): TokenType {
+    const val = _val as any
+    if (othersSet.has(val) || kwsSet.has(val) || sigSet.has(val) || operSet.has(val)) {
+        return val as TokenType
+    }
+    if (isIdent(val)) return 'ID' as any
+    if (isNum(val)) return 'NUM' as any
+    return 'UNK' as any
+}
 
 export class Token {
-    kind: TokenKind = '<ERR>'
+    type: TokenType = 'UNK' as any
     span: Span = { ...DEF_SPAN }
-    lexeme: string = ''
+    val: string = '_<UNK>_'
     nl_before = false
     ws_before = false
 
     print(): string {
         const pref = this.nl_before ? '\n ' : ' '
-        if (this.kind == 'KWD') {
-            return `${pref}_${this.kind}_`
+        if (this.isKwd()) {
+            return `${pref}_${this.type}_`
         }
-        return `${pref}_${this.kind}:${this.lexeme}_`
+        return `${pref}_${this.type}:${this.val}_`
     }
-    getKwd() {
-        return this.lexeme as (typeof KWS)[number]
+
+    isKwd() {
+        return kwsSet.has(this.type as any)
     }
+
 }

@@ -1,8 +1,9 @@
 import type { Lexer } from "../lexer/lexer";
-import type { Token } from "../lexer/lexer_types";
+import { Token } from "../lexer/lexer_types";
 import { isIdent } from "../utils/char_helpers";
 import { strNode } from "./parse_utils";
-import type { ArgsList, AstError, AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, ImplBlock, StatDecl, StructDecl, StructField, StructFieldList } from "./parser_types";
+import type { ArgsList, AstError, AstNode, BlockDecl, ExprDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, ImplBlock, StatDecl, StructDecl, StructField, StructFieldList } from "./parser_types";
+import { PrattParser } from "./pratt_parser";
 
 export class Parser {
     nodes: AstNode[] = []
@@ -10,10 +11,12 @@ export class Parser {
     trackingPub = false
     trackingAsync = false
     skips = 0
+    pratt: PrattParser
 
     constructor(private lexer: Lexer) {
+        this.pratt = new PrattParser(lexer)
+        
         this.parseAll()
-
     }
 
     parseAll() {
@@ -67,13 +70,13 @@ export class Parser {
     }
 
     getNext(): Token {
-        const tok = this.lexer.tokens[this.curPos]
+        const tok = this.lexer.tokens[this.curPos] || new Token()
         this.curPos++
         return tok
     }
 
     peek(n = 0): Token {
-        return this.lexer.tokens[this.curPos + n]
+        return this.lexer.tokens[this.curPos + n] || new Token()
     }
 
     skip(n = 1) {
@@ -81,33 +84,33 @@ export class Parser {
     }
 
     expect(expected: string, tok: Token): AstError {
-        const extra = ` [${this.peek(-1).lexeme}, ${this.peek(0).lexeme}, ${this.peek(1).lexeme}] `
-        const message = `Expected '${expected}' got '${tok.lexeme}' ${extra}`
+        const extra = ` [${this.peek(-1).val}, ${this.peek(0).val}, ${this.peek(1).val}] `
+        const message = `Expected '${expected}' got '${tok.val}' ${extra}`
         return { kind: 'Error', message }
     }
 
     parsePackageDecl(): AstNode {
         this.getNext()
         const n1 = this.getNext()
-        return { kind: 'PackageDecl', name: n1.lexeme }
+        return { kind: 'PackageDecl', name: n1.val }
     }
 
     parseImportDecl(): AstNode {
         this.getNext()
         const n1 = this.getNext()
-        if (n1.lexeme !== '"') {
+        if (n1.val !== '"') {
             return {
                 kind: "Error", recoverBefore: [],
-                message: `import paths must be quoted eg 'import "std.log"' got ${n1.lexeme} `
+                message: `import paths must be quoted eg 'import "std.log"' got ${n1.val} `
             }
         }
         const parts = []
         let cur = this.getNext()
-        while (isIdent(cur.lexeme) || cur.lexeme == ".") {
-            parts.push(cur.lexeme)
+        while (isIdent(cur.val) || cur.val == ".") {
+            parts.push(cur.val)
             cur = this.getNext()
         }
-        if (cur.lexeme != '"') {
+        if (cur.val != '"') {
             return this.expect(`["]`, n1)
         }
         return {
@@ -131,23 +134,23 @@ export class Parser {
             return this.expect('fun', n1)
         }
         const n2 = this.getNext()
-        if (!isIdent(n2.lexeme)) {
+        if (!isIdent(n2.val)) {
             return this.expect('identifier', n2)
         }
-        const name = n2.lexeme
+        const name = n2.val
         const n3 = this.getNext()
-        if (n3.lexeme !== '(') {
+        if (n3.val !== '(') {
             return this.expect('(', n3)
         }
         const params = this.parseParamsList()
         const n4 = this.getNext()
-        if (n4.lexeme != ')') {
+        if (n4.val != ')') {
             return this.expect(')', n4)
         }
 
         const p1 = this.peek()
         let return_: FuncType | AstError
-        if (p1.lexeme == '->') {
+        if (p1.val == '->') {
             this.getNext()
             return_ = this.parseType()
         } else {
@@ -163,14 +166,14 @@ export class Parser {
     }
 
     parseParamsList(): (FuncParamsList | AstError) {
-        if (this.peek().lexeme === ')') {
+        if (this.peek().val === ')') {
             return { kind: 'ParamsList', params: [] }
         }
         let params: (FuncParam | AstError)[] = [
             this.parseParam()
         ]
         let cur = this.peek()
-        while (cur.lexeme == ',') {
+        while (cur.val == ',') {
             this.getNext()
             params.push(this.parseParam())
             cur = this.peek()
@@ -181,9 +184,9 @@ export class Parser {
 
     parseParam(): (FuncParam | AstError) {
         let n1 = this.getNext()
-        if (n1.lexeme == "&" || n1.lexeme === 'mut' || n1.lexeme === 'this') {
+        if (n1.val == "&" || n1.val === 'mut' || n1.val === 'this') {
             let is_borrow = false
-            if (n1.lexeme === '&') {
+            if (n1.val === '&') {
                 is_borrow = true
                 n1 = this.getNext()
             }
@@ -197,16 +200,16 @@ export class Parser {
             }
             return { kind: 'Param', name: 'this', is_receiver: true, is_borrow, is_muttable }
         } else {
-            if (!isIdent(n1.lexeme)) {
+            if (!isIdent(n1.val)) {
                 return this.expect(`identifier`, n1)
             }
             const n2 = this.getNext()
-            if (n2.lexeme != ':') {
+            if (n2.val != ':') {
                 return this.expect(`:`, n2)
             }
             const type = this.parseType()
             return {
-                kind: 'Param', name: n1.lexeme, type, is_receiver: false,
+                kind: 'Param', name: n1.val, type, is_receiver: false,
                 is_borrow: false, is_muttable: false,
             }
         }
@@ -214,22 +217,22 @@ export class Parser {
 
     parseType(): (FuncType | AstError) {
         const n1 = this.getNext()
-        if (!isIdent(n1.lexeme)) {
+        if (!isIdent(n1.val)) {
             return this.expect('identifier', n1)
         }
-        const name = n1.lexeme
+        const name = n1.val
         return { kind: 'Type', name, generics: [] }
     }
 
     peekPath(log_mes?: string) {
         let idx = 0
         const n1 = this.peek(idx)
-        if (!isIdent(n1.lexeme)) return false
-        let parts = [n1.lexeme]
+        if (!isIdent(n1.val)) return false
+        let parts = [n1.val]
         idx += 1
         let prevIsDot = false
         while (true) {
-            const part = this.peek(idx).lexeme
+            const part = this.peek(idx).val
             const isDot = part === '.'
             if (isDot && !prevIsDot) {
                 parts.push(part)
@@ -247,7 +250,7 @@ export class Parser {
 
     tryParseComment(): boolean {
         const p1 = this.peek(0)
-        if (p1.lexeme != '//') {
+        if (p1.val != '//') {
             return false
         }
         this.getNext()
@@ -268,30 +271,30 @@ export class Parser {
             return this.expect('type', n1)
         }
         const n2 = this.getNext()
-        if (!isIdent(n2.lexeme)) {
+        if (!isIdent(n2.val)) {
             return this.expect('identifier', n2)
         }
         const n3 = this.getNext()
-        if (n3.lexeme !== '=') {
+        if (n3.val !== '=') {
             return this.expect("=", n3)
         }
         const fields = this.parseStructFieldList()
-        return { kind: 'StructDecl', name: n2.lexeme, fields, is_public, generics: [] }
+        return { kind: 'StructDecl', name: n2.val, fields, is_public, generics: [] }
     }
 
     parseStructFieldList(): StructFieldList | AstError {
         const n1 = this.getNext()
-        if (n1.lexeme != "{") {
+        if (n1.val != "{") {
             return this.expect("{", n1)
         }
         const fields: (StructField | AstError)[] = [
             this.parseStructField()
         ]
-        while (this.peek().lexeme != '}') {
+        while (this.peek().val != '}') {
             fields.push(this.parseStructField())
         }
         const n2 = this.getNext()
-        if (n2.lexeme != '}') {
+        if (n2.val != '}') {
             return this.expect("}", n2)
         }
         return { kind: 'StructFieldList', fields }
@@ -304,62 +307,62 @@ export class Parser {
             is_public = true
             n1 = this.getNext()
         }
-        if (!isIdent(n1.lexeme)) {
+        if (!isIdent(n1.val)) {
             return this.expect('identifier', n1)
         }
         const n3 = this.getNext()
         // console.log({ n1, is_public, n3 })
 
-        if (n3.lexeme != ':') {
+        if (n3.val != ':') {
             return this.expect(':', n3)
         }
         const type_ = this.parseType()
-        if (this.peek().lexeme == ',') {
+        if (this.peek().val == ',') {
             this.getNext()
         }
-        console.log("Done", n1.lexeme)
-        return { kind: 'StructField', is_public, name: n1.lexeme, type: type_ }
+        console.log("Done", n1.val)
+        return { kind: 'StructField', is_public, name: n1.val, type: type_ }
     }
 
     parseImplBlock(): ImplBlock | AstError {
         let n1 = this.getNext()
-        if (n1.lexeme !== 'impl') {
+        if (n1.val !== 'impl') {
             return this.expect("impl", n1)
         }
 
         let n2 = this.getNext()
-        if (!isIdent(n2.lexeme)) {
+        if (!isIdent(n2.val)) {
             return this.expect("identifier", n2)
         }
         let n3 = this.getNext()
-        if (n3.lexeme != '{') {
+        if (n3.val != '{') {
             return this.expect("{", n3)
         }
 
 
         const methods = [] as (FuncDecl | AstError)[]
-        while (this.peek().lexeme != '}') {
+        while (this.peek().val != '}') {
             this.tryParseComment()
             methods.push(this.parseFuncDecl())
         }
 
         const n4 = this.getNext()
-        if (n4.lexeme != '}') {
+        if (n4.val != '}') {
             return this.expect("}", n4)
         }
-        return { kind: 'ImplBlock', name: n2.lexeme, interfaces: [], methods }
+        return { kind: 'ImplBlock', name: n2.val, interfaces: [], methods }
     }
 
 
     parserBlock(): BlockDecl | AstError {
         const n1 = this.getNext()
-        if (n1.lexeme != '{') {
+        if (n1.val != '{') {
             return this.expect('{', n1)
         }
 
-        const stats = [] as (StatDecl | AstError)[]
+        const stats = [] as (ExprDecl | StatDecl | AstError)[]
         let i = 0
-        while (this.peek().lexeme != '}') {
+        while (this.peek().val != '}') {
             const stat = this.parserStatement()
             stats.push(stat)
             // bre
@@ -371,20 +374,20 @@ export class Parser {
         return { kind: 'BlockDecl', statements: stats }
     }
 
-    parserStatement(): StatDecl | AstError {
+    parserStatement(): ExprDecl | StatDecl | AstError {
         const p1 = this.peek()
         const p2 = this.peek(1)
         if (p1.getKwd() == "let" || p1.getKwd() === 'var') {
-            return this.parsseBinding()
-        } else if (isIdent(p1.lexeme) && [":=", ":=="].includes(p2.lexeme)) {
             return this.parsseBinding()
         } else {
             const path = this.peekPath('sts')
             if (path) {
                 const assigns = ["=", "+=", '-=', '*=', '/=', '%=']
-                if (assigns.includes(this.peek(path.len + 1).lexeme)) {
-                    this.skip(path.len)
-                    return this.parseAssign()
+                const binds = [":=", ":=="]
+                if (binds.includes(this.peek(path.len + 1).val)) {
+                    return this.parsseBinding(path)
+                } else if (assigns.includes(this.peek(path.len + 1).val)) {
+                    return this.parseAssign(path)
                 } else {
                     return this.parseExpresion()
                 }
@@ -394,7 +397,27 @@ export class Parser {
         }
     }
 
-    parsseBinding(): AstError {
+    parsseBinding(path?: ReturnType<typeof this.peekPath>): StatDecl | AstError {
+        let is_short = !!path
+        if (is_short) {
+
+        } else {
+            const n1 = this.getNext()
+            let is_muttable
+            if (n1.val == 'let') {
+                is_muttable = false
+            } else if (n1.val === 'var') {
+                is_muttable = true
+            } else {
+                return this.expect('var or let', n1)
+            }
+
+            const n2 = this.getNext()
+            if (!isIdent(n2.val)) return this.expect('identifier', n2)
+            const n3 = this.getNext()
+            if (n3.val != '=') return this.expect('=', n3)
+            const expr = this.parseExpresion()
+        }
         return { kind: 'Error', message: 'TODO binding' }
     }
 
@@ -402,27 +425,27 @@ export class Parser {
         return { kind: 'Error', message: 'TODO assign' }
     }
 
-    parseExpresion(): StatDecl | AstError {
-        console.log('exp_s', this.peek().lexeme)
-        if (this.peek().lexeme == '"') {
+    parseExpresion(): ExprDecl | AstError {
+        console.log('exp_s', this.peek().val)
+        if (this.peek().val == '"') {
             return this.parseStringExpr()
         } else {
             // return this.expect('TODO', this.peek(), )
             const path = this.peekPath('Desa')
             if (path) {
-                if (this.peek(path.len).lexeme === '(') {
+                if (this.peek(path.len).val === '(') {
                     console.log('bf sk', path.len, path.path)
                     this.skip(path.len)
-                    console.log('after sk', this.peek().lexeme)
+                    console.log('after sk', this.peek().val)
                     this.getNext()
                     const args = this.parseArgList()
                     const n1 = this.getNext()
-                    if (n1.lexeme != ')') return this.expect(')', n1)
+                    if (n1.val != ')') return this.expect(')', n1)
                     return { kind: 'call', path: path.path, args }
-                } else if (this.peek(path.len).lexeme === '}') {
+                } else if (this.peek(path.len).val === '}') {
                     this.skip(path.len)
-                    const parts = [path.path]
-                    return { kind: 'expr', parts }
+                    const lhs = path.path
+                    return { kind: 'expr', lhs }
                 }
             }
             return { kind: 'Error', message: 'TODO exp-nos' }
@@ -430,23 +453,23 @@ export class Parser {
     }
 
     parseArgList(): ArgsList | AstError {
-        if (this.peek().lexeme == ')') return { kind: "ArgsList", args: [] }
+        if (this.peek().val == ')') return { kind: "ArgsList", args: [] }
 
-        const args = [] as (StatDecl | AstError)[]
+        const args = [] as (ExprDecl | AstError)[]
         let isStart = true
         while (true) {
-            console.log('args-22', args, this.peek().lexeme)
+            console.log('args-22', args, this.peek().val)
             args.push(this.parseExpresion())
-            if (this.peek().lexeme == ')') {
+            if (this.peek().val == ')') {
                 break;
             }
             if (isStart) isStart = false
             else {
                 const n1 = this.getNext()
-                if (n1.lexeme !== ',') {
+                if (n1.val !== ',') {
                     return this.expect(', or )', n1)
                 }
-                if (this.peek().lexeme === ')') {
+                if (this.peek().val === ')') {
                     break
                 }
             }
@@ -454,30 +477,30 @@ export class Parser {
         return { kind: 'ArgsList', args }
     }
 
-    parseStringExpr(): StatDecl | AstError {
+    parseStringExpr(): ExprDecl | AstError {
         console.log('str_ss')
 
         const n1 = this.getNext()
-        if (n1.lexeme != '"') return this.expect('"', n1)
-        let parts = [] as (string | StatDecl | AstError)[]
-        while (this.peek().lexeme != '"') {
+        if (n1.val != '"') return this.expect('"', n1)
+        let parts = [] as (string | ExprDecl | AstError)[]
+        while (this.peek().val != '"') {
             const p1 = this.peek(1)
-            if (this.peek().lexeme === '$' && p1.lexeme === '{' && !p1.ws_before) {
+            if (this.peek().val === '$' && p1.val === '{' && !p1.ws_before) {
                 this.skip(2)
-                console.log('fed-2', this.peek().lexeme)
+                console.log('fed-2', this.peek().val)
                 parts.push(this.parseExpresion())
                 const n2 = this.getNext()
-                console.log({ parts, n2: n2.lexeme })
-                if (n2.lexeme != '}') return this.expect('}', n2)
+                console.log({ parts, n2: n2.val })
+                if (n2.val != '}') return this.expect('}', n2)
             } else {
                 const n3 = this.getNext()
-                console.log({ n3: n3.lexeme, p1: p1.lexeme })
-                parts.push(n3.lexeme)
+                console.log({ n3: n3.val, p1: p1.val })
+                parts.push(n3.val)
             }
         }
         const n4 = this.getNext()
-        if (n4.lexeme != '"') return this.expect('"', n4)
-        console.log('Afters', { n4: n4.lexeme })
+        if (n4.val != '"') return this.expect('"', n4)
+        console.log('Afters', { n4: n4.val })
         return { kind: 'str_expr', parts }
     }
 

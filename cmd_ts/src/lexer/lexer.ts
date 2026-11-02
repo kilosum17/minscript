@@ -1,5 +1,5 @@
 import { canMerge, isAlphaNumeric, isNewLine, isSpace, isSpecial, tryMerge } from "../utils/char_helpers";
-import { kwsSet, operSet, sigSet, Token } from "./lexer_types";
+import { getTokenType, kwsSet, operSet, sigSet, Token } from "./lexer_types";
 
 type Part = {
     startIdx: number
@@ -72,10 +72,8 @@ export class Lexer {
             // process.stdout.write(` ${lex.text}`)
 
             const tok = new Token()
-            tok.kind = kwsSet.has(lex.text as any) ? 'KWD' :
-                sigSet.has(lex.text as any) ? 'SIG' :
-                    operSet.has(lex.text as any) ? 'OPER' : 'ID'
-            tok.lexeme = lex.text
+            tok.type =  getTokenType(lex.text)
+            tok.val = lex.text
             tok.span = {
                 startCol: lex.startCol, endCol: lex.endCol,
                 startLine: lex.startLine, endLine: lex.endLine,
@@ -133,6 +131,22 @@ export class Lexer {
                 endLine, text, startCol, endCol
             }
         }
+    }
+
+    private _getPos = 0
+    next(): Token {
+        const tok = this.tokens[0] || new Token()
+        this.pos += 1
+        return tok
+    }
+
+    peek(n = 0): Token {
+        return this.tokens[this._getPos + n] || new Token()
+    }
+
+    expect(mes: any) {
+        const info = mes?.val || mes
+        return new Error(`Expected: ${info}, got: [${this.peek(-1).val} (${this.peek().val}),${this.peek(1).val}]`)
     }
 
 }

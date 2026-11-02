@@ -14,6 +14,7 @@ export type AstNode =
     | StructField
     | ArgsList
     | StatDecl
+    | ExprDecl
 
 export type AstError = {
     kind: 'Error',
@@ -63,7 +64,7 @@ export type FuncType = {
 
 export type BlockDecl = {
     kind: 'BlockDecl',
-    statements: (StatDecl | AstError)[]
+    statements: (StatDecl | ExprDecl | AstError)[]
 }
 
 export type StatDecl =
@@ -76,18 +77,22 @@ export type StatDecl =
         },
         rhs: StatDecl
     } | {
+        kind: 'assign',
+        rhs: StatDecl,
+    }
+
+export type ExprDecl =
+    | {
         kind: 'call'
         path: string,
         args: ArgsList | AstError,
     } | {
         kind: 'expr',
-        parts: (string | StatDecl | AstError)[],
-    } | {
-        kind: 'assign',
-        rhs: StatDecl,
+        lhs: string | ExprDecl | AstError,
+        rhs?: string | ExprDecl | AstError,
     } | {
         kind: "str_expr",
-        parts: (string | StatDecl | AstError)[]
+        parts: (string | ExprDecl | AstError)[]
     }
 
 
@@ -121,5 +126,5 @@ export type ImplBlock = {
 
 export type ArgsList = {
     kind: 'ArgsList',
-    args: (StatDecl | AstError)[],
+    args: (ExprDecl | AstError)[],
 }
