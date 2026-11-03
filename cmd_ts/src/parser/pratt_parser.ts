@@ -1,5 +1,5 @@
 import type { Lexer } from "../lexer/lexer"
-import type { Token } from "../lexer/lexer_types"
+import type { Token, TokenType } from "../lexer/lexer_types"
 
 export function SyntaxError(mes: string) {
     return Error(`Syntax Error:${mes}`)
@@ -11,23 +11,28 @@ export type TExpr =
     | { type: 'Unary', op: '-', right: TExpr }
     | { type: 'Binary', op: string, left: TExpr, right: TExpr }
     | { type: 'Call', callee: TExpr, 'args': TExpr[] }
+    | { type: 'StrExpr', parts: (string | TExpr)[] }
 
 export class PrattParser {
 
-    constructor(private lexer: Lexer) {
-        
+    constructor(private lex: Lexer) {
+
     }
 
-    expect(tok: any) {
-        this.lexer.expect(tok)
+    expect(kind: TokenType, tok?: Token): Token {
+        const n = tok || this.lex.next()
+        if (n.type !== kind) {
+            this.lex.expect(kind)
+        }
+        return n
     }
 
     parse_expr(min_bp = 0): TExpr {
-        let token = this.lexer.next()
+        let token = this.lex.next()
         let left = this.parse_nul(token)
 
         while (true) {
-            let next_tok = this.lexer.peek()
+            let next_tok = this.lex.peek()
             if (next_tok.type == 'EOF' || next_tok.type == ')') {
                 break
             }
@@ -35,7 +40,7 @@ export class PrattParser {
             if (bp == null || bp.left < min_bp) {
                 break
             }
-            this.lexer.next() //# Consume the operator
+            this.lex.next() //# Consume the operator
             left = this.parse_infix(next_tok, left, bp.right)
         }
         return left
@@ -54,25 +59,26 @@ export class PrattParser {
         }
         if (token.type == '(') {
             let expr = this.parse_expr(0)
-            this.expect('RPAREN')
+            this.expect(')')
             return expr
         }
         throw SyntaxError(`Unexpected token ${token}`)
     }
 
     parse_infix(token: Token, left: TExpr, right_bp: number): TExpr {
-        if (['PLUS', 'MINUS', 'MUL', 'DIV'].includes(token.type)) {
+        // console.warn('##pinfix', token.type, left, right_bp)
+        if (['+', '-', '*', '/'].includes(token.type)) {
             let right = this.parse_expr(right_bp)
             return { 'type': 'Binary', 'op': token.val, 'left': left, 'right': right }
         }
         if (token.type == '(') { //# Function call: f(args)
             let args = []
-            if (this.lexer.peek().type != ')') {
+            if (this.lex.peek().type != ')') {
                 while (true) {
                     args.push(this.parse_expr(0))
-                    if (this.lexer.peek().type == ',') {
-                        this.lexer.next()
-                        if (this.lexer.peek().type == ')') {
+                    if (this.lex.peek().type == ',') {
+                        this.lex.next()
+                        if (this.lex.peek().type == ')') {
                             break
                         }
                     } else {
@@ -80,7 +86,7 @@ export class PrattParser {
                     }
                 }
             }
-            this.expect('RPAREN')
+            this.expect(')')
             return { type: 'Call', 'callee': left, 'args': args }
         }
         throw SyntaxError(`Unexpected infix token ${token}`)
@@ -88,10 +94,30 @@ export class PrattParser {
 
     get_infix_bp(token: Token): { left: number, right: number } | null {
         //# Returns (left_binding_power, right_binding_power)
-        if (['PLUS', 'MINUS'].includes(token.type)) return { left: 1, right: 2 }
-        if (['MUL', 'DIV'].includes(token.type)) return { left: 3, right: 4 }
+        if (['+', '-'].includes(token.type)) return { left: 1, right: 2 }
+        if (['*', '/'].includes(token.type)) return { left: 3, right: 4 }
         if (token.type == '(') return { left: 7, right: 0 } //# Function call binding power
         return null
+    }
+
+    parse_string_expr(): TExpr {
+        const n1 = this.expect('"')
+        let parts = [] as (string | TExpr)[]
+        while (this.lex.peek().val != '"') {
+            const p1 = this.lex.peek(1)
+            if (this.lex.peek().val === '$' && p1.val === '{' && !p1.ws_before) {
+                this.lex.skip(2)
+                parts.push(this.parse_expr(0))
+                const n2 = this.expect('}')
+            } else {
+                const n3 = this.lex.next()
+                console.log({ n3: n3.val, p1: p1.val })
+                parts.push(n3.val)
+            }
+        }
+        const n4 = this.expect('"')
+        console.log('Afters', { n4: n4.val })
+        return { type: 'StrExpr', parts }
     }
 
 }

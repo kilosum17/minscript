@@ -1,3 +1,4 @@
+import { operSet } from "../lexer/lexer_types"
 import { mergeMap } from "./merge_map"
 
 export const isAlpha = (c: string) => {
@@ -25,18 +26,8 @@ export const isSpaceAndNl = (c: string) => {
     return c === ' ' || c === '\t' || c === '\r' || c === '\n'
 }
 
-const specialSet = new Set([
-    '"', ".",
-    "'", ':',
-    '*', '+', '-', '/', '%',
-    '-', '>', '<', ',',
-    '(', ')', '{', '}', '[', ']',
-    '$', '&', '#', '?',
-    '=', '!', ''
-])
-
 export const isSpecial = (c: string) => {
-    return specialSet.has(c)
+    return operSet.has(c) || c == '"'
 }
 
 export const isIdent = (value: string): boolean => {

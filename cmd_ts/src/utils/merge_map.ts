@@ -14,6 +14,7 @@ export const mergeMap = {
     ">": "=",
     "<": "=",
     ":": "=",
+    ":=": "=",
     '+': '=',
     "*": "=",
 } as Record<string, string | Set<string>>

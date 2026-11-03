@@ -57,13 +57,16 @@ export class Lexer {
                 else console.log("Done <EOF>")
                 break
             }
-            if (tryMerge(lex.text)) {
+
+            while (tryMerge(lex.text)) {
                 let lex2 = this.getNext()
                 // console.log('can-merge', lex, lex2)
-                if (!lex2.ws_before && canMerge(lex.text, part_to_str(source, lex2))) {
+                if (!lex2.ws_before && canMerge(lex.text, lex2.text)) {
                     lex = merge_parts(lex, lex2)
                     this.pos = lex.endIdx
                     // console.log('merged', lex, lex2)
+                }else{
+                    break
                 }
             }
             if (lex.nl_before) {
@@ -72,7 +75,7 @@ export class Lexer {
             // process.stdout.write(` ${lex.text}`)
 
             const tok = new Token()
-            tok.type =  getTokenType(lex.text)
+            tok.type = getTokenType(lex.text)
             tok.val = lex.text
             tok.span = {
                 startCol: lex.startCol, endCol: lex.endCol,
@@ -135,8 +138,8 @@ export class Lexer {
 
     private _getPos = 0
     next(): Token {
-        const tok = this.tokens[0] || new Token()
-        this.pos += 1
+        const tok = this.tokens[this._getPos] || new Token()
+        this._getPos += 1
         return tok
     }
 
@@ -144,9 +147,13 @@ export class Lexer {
         return this.tokens[this._getPos + n] || new Token()
     }
 
-    expect(mes: any) {
+    skip(n = 1) {
+        this._getPos += n
+    }
+
+    expect(mes: any): never {
         const info = mes?.val || mes
-        return new Error(`Expected: ${info}, got: [${this.peek(-1).val} (${this.peek().val}),${this.peek(1).val}]`)
+        throw new Error(`Expected: ${info}, got: [${this.peek(-1).val} (${this.peek().val}) ${this.peek(1).val}]`)
     }
 
 }

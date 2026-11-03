@@ -38,28 +38,28 @@ export const OPERATORS = [
 export const operSet = new Set(OPERATORS as any as string[])
 
 const OTHERS = [
-    'UNK', 'EOF', 'ID', 'NUM'
+    'UNK', 'EOF', 'ID', 'NUM', '"', 'STOP',
 ] as const
 export const othersSet = new Set(OTHERS)
 
 export type TokenType =
-    | typeof OTHERS
-    | typeof KWS
-    | typeof SIG
-    | typeof OPERATORS
+    | (typeof OTHERS)[number]
+    | (typeof KWS)[number]
+    | (typeof SIG)[number]
+    | (typeof OPERATORS)[number]
 
 export function getTokenType(_val: string): TokenType {
     const val = _val as any
     if (othersSet.has(val) || kwsSet.has(val) || sigSet.has(val) || operSet.has(val)) {
         return val as TokenType
     }
-    if (isIdent(val)) return 'ID' as any
-    if (isNum(val)) return 'NUM' as any
-    return 'UNK' as any
+    if (isIdent(val)) return 'ID'
+    if (isNum(val)) return 'NUM'
+    return 'UNK'
 }
 
 export class Token {
-    type: TokenType = 'UNK' as any
+    type: TokenType = 'UNK'
     span: Span = { ...DEF_SPAN }
     val: string = '_<UNK>_'
     nl_before = false
@@ -74,7 +74,7 @@ export class Token {
     }
 
     isKwd() {
-        return kwsSet.has(this.type as any)
+        return kwsSet.has(this.type as string)
     }
 
 }

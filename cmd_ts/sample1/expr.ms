@@ -1,9 +1,11 @@
 package main
 
+import "std.log"
+
 pub async fun main(){
-    let a = 10;
+    let a = 10
     b := 20
-    varc = 30;
+    var c = 30;
     d :== 45;
     d = 40
     sum := a + b
@@ -12,7 +14,7 @@ pub async fun main(){
     prod2 := b * c+a
 
     com1 := (a+b) * c
-    com2 := math.abs(-10) / 5
+    com2 := abs(-10) / 5
 
 }
 

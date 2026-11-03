@@ -1,24 +1,25 @@
+import type { TExpr } from "./pratt_parser"
 
 export type AstNodeKind = "PackageDecl" | "ImportDecl"
 
 export type AstNode =
-    | AstError
+    | AstSkip
     | PackageDecl
     | ImportDecl
     | FuncDecl
     | FuncParamsList
     | FuncParam
+    | FuncType
     | BlockDecl
     | StructDecl
     | StructFieldList
     | StructField
-    | ArgsList
     | StatDecl
-    | ExprDecl
+    | TExpr
+    | ImplBlock
 
-export type AstError = {
-    kind: 'Error',
-    recoverBefore?: string[]
+export type AstSkip = {
+    kind: 'AstSkip'
     message: string
 }
 
@@ -37,20 +38,20 @@ export type FuncDecl = {
     is_public: boolean,
     is_async: boolean,
     name: string,
-    params: FuncParamsList | AstError
-    return: FuncType | AstError,
-    block: BlockDecl | AstError,
+    params: FuncParamsList
+    return: FuncType,
+    block: BlockDecl,
 }
 
 export type FuncParamsList = {
     kind: 'ParamsList'
-    params: (FuncParam | AstError)[]
+    params: (FuncParam)[]
 }
 
 export type FuncParam = {
     kind: 'Param'
     name: string,
-    type?: FuncType | AstError,
+    type?: FuncType,
     is_borrow: boolean,
     is_muttable: boolean,
     is_receiver: boolean,
@@ -64,67 +65,49 @@ export type FuncType = {
 
 export type BlockDecl = {
     kind: 'BlockDecl',
-    statements: (StatDecl | ExprDecl | AstError)[]
+    statements: (StatDecl | TExpr)[]
 }
 
 export type StatDecl =
     | {
         kind: 'binding',
-        mutable: boolean,
+        is_muttable: boolean,
+        is_short: boolean,
         lhs: {
             name: string,
-            type: FuncType,
+            type?: FuncType,
         },
-        rhs: StatDecl
+        rhs: TExpr
     } | {
         kind: 'assign',
-        rhs: StatDecl,
+        lhs: TExpr,
+        rhs: TExpr,
     }
-
-export type ExprDecl =
-    | {
-        kind: 'call'
-        path: string,
-        args: ArgsList | AstError,
-    } | {
-        kind: 'expr',
-        lhs: string | ExprDecl | AstError,
-        rhs?: string | ExprDecl | AstError,
-    } | {
-        kind: "str_expr",
-        parts: (string | ExprDecl | AstError)[]
-    }
-
 
 export type StructDecl = {
     kind: 'StructDecl',
     name: string,
     is_public: boolean,
     generics: [],
-    fields: StructFieldList | AstError
+    fields: StructFieldList
 }
 
 export type StructFieldList = {
     kind: "StructFieldList"
-    fields: (StructField | AstError)[]
+    fields: (StructField)[]
 }
 
 export type StructField = {
     kind: "StructField"
     name: string,
     is_public: boolean
-    type: FuncType | AstError,
+    type: FuncType,
 }
 
 export type ImplBlock = {
     kind: 'ImplBlock'
     name: string
     interfaces: [],
-    methods: (FuncDecl | AstError)[]
+    methods: (FuncDecl)[]
 
-}
-
-export type ArgsList = {
-    kind: 'ArgsList',
-    args: (ExprDecl | AstError)[],
 }

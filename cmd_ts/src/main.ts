@@ -10,9 +10,10 @@ async function main(path: string) {
     lexer.tokens.forEach(t => {
         // console.log(t.print())
     })
-    
+
+    // console.log(lexer.tokens.slice(0, 40).map(s => s.val))
     const parser = new Parser(lexer)
-    
+
 
 }
 
