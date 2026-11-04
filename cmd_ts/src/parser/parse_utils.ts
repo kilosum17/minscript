@@ -28,6 +28,13 @@ function printNode(node: AstNode): string {
             case 'Vec': {
                 return `v[${node.items.map(v => printNode(v)).join(', ')}]`
             }
+            case "Closure": {
+                const params = node.params.map(s => `${s.name}${s.type ? ':' + printNode(s.type) : ''}`).join(', ')
+                return `#{ ${params} => ${printNode(node.body)}`
+            }
+            case 'If': {
+                return `if ${printNode(node.condition)} ${printNode(node.thenBranch)} ${node.elseBranch ? ' else ' + printNode(node.elseBranch) : ''} `
+            }
         }
     }
 
@@ -59,12 +66,13 @@ function printNode(node: AstNode): string {
         case 'BlockDecl':
             return `{\n${node.statements.map(s => `    ${printNode(s)}`).join('\n')}\n}`;
         case 'binding': {
-            const mut = node.is_muttable ? 'mut ' : '';
+            const mut = node.is_muttable ? 'var ' : 'let';
             const typeStr = node.lhs.type ? `: ${printNode(node.lhs.type)}` : '';
             if (node.is_short) {
-                return `${node.lhs.name} := ${printNode(node.rhs)}`;
+                const oper = node.is_muttable ? ':==' : ':='
+                return `${node.lhs.name} ${oper} ${printNode(node.rhs)}`;
             }
-            return `let ${mut}${node.lhs.name}${typeStr} = ${printNode(node.rhs)}`;
+            return `${mut}${node.lhs.name}${typeStr} = ${printNode(node.rhs)}`;
         }
         case 'assign':
             return `${printNode(node.lhs)} = ${printNode(node.rhs)}`;

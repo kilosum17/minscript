@@ -41,10 +41,10 @@ async fun main() {
     //n==it==it1,idx=it2
     let highNumbers = numbers.filter(#{n,idx => n > 50}) 
     // () in arrow function always required
-    let hasHonorRoll = scores.any((score) => score >= 90.0) 
-    let allPassing = scores.all((score) => score >= 50.0)
+    let hasHonorRoll = scores.any(#{score,v => score >= 90.0}) 
+    let allPassing = scores.all(#{score => score >= 50.0})
     // these return elements as &T what if we want &mut T? 
-    let processedValues = numbers.map((n) => {
+    let processedValues = numbers.map(#{n => 
         let squared = n * n
         let offset = squared + 5
         return offset

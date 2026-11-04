@@ -1,3 +1,4 @@
+
 import type { Lexer } from "../lexer/lexer"
 import type { Token, TokenType } from "../lexer/lexer_types"
 import type { Parser } from "./parser"
@@ -10,22 +11,21 @@ export function SyntaxError(mes: string) {
 export type TExpr =
     | { type: 'Literal', value: string }
     | { type: 'Var', name: string }
-    | { type: 'Unary', op: '-', right: TExpr }
+    | { type: 'Unary', op: '-' | '!', right: TExpr }
     | { type: 'Binary', op: string, left: TExpr, right: TExpr }
     | { type: 'Call', callee: TExpr, args: TExpr[] }
     | { type: 'StrExpr', parts: (string | TExpr)[] }
     | { type: 'StructInit', fields: { name: string, val: TExpr }[] }
     | { type: 'Vec', items: TExpr[] }
-    | { type: 'Closure', params: { name: string, type?: FuncType }[], body: BlockDecl }
+    | { type: 'Closure', implicit: boolean, params: { name: string, type?: FuncType }[], body: BlockDecl }
+    | { type: 'If', condition: TExpr, thenBranch: BlockDecl, elseBranch?: BlockDecl | TExpr }
 
 export class PrattParser {
 
     constructor(
         private lex: Lexer,
         private parser: Parser,
-    ) {
-
-    }
+    ) { }
 
     expect(kind: TokenType, tok?: Token): Token {
         const n = tok || this.lex.next()
@@ -35,182 +35,276 @@ export class PrattParser {
         return n
     }
 
-    parse_expr(min_bp = 0): TExpr {
-        let token = this.lex.next()
+    parse_expr(min_bp = 0, stopAtBrace = false): TExpr {
+        const token = this.lex.next()
         let left = this.parse_nul(token)
 
         while (true) {
-            let next_tok = this.lex.peek()
-            if (next_tok.type == 'EOF' || next_tok.type == ')') {
-                break
-            }
-            let bp = this.get_infix_bp(next_tok)
-            if (bp == null || bp.left < min_bp) {
-                break
-            }
-            this.lex.next() //# Consume the operator
-            left = this.parse_infix(next_tok, left, bp.right)
+            const next = this.lex.peek()
+
+            if (
+                next.type === 'EOF' ||
+                [')', ']', '}', ',', ';'].includes(next.type)
+            ) break
+
+            if (stopAtBrace && next.type === '{') break
+
+            const bp = this.get_infix_bp(next)
+            if (bp == null || bp.left < min_bp) break
+
+            this.lex.next()
+            left = this.parse_infix(next, left, bp.right)
         }
+
         return left
     }
 
     parse_nul(token: Token): TExpr {
-        if (token.type == 'NUM') {
-            return { 'type': 'Literal', 'value': token.val }
+        if (token.type === 'NUM') {
+            return { type: 'Literal', value: token.val }
         }
-        if (token.type == 'ID') {
-            return { 'type': 'Var', 'name': token.val }
+
+        if (token.type === 'ID') {
+            return { type: 'Var', name: token.val }
         }
-        if (token.type == '-') {
-            let right = this.parse_expr(5) // Prefix binding power
-            return { 'type': 'Unary', 'op': '-', 'right': right }
+        if (token.type === 'if') return this.parse_if()
+
+        if (token.type === '-') {
+            const right = this.parse_expr(13)
+            return { type: 'Unary', op: '-', right }
         }
-        if (token.type == '(') {
-            let expr = this.parse_expr(0)
+
+        if (token.type === '!') {
+            const right = this.parse_expr(13)
+            return { type: 'Unary', op: '!', right }
+        }
+
+        if (token.type === '(') {
+            const expr = this.parse_expr(0)
             this.expect(')')
             return expr
         }
+
         if (token.type === '"') {
-            console.log("desa", this.lex.peek(0).val)
-            let expr = this.parse_string_expr(true)
-            return expr
+            return this.parse_string_expr(true)
         }
+
         if (token.type === 'v[') {
             return this.parse_vec(true)
         }
-        if (token.type == '#{') {
+
+        if (token.type === '#{') {
             return this.parse_closure(true)
         }
-        console.log('Des', token.val, this.lex.peek(0).val, this.lex.peek(1).val)
+
         throw SyntaxError(`Unexpected token ${token.val}`)
     }
 
     parse_infix(token: Token, left: TExpr, right_bp: number): TExpr {
-        // console.warn('##pinfix', token.type, left, right_bp)
-        if (['.', '+', '-', '*', '/'].includes(token.type)) {
-            let right = this.parse_expr(right_bp)
-            return { 'type': 'Binary', 'op': token.val, 'left': left, 'right': right }
+        const op = token.val
+
+        if ([
+            '.', '+', '-', '*', '/', '%',
+            '==', '!=', '>', '<', '>=', '<=',
+            'and', 'or'
+        ].includes(op)) {
+            const right = this.parse_expr(right_bp)
+            return { type: 'Binary', op, left, right }
         }
-        if (token.type == '(') { //# Function call: f(args)
-            let args = []
-            if (this.lex.peek().type != ')') {
+
+        if (token.type === '(') {
+            const args: TExpr[] = []
+
+            if (this.lex.peek().type !== ')') {
                 while (true) {
                     args.push(this.parse_expr(0))
-                    if (this.lex.peek().type == ',') {
+
+                    if (this.lex.peek().type === ',') {
                         this.lex.next()
-                        if (this.lex.peek().type == ')') {
-                            break
-                        }
+                        if (this.lex.peek().type === ')') break
                     } else {
                         break
                     }
                 }
             }
+
             this.expect(')')
-            return { type: 'Call', 'callee': left, 'args': args }
+            return { type: 'Call', callee: left, args }
         }
-        if (token.type == '{') {
-            let fields = [] as { name: string, val: TExpr }[]
-            if (this.lex.peek().type != '}') {
+
+        if (token.type === '{') {
+            const fields: { name: string, val: TExpr }[] = []
+
+            if (this.lex.peek().type !== '}') {
                 while (true) {
                     const n1 = this.expect('ID')
                     this.expect(':')
+
                     const expr = this.parse_expr(0)
-                    const p1 = this.lex.peek()
-                    const p2 = this.lex.peek(1)
                     fields.push({ name: n1.val, val: expr })
-                    if (p1.type == '}' || (p1.type === ',' && p2.type === '}')) {
-                        break
-                    } else if (this.lex.peek().type == ',') {
-                        this.expect(',')
+
+                    if (this.lex.peek().type === '}') break
+
+                    if (this.lex.peek().type === ',') {
+                        this.lex.next()
+                        if (this.lex.peek().type === '}') break
+                    } else {
+                        throw SyntaxError(`Expected ',' or '}' in struct initializer`)
                     }
                 }
-                this.expect('}')
             }
-            console.log('fields', fields)
+
+            this.expect('}')
             return { type: 'StructInit', fields }
         }
+
         throw SyntaxError(`Unexpected infix token ${token.val}`)
     }
 
     get_infix_bp(token: Token): { left: number, right: number } | null {
-        //# Returns (left_binding_power, right_binding_power)
-        if (['+', '-'].includes(token.type)) return { left: 1, right: 2 }
-        if (['*', '/'].includes(token.type)) return { left: 3, right: 4 }
-        if (token.type == '.') return { left: 6, right: 0 }
-        if (token.type == '{') return { left: 7, right: 0 }
-        if (token.type == '(') return { left: 8, right: 0 }
-        if (token.type == 'v[') return { left: 8, right: 0 }
+        const op = token.val
+
+        if (op === 'or') return { left: 1, right: 2 }
+        if (op === 'and') return { left: 3, right: 4 }
+
+        if (['==', '!='].includes(op))
+            return { left: 5, right: 6 }
+
+        if (['>', '<', '>=', '<='].includes(op))
+            return { left: 7, right: 8 }
+
+        if (['+', '-'].includes(op))
+            return { left: 9, right: 10 }
+
+        if (['*', '/', '%'].includes(op))
+            return { left: 11, right: 12 }
+
+        if (op === '.') return { left: 14, right: 0 }
+        if (token.type === '{') return { left: 15, right: 0 }
+        if (token.type === '(') return { left: 16, right: 0 }
+        if (token.type === 'v[') return { left: 16, right: 0 }
+
         return null
     }
 
     parse_string_expr(skip_start = false): TExpr {
         if (!skip_start) this.expect('"')
 
-        let parts = [] as (string | TExpr)[]
-        while (this.lex.peek().val != '"') {
+        const parts: (string | TExpr)[] = []
+
+        while (this.lex.peek().val !== '"') {
+            if (this.lex.peek().type === 'EOF') {
+                throw SyntaxError('Unterminated string expression')
+            }
+
             const p1 = this.lex.peek(1)
-            if (this.lex.peek().val === '$' && p1.val === '{' && !p1.ws_before) {
+
+            if (
+                this.lex.peek().val === '$' &&
+                p1.val === '{' &&
+                !p1.ws_before
+            ) {
                 this.lex.skip(2)
                 parts.push(this.parse_expr(0))
-                console.log('parts', parts.at(-1))
                 this.expect('}')
             } else {
-                const n3 = this.lex.next()
-                console.log({ n3: n3.val, p1: p1.val })
-                parts.push(n3.val)
-                //  this.expect('STOP')
+                parts.push(this.lex.next().val)
             }
         }
-        const n4 = this.expect('"')
-        console.log('Afters', { n4: n4.val })
+
+        this.expect('"')
         return { type: 'StrExpr', parts }
     }
 
     parse_vec(skip_start = false): TExpr {
-        if (!skip_start) this.lex.expect('v[')
-        const items = [] as TExpr[]
-        if (this.lex.peek().type != '}') {
+        if (!skip_start) this.expect('v[')
+
+        const items: TExpr[] = []
+
+        if (this.lex.peek().type !== ']') {
             while (true) {
-                const expr = this.parse_expr(0)
-                items.push(expr)
-                if (this.lex.peek().type == ']') break
+                items.push(this.parse_expr(0))
+
+                if (this.lex.peek().type === ']') break
+
                 if (this.lex.peek().type === ',') {
-                    this.expect(',')
-                    if (this.lex.peek().type == ']') break
+                    this.lex.next()
+                    if (this.lex.peek().type === ']') break
+                } else {
+                    throw SyntaxError(`Expected ',' or ']' in vector`)
                 }
             }
-            this.expect(']')
         }
+
+        this.expect(']')
         return { type: 'Vec', items }
     }
-    parse_closure(skio_start = false): TExpr {
-        if (!skio_start) this.expect('#{')
-        let hasArror = false
+
+    parse_closure(skip_start = false): TExpr {
+        if (!skip_start) this.expect('#{')
+
+        let implicit = false
         let idx = 0
-        while (this.lex.peek(idx).type != '}') {
+
+        while (this.lex.peek(idx).type !== '}') {
+            if (this.lex.peek(idx).type === 'EOF') {
+                throw SyntaxError('Unterminated closure')
+            }
+
             if (this.lex.peek(idx).type === '=>') {
-                hasArror = true
+                implicit = true
                 break
             }
+
             idx++
         }
-        const params = [] as { name: string, type?: FuncType }[]
-        if (hasArror) {
-            while (this.lex.peek().type != '=>') {
-                const n1 = this.lex.next()
+
+        const params: { name: string, type?: FuncType }[] = []
+
+        if (implicit) {
+            while (this.lex.peek().type !== '=>') {
+                const name = this.expect('ID')
+
                 if (this.lex.peek().type === ':') {
                     this.expect(':')
                     const type = this.parser.parseType()
-                    params.push({ name: n1.val, type })
+                    params.push({ name: name.val, type })
                 } else {
-                    params.push({ name: n1.val })
+                    params.push({ name: name.val })
+                }
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                } else if (this.lex.peek().type !== '=>') {
+                    throw SyntaxError(`Expected ',' or '=>' in closure parameters`)
                 }
             }
+
             this.expect('=>')
         }
+
         const body = this.parser.parserBlock(true)
-        console.log('Closuerbody', body)
-        return { type: 'Closure', params, body }
+        console.log('ClosuRebody', body)
+        return { type: 'Closure', implicit, params, body }
+    }
+
+    parse_if(): TExpr {
+        const condition = this.parse_expr(0, true)
+        const thenBranch = this.parser.parserBlock()
+
+        let elseBranch: BlockDecl | TExpr | undefined
+
+        if (this.lex.peek().val === 'else') {
+            this.lex.next()
+
+            if (this.lex.peek().val === 'if') {
+                this.lex.next()
+                elseBranch = this.parse_if()
+            } else {
+                elseBranch = this.parser.parserBlock()
+            }
+        }
+
+        return { type: 'If', condition, thenBranch, elseBranch }
     }
 }
