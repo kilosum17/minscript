@@ -14,7 +14,7 @@ pub async fun main(){
     prod2 := b * c+a
 
     com1 := (a+b) * c
-    com2 := abs(-10) / 5
+    com2 := math.abs(-10) / 5
 
 }
 

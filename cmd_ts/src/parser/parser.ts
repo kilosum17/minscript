@@ -303,7 +303,16 @@ export class Parser {
     parserStatement(): TExpr | StatDecl {
         const p1 = this.peek()
         const p2 = this.peek(1)
-        if (p1.type == "let" || p1.type === 'var') {
+        if (p1.type == 'return') {
+            this.expect('return')
+            let expr
+            if (this.peek().type == ';' || this.peek().type == '}' || this.peek().nl_before) {
+                expr = null
+            } else {
+                expr = this.pratt.parse_expr(0)
+            }
+            return { kind: 'return', expr }
+        } else if (p1.type == "let" || p1.type === 'var') {
             console.log("Run let/var binding")
             return this.parsseBinding()
         } else {

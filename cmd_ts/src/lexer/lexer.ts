@@ -51,21 +51,25 @@ export class Lexer {
         while (true) {
             let lex = this.getNext()
             this.pos = lex.endIdx
+            // console.log('lexer', lex.text)
 
             if (!lex.text) {
-                if (lex.endIdx != this.endPos) console.warn('Failed')
+                if (lex.endIdx != this.endPos) {
+                    console.warn('*** Failed ***')
+                    console.log('..' + source.substring(Math.max(0, this.pos - 20), this.pos + 10))
+                }
                 else console.log("Done <EOF>")
                 break
             }
 
             while (tryMerge(lex.text)) {
                 let lex2 = this.getNext()
-                // console.log('can-merge', lex, lex2)
+                console.log('can-merge', lex.text, lex2.text)
                 if (!lex2.ws_before && canMerge(lex.text, lex2.text)) {
                     lex = merge_parts(lex, lex2)
                     this.pos = lex.endIdx
-                    // console.log('merged', lex, lex2)
-                }else{
+                    console.log('merged', lex.text, lex2.text)
+                } else {
                     break
                 }
             }
@@ -115,12 +119,15 @@ export class Lexer {
             let endLine = this.line
             let endCol = this.col
             let text = this.source.slice(startPos, endPos)
+            console.log("Special", this.source[cur])
             return {
                 startIdx: startPos, endIdx: endPos, ws_before, nl_before, startLine,
                 endLine, text, startCol, endCol
             }
         } else {
             // get-word
+            console.log("Dwe", this.source[cur])
+
             while (isNotEnd(cur) && isAlphaNumeric(this.source[cur]) || this.source[cur] == '_') {
                 this.col += 1
                 cur++

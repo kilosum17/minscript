@@ -5,7 +5,7 @@ import "std.log"
 
 // returns void
 pub fun logMessage(msg: string) {  
-    log.println("LOG: ${msg}")
+    log.println("LOGs: ${msg}")
 }
 
 pub fun calculateArea(width: f32, height: f32) -> f32 {

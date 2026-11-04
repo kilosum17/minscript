@@ -82,6 +82,9 @@ export type StatDecl =
         kind: 'assign',
         lhs: TExpr,
         rhs: TExpr,
+    } | {
+        kind: 'return',
+        expr: TExpr | null,
     }
 
 export type StructDecl = {

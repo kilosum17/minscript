@@ -27,7 +27,7 @@ export const isSpaceAndNl = (c: string) => {
 }
 
 export const isSpecial = (c: string) => {
-    return operSet.has(c) || c == '"'
+    return operSet.has(c) || c == '"' || c == '$' || c == ',' || c === '#'
 }
 
 export const isIdent = (value: string): boolean => {
