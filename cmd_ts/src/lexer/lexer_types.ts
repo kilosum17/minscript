@@ -11,7 +11,7 @@ export type Span = typeof DEF_SPAN
 export const KWS = [
     "package", "import", "pub", "type", "inter", "impl", "fun", "async", "let", "var", "mut", "extern",
     "if", "else", "match", "for", "in", "while", "loop", "break", "continue", "return",
-    "await", "or", "as", "unsafe", "recover", "true", "false", "nil", "this", "Self", "TypeOf",
+    "await", "or", "as", "unsafe", "recover", "true", "false", "nil", "Self", "TypeOf",
 ] as const
 export const kwsSet = new Set(KWS as any as string[])
 
