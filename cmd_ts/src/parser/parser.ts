@@ -291,12 +291,13 @@ export class Parser {
     }
 
 
-    parserBlock(): BlockDecl {
-        const n1 = this.expect('{')
+    parserBlock(skip_start = false): BlockDecl {
+        if (!skip_start) this.expect('{')
 
         const stats = [] as (TExpr | StatDecl)[]
         let i = 0
         while (this.peek().val != '}') {
+            this.tryParseComment()
             const stat = this.parserStatement()
             console.log(printNode2(stat))
             stats.push(stat)

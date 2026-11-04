@@ -1,6 +1,7 @@
 import type { Lexer } from "../lexer/lexer"
 import type { Token, TokenType } from "../lexer/lexer_types"
 import type { Parser } from "./parser"
+import type { BlockDecl, FuncType } from "./parser_types"
 
 export function SyntaxError(mes: string) {
     return Error(`Syntax Error:${mes}`)
@@ -15,6 +16,7 @@ export type TExpr =
     | { type: 'StrExpr', parts: (string | TExpr)[] }
     | { type: 'StructInit', fields: { name: string, val: TExpr }[] }
     | { type: 'Vec', items: TExpr[] }
+    | { type: 'Closure', params: { name: string, type?: FuncType }[], body: BlockDecl }
 
 export class PrattParser {
 
@@ -75,6 +77,9 @@ export class PrattParser {
         }
         if (token.type === 'v[') {
             return this.parse_vec(true)
+        }
+        if (token.type == '#{') {
+            return this.parse_closure(true)
         }
         console.log('Des', token.val, this.lex.peek(0).val, this.lex.peek(1).val)
         throw SyntaxError(`Unexpected token ${token.val}`)
@@ -179,5 +184,33 @@ export class PrattParser {
         }
         return { type: 'Vec', items }
     }
-
+    parse_closure(skio_start = false): TExpr {
+        if (!skio_start) this.expect('#{')
+        let hasArror = false
+        let idx = 0
+        while (this.lex.peek(idx).type != '}') {
+            if (this.lex.peek(idx).type === '=>') {
+                hasArror = true
+                break
+            }
+            idx++
+        }
+        const params = [] as { name: string, type?: FuncType }[]
+        if (hasArror) {
+            while (this.lex.peek().type != '=>') {
+                const n1 = this.lex.next()
+                if (this.lex.peek().type === ':') {
+                    this.expect(':')
+                    const type = this.parser.parseType()
+                    params.push({ name: n1.val, type })
+                } else {
+                    params.push({ name: n1.val })
+                }
+            }
+            this.expect('=>')
+        }
+        const body = this.parser.parserBlock(true)
+        console.log('Closuerbody', body)
+        return { type: 'Closure', params, body }
+    }
 }
