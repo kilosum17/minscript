@@ -21,6 +21,13 @@ function printNode(node: AstNode): string {
                 return `${printNode(node.callee)}(${node.args.map(printNode).join(', ')})`;
             case 'StrExpr':
                 return `"${node.parts.map(p => (typeof p === 'string' ? p : printNode(p))).join('')}"`;
+            case 'StructInit': {
+                const fields = node.fields.map(f => `${f.name} : ${printNode(f.val)}`)
+                return `{\n${fields}\n}`
+            }
+            case 'Vec': {
+                return `v[${node.items.map(v => printNode(v)).join(', ')}]`
+            }
         }
     }
 
@@ -75,6 +82,9 @@ function printNode(node: AstNode): string {
         case 'ImplBlock': {
             const methods = node.methods.map(printNode).join('\n\n');
             return `impl ${node.name} {\n${methods}\n}`;
+        }
+        case "return": {
+            return `return ${node.expr ? printNode(node.expr) : ''}`
         }
         default:
             return '';

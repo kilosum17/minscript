@@ -5,6 +5,9 @@ import { printNode2 } from "./parse_utils";
 import type { AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, ImplBlock, StatDecl, StructDecl, StructField, StructFieldList } from "./parser_types";
 import { PrattParser, type TExpr } from "./pratt_parser";
 
+export const assigns = ["=", "+=", '-=', '*=', '/=', '%=']
+
+
 export class Parser {
     curPos = 0
     trackingPub = false
@@ -13,7 +16,7 @@ export class Parser {
     pratt: PrattParser
 
     constructor(private lex: Lexer) {
-        this.pratt = new PrattParser(lex)
+        this.pratt = new PrattParser(lex, this)
 
         this.parseAll()
     }
@@ -77,6 +80,12 @@ export class Parser {
         if (n.type !== kind) {
             this.lex.expect(kind)
         }
+        return n
+    }
+
+    expectVal(val: string, tok?: Token): Token {
+        const n = tok || this.lex.next()
+        if (n.val !== val) this.lex.expect(val)
         return n
     }
 
@@ -168,7 +177,7 @@ export class Parser {
                 is_muttable = true
                 n1 = this.next()
             }
-            this.expect('this', n1)
+            this.expectVal('this', n1)
             return { kind: 'Param', name: 'this', is_receiver: true, is_borrow, is_muttable }
         } else {
             this.expect(`ID`, n1)
@@ -318,7 +327,6 @@ export class Parser {
         } else {
             const path = this.peekPath('sts')
             if (path) {
-                const assigns = ["=", "+=", '-=', '*=', '/=', '%=']
                 const binds = [":=", ":=="]
                 if (binds.includes(this.peek(path.len).val)) {
                     console.log("Run binding")
@@ -374,9 +382,11 @@ export class Parser {
 
     parseAssign(path?: ReturnType<typeof this.peekPath>): StatDecl {
         const lhs = this.pratt.parse_expr(0)
-        this.expect('=')
+        const n1 = this.next()
+        if (!assigns.some(s => n1.val === s)) this.lex.expect('=')
+        // this.expect('=')
         const rhs = this.pratt.parse_expr(0)
-        return { kind: 'assign', lhs, rhs }
+        return { kind: 'assign', oper: n1.val, lhs, rhs }
     }
 
 }

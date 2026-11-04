@@ -1,8 +1,9 @@
 import type { Lexer } from "../lexer/lexer"
 import type { Token, TokenType } from "../lexer/lexer_types"
+import type { Parser } from "./parser"
 
-export function SyntaxError(mes: string): never {
-    throw Error(`Syntax Error:${mes}`)
+export function SyntaxError(mes: string) {
+    return Error(`Syntax Error:${mes}`)
 }
 
 export type TExpr =
@@ -13,10 +14,14 @@ export type TExpr =
     | { type: 'Call', callee: TExpr, args: TExpr[] }
     | { type: 'StrExpr', parts: (string | TExpr)[] }
     | { type: 'StructInit', fields: { name: string, val: TExpr }[] }
+    | { type: 'Vec', items: TExpr[] }
 
 export class PrattParser {
 
-    constructor(private lex: Lexer) {
+    constructor(
+        private lex: Lexer,
+        private parser: Parser,
+    ) {
 
     }
 
@@ -68,8 +73,11 @@ export class PrattParser {
             let expr = this.parse_string_expr(true)
             return expr
         }
+        if (token.type === 'v[') {
+            return this.parse_vec(true)
+        }
         console.log('Des', token.val, this.lex.peek(0).val, this.lex.peek(1).val)
-        SyntaxError(`Unexpected token ${token.val}`)
+        throw SyntaxError(`Unexpected token ${token.val}`)
     }
 
     parse_infix(token: Token, left: TExpr, right_bp: number): TExpr {
@@ -117,7 +125,7 @@ export class PrattParser {
             console.log('fields', fields)
             return { type: 'StructInit', fields }
         }
-        SyntaxError(`Unexpected infix token ${token.val}`)
+        throw SyntaxError(`Unexpected infix token ${token.val}`)
     }
 
     get_infix_bp(token: Token): { left: number, right: number } | null {
@@ -127,6 +135,7 @@ export class PrattParser {
         if (token.type == '.') return { left: 6, right: 0 }
         if (token.type == '{') return { left: 7, right: 0 }
         if (token.type == '(') return { left: 8, right: 0 }
+        if (token.type == 'v[') return { left: 8, right: 0 }
         return null
     }
 
@@ -151,6 +160,24 @@ export class PrattParser {
         const n4 = this.expect('"')
         console.log('Afters', { n4: n4.val })
         return { type: 'StrExpr', parts }
+    }
+
+    parse_vec(skip_start = false): TExpr {
+        if (!skip_start) this.lex.expect('v[')
+        const items = [] as TExpr[]
+        if (this.lex.peek().type != '}') {
+            while (true) {
+                const expr = this.parse_expr(0)
+                items.push(expr)
+                if (this.lex.peek().type == ']') break
+                if (this.lex.peek().type === ',') {
+                    this.expect(',')
+                    if (this.lex.peek().type == ']') break
+                }
+            }
+            this.expect(']')
+        }
+        return { type: 'Vec', items }
     }
 
 }

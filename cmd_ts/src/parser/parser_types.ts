@@ -80,6 +80,7 @@ export type StatDecl =
         rhs: TExpr
     } | {
         kind: 'assign',
+        oper: string
         lhs: TExpr,
         rhs: TExpr,
     } | {
