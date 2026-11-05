@@ -118,6 +118,9 @@ export class PrattParser {
         if (token.type === 'm{') return this.parse_map(true)
         if (token.type === 's{') return this.parse_set(true)
         if (token.type === 't(') return this.parse_tuple(true)
+        if (token.type === 'r{') {
+            return this.parse_record(true)
+        }
         throw SyntaxError(`Unexpected token ${token.val}`)
     }
 
@@ -424,6 +427,12 @@ export class PrattParser {
         this.expect('}')
         return { type: 'Set', items }
     }
+    
+    parse_record(skip_start = false): TExpr {
+        if (!skip_start) this.expect('r{')
+        return { type: 'Record', fields: this.parse_fields() }
+    }
+
     parse_fields(): { name: string, val: TExpr }[] {
         const fields: { name: string, val: TExpr }[] = []
 
