@@ -19,6 +19,7 @@ export type TExpr =
     | { type: 'Vec', items: TExpr[] }
     | { type: 'Closure', implicit: boolean, params: { name: string, type?: FuncType }[], body: BlockDecl }
     | { type: 'If', condition: TExpr, thenBranch: BlockDecl, elseBranch?: BlockDecl | TExpr }
+    | { type: 'Index', object: TExpr, index: TExpr }
 
 export class PrattParser {
 
@@ -158,6 +159,12 @@ export class PrattParser {
             return { type: 'StructInit', fields }
         }
 
+        if (token.type === '[') {
+            const index = this.parse_expr(0)
+            this.expect(']')
+            return { type: 'Index', object: left, index }
+        }
+
         throw SyntaxError(`Unexpected infix token ${token.val}`)
     }
 
@@ -183,7 +190,7 @@ export class PrattParser {
         if (token.type === '{') return { left: 15, right: 0 }
         if (token.type === '(') return { left: 16, right: 0 }
         if (token.type === 'v[') return { left: 16, right: 0 }
-
+        if (token.type === '[') return { left: 16, right: 0 }
         return null
     }
 

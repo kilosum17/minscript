@@ -40,6 +40,9 @@ function printNode(node: AstNode): string {
             case 'If': {
                 return `if ${printNode(node.condition)} ${printNode(node.thenBranch)} ${node.elseBranch ? ' else ' + printNode(node.elseBranch) : ''} `
             }
+            case 'Index': {
+                return `${printNode(node.object)}[${printNode(node.index)}]`
+            }
         }
     }
 
@@ -61,7 +64,8 @@ function printNode(node: AstNode): string {
             return `${pub}${asyncStr}fun ${node.name}${generics}${params}${ret} ${block}`;
         }
         case "GenericItem": {
-            return `${node.name}`
+            const generics = node.generics ? printGenerics(node.generics) : ''
+            return `${node.name}${generics}`
         }
         case 'ParamsList':
             return `(${node.params.map(printNode).join(', ')})`;

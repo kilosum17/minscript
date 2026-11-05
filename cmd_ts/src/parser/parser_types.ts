@@ -145,6 +145,7 @@ export type UnionField = {
 export type GenericItem = {
     kind: 'GenericItem'
     name: string,
+    generics?: GenericItem[],
 }
 
 export type ImplBlock = {

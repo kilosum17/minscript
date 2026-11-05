@@ -438,10 +438,15 @@ export class Parser {
             }
 
             const n2 = this.expect('ID')
-            const n3 = this.expect('=')
+            let type = undefined
+            if (this.peek().type === ':') {
+                this.expect(':')
+                type = this.parseType()
+            }
+            this.expect('=')
             const rhs = this.pratt.parse_expr(0)
             if (this.peek().type == ';') this.next()
-            const lhs = { name: n2.val, }
+            const lhs = { name: n2.val, type }
             return { kind: 'binding', is_muttable, is_short, lhs, rhs }
         }
     }
@@ -462,7 +467,12 @@ export class Parser {
         while (this.lex.peek().type != ']') {
             const n1 = this.next()
             if (n1.type !== 'ID' && n1.type != 'NUM') this.expect('ID', n1)
-            generics.push({ kind: 'GenericItem', name: n1.val })
+            let innerGenerics = undefined as undefined | GenericItem[]
+            if (this.lex.peek().type === '[') {
+                const res = this.tryParseGenerics()
+                if (res.length > 0) innerGenerics = res
+            }
+            generics.push({ kind: 'GenericItem', name: n1.val, generics: innerGenerics })
             if (this.lex.peek().type == ',') {
                 this.expect(',')
                 if (this.lex.peek().type == ']') break
