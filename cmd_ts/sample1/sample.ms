@@ -10,10 +10,10 @@ inter Convert[From, To] = {
 }
 
 type User = {
-    id: i64
-    name: string
-    roles: Vec[string]
-    matrix: Array[i32, 4]
+    id: i64,
+    name: string,
+    roles: Vec[string],
+    matrix: Array[i32, 4],
 }
 
 fun identity[T](value: T) -> T { value }

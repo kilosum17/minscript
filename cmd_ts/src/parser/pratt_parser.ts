@@ -189,10 +189,16 @@ export class PrattParser {
 
     parse_string_expr(skip_start = false): TExpr {
         if (!skip_start) this.expect('"')
-
+        let is_multiline = this.lex.peek().type == '"' && this.lex.peek(1).type == '"'
+        if (is_multiline) this.lex.skip(2)
         const parts: (string | TExpr)[] = []
 
-        while (this.lex.peek().val !== '"') {
+        while (
+            is_multiline ? (
+                this.lex.peek().type == '"' && this.lex.peek(1).type == '"' &&
+                this.lex.peek(2).type == '"'
+            ) : this.lex.peek().type !== '"'
+        ) {
             if (this.lex.peek().type === 'EOF') {
                 throw SyntaxError('Unterminated string expression')
             }
@@ -211,8 +217,11 @@ export class PrattParser {
                 parts.push(this.lex.next().val)
             }
         }
-
         this.expect('"')
+        if (is_multiline) {
+            this.expect('"')
+            this.expect('"')
+        }
         return { type: 'StrExpr', parts }
     }
 

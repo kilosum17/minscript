@@ -14,9 +14,13 @@ export type AstNode =
     | StructDecl
     | StructFieldList
     | StructField
+    | UnionDecl
+    | UnionFieldList
+    | UnionField
     | StatDecl
     | TExpr
     | ImplBlock
+    | GenericItem
 
 export type AstSkip = {
     kind: 'AstSkip'
@@ -31,6 +35,7 @@ export type PackageDecl = {
 export type ImportDecl = {
     kind: 'ImportDecl',
     path: string,
+    rename: string,
 }
 
 export type FuncDecl = {
@@ -60,7 +65,7 @@ export type FuncParam = {
 export type FuncType = {
     kind: 'Type'
     name: string,
-    generics: []
+    generics: GenericItem[]
 }
 
 export type BlockDecl = {
@@ -92,7 +97,7 @@ export type StructDecl = {
     kind: 'StructDecl',
     name: string,
     is_public: boolean,
-    generics: [],
+    generics: GenericItem[],
     fields: StructFieldList
 }
 
@@ -106,6 +111,38 @@ export type StructField = {
     name: string,
     is_public: boolean
     type: FuncType,
+}
+
+export type UnionDecl = {
+    kind: "UnionDecl"
+    name: string,
+    is_public: boolean,
+    generics: GenericItem[],
+    fields: UnionFieldList
+}
+
+export type UnionFieldList = {
+    kind: "UnionFieldList"
+    fields: (UnionField)[]
+}
+
+export type UnionField = {
+    kind: "UnionField"
+    name: string,
+    data: {
+        type: 'plain',
+    } | {
+        type: 'tuple',
+        items: { type: FuncType }[]
+    } | {
+        type: 'struct',
+        fields: StructFieldList,
+    },
+}
+
+export type GenericItem = {
+    kind: 'GenericItem'
+    name: string,
 }
 
 export type ImplBlock = {

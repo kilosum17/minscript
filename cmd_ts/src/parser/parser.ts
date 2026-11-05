@@ -2,7 +2,7 @@ import type { Lexer } from "../lexer/lexer";
 import { Token, type TokenType } from "../lexer/lexer_types";
 import { isIdent } from "../utils/char_helpers";
 import { printNode2 } from "./parse_utils";
-import type { AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, ImplBlock, StatDecl, StructDecl, StructField, StructFieldList } from "./parser_types";
+import type { AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, GenericItem, ImplBlock, StatDecl, StructDecl, StructField, StructFieldList, UnionDecl, UnionField, UnionFieldList } from "./parser_types";
 import { PrattParser, type TExpr } from "./pratt_parser";
 
 export const assigns = ["=", "+=", '-=', '*=', '/=', '%=']
@@ -24,10 +24,10 @@ export class Parser {
     parseAll() {
         let i = 0
         while (true) {
+            this.tryParseComment()
+
             const p1 = this.peek(this.skips)
             console.log('KWD', p1.type, this.skips)
-
-            this.tryParseComment()
 
             let kwd = p1.type
 
@@ -57,6 +57,9 @@ export class Parser {
             } else if (kwd === 'type') {
                 this.skips = 0
                 node = this.parseStruct()
+            } else if (kwd === 'union') {
+                this.skips = 0
+                node = this.parseUnion()
             } else if (kwd === 'impl') {
                 node = this.parseImplBlock()
             }
@@ -97,7 +100,7 @@ export class Parser {
 
     parseImportDecl(): AstNode {
         this.next()
-        const n1 = this.expect('"')
+        this.expect('"')
         const parts = []
         let cur = this.next()
         while (isIdent(cur.val) || cur.val == ".") {
@@ -105,8 +108,14 @@ export class Parser {
             cur = this.next()
         }
         this.expect('"', cur)
+        let rename = ""
+        if (this.lex.peek().val === 'as') {
+            this.expect('as')
+            const n1 = this.expect('ID')
+            rename = n1.val
+        }
         return {
-            kind: 'ImportDecl', path: parts.join('')
+            kind: 'ImportDecl', path: parts.join(''), rename,
         }
     }
 
@@ -190,10 +199,11 @@ export class Parser {
         }
     }
 
-    parseType(): (FuncType) {
+    parseType(): FuncType {
         const n1 = this.expect('ID')
         const name = n1.val
-        return { kind: 'Type', name, generics: [] }
+        const generics = this.tryParseGenerics()
+        return { kind: 'Type', name, generics }
     }
 
     peekPath(log_mes?: string) {
@@ -241,20 +251,19 @@ export class Parser {
         }
         this.expect('type', n1)
         const n2 = this.expect('ID')
-        const n3 = this.expect('=')
+        const generics = this.tryParseGenerics()
+        this.expect('=')
         const fields = this.parseStructFieldList()
-        return { kind: 'StructDecl', name: n2.val, fields, is_public, generics: [] }
+        return { kind: 'StructDecl', name: n2.val, fields, is_public, generics }
     }
 
     parseStructFieldList(): StructFieldList {
         const n1 = this.expect('{')
-        const fields: (StructField)[] = [
-            this.parseStructField()
-        ]
+        const fields: (StructField)[] = []
         while (this.peek().val != '}') {
             fields.push(this.parseStructField())
         }
-        const n2 = this.expect('}')
+        this.expect('}')
         return { kind: 'StructFieldList', fields }
     }
 
@@ -273,6 +282,54 @@ export class Parser {
         }
         console.log("Done", n1.val)
         return { kind: 'StructField', is_public, name: n1.val, type: type_ }
+    }
+
+    parseUnion(): UnionDecl {
+        let n1 = this.next()
+        let is_public = false
+        if (n1.type === 'pub') {
+            is_public = true
+            n1 = this.next()
+        }
+        this.expect('union', n1)
+        const n2 = this.expect('ID')
+        const generics = this.tryParseGenerics()
+        this.expect('=')
+        const fields = this.parseUnionFieldList()
+        return { kind: 'UnionDecl', name: n2.val, fields, is_public, generics }
+
+    }
+
+    parseUnionFieldList(): UnionFieldList {
+        this.expect('{')
+        const fields: (UnionField)[] = []
+        while (this.peek().val != '}') {
+            fields.push(this.parseUnionField())
+        }
+        this.expect('}')
+        return { kind: 'UnionFieldList', fields }
+    }
+    parseUnionField(): UnionField {
+        const n1 = this.expect('ID')
+        const name = n1.val
+        if (this.lex.peek().type == '(') {
+            this.expect('(')
+            let items = [] as { type: FuncType }[]
+            while (this.lex.peek().type != ')') {
+                const type = this.parseType()
+                items.push({ type })
+                if (this.peek().type == ',') {
+                    this.expect(',')
+                }
+            }
+            this.expect(')')
+            return { kind: 'UnionField', name, data: { type: 'tuple', items } }
+        } else if (this.lex.peek().type == '{') {
+            const fields = this.parseStructFieldList()
+            return { kind: 'UnionField', name, data: { type: 'struct', fields } }
+        } else {
+            return { kind: 'UnionField', name, data: { type: 'plain' } }
+        }
     }
 
     parseImplBlock(): ImplBlock {
@@ -388,6 +445,24 @@ export class Parser {
         // this.expect('=')
         const rhs = this.pratt.parse_expr(0)
         return { kind: 'assign', oper: n1.val, lhs, rhs }
+    }
+
+    tryParseGenerics(): GenericItem[] {
+        if (this.lex.peek().type !== '[') return []
+        this.expect('[')
+        const generics = [] as GenericItem[]
+        while (this.lex.peek().type != ']') {
+            const n1 = this.next()
+            if (n1.type !== 'ID' && n1.type != 'NUM') this.expect('ID', n1)
+            generics.push({ kind: 'GenericItem', name: n1.val })
+            if (this.lex.peek().type == ',') {
+                this.expect(',')
+                if (this.lex.peek().type == ']') break
+            }
+        }
+        this.expect(']')
+        // console.log('generics', generics)
+        return generics
     }
 
 }

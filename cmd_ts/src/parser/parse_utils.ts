@@ -1,11 +1,16 @@
-import type { AstNode } from "./parser_types";
+import type { AstNode, GenericItem } from "./parser_types";
 
 export function printNode2(node: AstNode): string {
     return `> ${printNode(node)}`
 }
 
+function printGenerics(generics: GenericItem[]) {
+    const gens1 = generics.length > 0 ? generics.map(g => printNode(g)).join(', ') : ''
+    return gens1 ? `[${gens1}]` : ''
+}
+
 function printNode(node: AstNode): string {
-    if (!node) return "";
+    if (!node) return "<>";
 
     if ('type' in node) {
         switch (node.type) {
@@ -44,14 +49,18 @@ function printNode(node: AstNode): string {
         case 'PackageDecl':
             return `package ${node.name}`;
         case 'ImportDecl':
-            return `import "${node.path}"`;
+            const as_ = node.rename ? `as ${node.rename}` : ''
+            return `import "${node.path}" ${as_}`;
         case 'FuncDecl': {
             const pub = node.is_public ? 'pub ' : '';
             const asyncStr = node.is_async ? 'async ' : '';
             const params = printNode(node.params);
             const ret = node.return?.name ? ` -> ${printNode(node.return)}` : '';
             const block = printNode(node.block);
-            return `${pub}${asyncStr}fn ${node.name}${params}${ret} ${block}`;
+            return `${pub}${asyncStr}fun ${node.name}${params}${ret} ${block}`;
+        }
+        case "GenericItem": {
+            return `${node.name}`
         }
         case 'ParamsList':
             return `(${node.params.map(printNode).join(', ')})`;
@@ -62,7 +71,7 @@ function printNode(node: AstNode): string {
             return `${borrow}${mut}${node.name}${typeStr}`;
         }
         case 'Type':
-            return node.name;
+            return `${node.name}${printGenerics(node.generics)}`;
         case 'BlockDecl':
             return `{\n${node.statements.map(s => `    ${printNode(s)}`).join('\n')}\n}`;
         case 'binding': {
@@ -72,14 +81,15 @@ function printNode(node: AstNode): string {
                 const oper = node.is_muttable ? ':==' : ':='
                 return `${node.lhs.name} ${oper} ${printNode(node.rhs)}`;
             }
-            return `${mut}${node.lhs.name}${typeStr} = ${printNode(node.rhs)}`;
+            return `${mut} ${node.lhs.name}${typeStr} = ${printNode(node.rhs)}`;
         }
         case 'assign':
             return `${printNode(node.lhs)} = ${printNode(node.rhs)}`;
         case 'StructDecl': {
             const pub = node.is_public ? 'pub ' : '';
             const fields = printNode(node.fields);
-            return `${pub}struct ${node.name} ${fields}`;
+            const generics = printGenerics(node.generics)
+            return `${pub}struct ${node.name}${generics} = ${fields}`;
         }
         case 'StructFieldList':
             return `{\n${node.fields.map(f => `${printNode(f)}`).join(',\n')}\n}`;
@@ -94,7 +104,33 @@ function printNode(node: AstNode): string {
         case "return": {
             return `return ${node.expr ? printNode(node.expr) : ''}`
         }
+        case "UnionDecl": {
+            const pub = node.is_public ? 'pub ' : '';
+            const generics = printGenerics(node.generics)
+            const fields = printNode(node.fields);
+            return `${pub}union ${node.name}${generics} = ${fields}`;
+        }
+        case "UnionFieldList": {
+            return `{\n${node.fields.map(f => `${printNode(f)}`).join(',\n')}\n}`;
+        }
+        case "UnionField": {
+            let field = ''
+            switch (node.data.type) {
+                case "plain": {
+                    field = ``
+                    break
+                }
+                case "tuple": {
+                    field = `(${node.data.items.map(n => printNode(n.type))})`
+                    break
+                }
+                case "struct": {
+                    field = `${printNode(node.data.fields)}`
+                }
+            }
+            return `${node.name}: ${field}`;
+        }
         default:
-            return '';
+            return `<->${node}`;
     }
 }

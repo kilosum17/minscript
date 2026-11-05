@@ -1,13 +1,18 @@
 package lexer_stress
 
 import "std.io"
-import "std.collections" as collections
+import "std.collections" as col
 
-/// Generic declarations use square brackets.
-type Pair[A, B] = t(A, B)
-type Response[T, E] =
-    | Success(T)
-    | Failure(E)
+// Generic declarations use square brackets.
+// type Pair[A, B] = t(A, B)
+union Response[T, E] = {
+    Success
+    Failure(E)
+    Data{
+        name:i32,
+        info:string[T],
+    }
+}
 
 type User = {
     id: u64
@@ -94,7 +99,7 @@ fun string_examples(user: User) {
         second line: ${user.name}
         third line
         """
-    let raw = r`C:\users\name\file.txt`
+    let raw = r"C:\users\name\file.txt"
     let char_a = 'a'
     let char_newline = '\n'
     let unicode_char = '\u{1F600}'
