@@ -28,7 +28,11 @@ function printNode(node: AstNode): string {
                 return `"${node.parts.map(p => (typeof p === 'string' ? p : printNode(p))).join('')}"`;
             case 'StructInit': {
                 const fields = node.fields.map(f => `${f.name}: ${printNode(f.val)}`);
-                return `{\n${fields.join(',\n')}\n}`;
+                return `_{${fields.join(', ')}}`;
+            }
+            case 'Record': {
+                const fields = node.fields.map(f => `${f.name}: ${printNode(f.val)}`);
+                return `r{${fields.join(', ')}}`;
             }
             case 'Vec':
                 return `v[${node.items.map(printNode).join(', ')}]`;

@@ -15,7 +15,6 @@ export type TExpr =
     | { type: 'Binary', op: string, left: TExpr, right: TExpr }
     | { type: 'Call', callee: TExpr, args: TExpr[] }
     | { type: 'StrExpr', parts: (string | TExpr)[] }
-    | { type: 'StructInit', fields: { name: string, val: TExpr }[] }
     | { type: 'Vec', items: TExpr[] }
     | { type: 'Closure', implicit: boolean, params: { name: string, type?: FuncType }[], body: BlockDecl }
     | { type: 'If', condition: TExpr, thenBranch: BlockDecl, elseBranch?: BlockDecl | TExpr }
@@ -24,6 +23,8 @@ export type TExpr =
     | { type: 'Tuple', items: TExpr[] }
     | { type: 'Map', entries: { key: TExpr, value: TExpr }[] }
     | { type: 'Set', items: TExpr[] }
+    | { type: 'StructInit', name?: string, fields: { name: string, val: TExpr }[] }
+    | { type: 'Record', fields: { name: string, val: TExpr }[] }
 
 export class PrattParser {
 
@@ -65,13 +66,25 @@ export class PrattParser {
     }
 
     parse_nul(token: Token): TExpr {
-        if (token.type === 'NUM') {
+        if (token.type === 'NUM' || token.type === 'true' || token.type === 'false') {
             return { type: 'Literal', value: token.val }
         }
 
         if (token.type === 'ID') {
+            if ((token.val === '_' || token.val === 'r') && this.lex.peek().type === '{') {
+                this.lex.next()
+                const fields = this.parse_fields()
+
+                if (token.val === '_') {
+                    return { type: 'StructInit', fields }
+                }
+
+                return { type: 'Record', fields }
+            }
+
             return { type: 'Var', name: token.val }
         }
+
         if (token.type === 'if') return this.parse_if()
 
         if (token.type === '-') {
@@ -141,29 +154,12 @@ export class PrattParser {
         }
 
         if (token.type === '{') {
-            const fields: { name: string, val: TExpr }[] = []
-
-            if (this.lex.peek().type !== '}') {
-                while (true) {
-                    const n1 = this.expect('ID')
-                    this.expect(':')
-
-                    const expr = this.parse_expr(0)
-                    fields.push({ name: n1.val, val: expr })
-
-                    if (this.lex.peek().type === '}') break
-
-                    if (this.lex.peek().type === ',') {
-                        this.lex.next()
-                        if (this.lex.peek().type === '}') break
-                    } else {
-                        throw SyntaxError(`Expected ',' or '}' in struct initializer`)
-                    }
-                }
+            if (left.type !== 'Var') {
+                throw SyntaxError(`Expected a struct name before '{'`)
             }
 
-            this.expect('}')
-            return { type: 'StructInit', fields }
+            const fields = this.parse_fields()
+            return { type: 'StructInit', name: left.name, fields }
         }
 
         if (token.type === '[') {
@@ -428,5 +424,30 @@ export class PrattParser {
         this.expect('}')
         return { type: 'Set', items }
     }
-    
+    parse_fields(): { name: string, val: TExpr }[] {
+        const fields: { name: string, val: TExpr }[] = []
+
+        if (this.lex.peek().type !== '}') {
+            while (true) {
+                const name = this.expect('ID')
+                this.expect(':')
+
+                const val = this.parse_expr(0)
+                fields.push({ name: name.val, val })
+
+                if (this.lex.peek().type === '}') break
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                    if (this.lex.peek().type === '}') break
+                } else {
+                    throw SyntaxError(`Expected ',' or '}' in initializer`)
+                }
+            }
+        }
+
+        this.expect('}')
+        return fields
+    }
+
 }

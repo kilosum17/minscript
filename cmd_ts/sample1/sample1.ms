@@ -38,6 +38,9 @@ fun generic_examples() {
     let b: Map[string, Vec[Option[User]]] = m{}
     let c: Result[Vec[Pair[string, i64]], string] = Ok(v[])
     let d = identity[User](_{ id: 1, name: "Ada", active: true, tags: v[], scores: a[0, 0, 0, 0] })
+    let record = r{
+        name:"Ted", age:26, 
+    }
     let e = collections.collect[string](a)
     let f = json.parse[Response[User, string]]("{}")
     let index = a[0]
