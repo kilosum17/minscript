@@ -13,7 +13,7 @@ export type TExpr =
     | { type: 'Var', name: string }
     | { type: 'Unary', op: '-' | '!', right: TExpr }
     | { type: 'Binary', op: string, left: TExpr, right: TExpr }
-    | { type: 'Call', callee: TExpr, args: TExpr[] }
+    | { type: 'Call', callee: TExpr, generics?: FuncType[], args: TExpr[] }
     | { type: 'StrExpr', parts: (string | TExpr)[] }
     | { type: 'Vec', items: TExpr[] }
     | { type: 'Closure', implicit: boolean, params: { name: string, type?: FuncType }[], body: BlockDecl }
@@ -137,23 +137,7 @@ export class PrattParser {
         }
 
         if (token.type === '(') {
-            const args: TExpr[] = []
-
-            if (this.lex.peek().type !== ')') {
-                while (true) {
-                    args.push(this.parse_expr(0))
-
-                    if (this.lex.peek().type === ',') {
-                        this.lex.next()
-                        if (this.lex.peek().type === ')') break
-                    } else {
-                        break
-                    }
-                }
-            }
-
-            this.expect(')')
-            return { type: 'Call', callee: left, args }
+            return { type: 'Call', callee: left, args: this.parse_call_args() }
         }
 
         if (token.type === '{') {
@@ -166,6 +150,13 @@ export class PrattParser {
         }
 
         if (token.type === '[') {
+            if (this.isGenericCallAhead()) {
+                const generics = this.parse_generic_args()
+                this.expect('(')
+                const args = this.parse_call_args()
+                return { type: 'Call', callee: left, generics, args }
+            }
+
             const index = this.parse_expr(0)
             this.expect(']')
             return { type: 'Index', object: left, index }
@@ -427,7 +418,7 @@ export class PrattParser {
         this.expect('}')
         return { type: 'Set', items }
     }
-    
+
     parse_record(skip_start = false): TExpr {
         if (!skip_start) this.expect('r{')
         return { type: 'Record', fields: this.parse_fields() }
@@ -458,5 +449,96 @@ export class PrattParser {
         this.expect('}')
         return fields
     }
+    isGenericCallAhead(): boolean {
+        let square = 1
+        let paren = 0
+        let comma = false
+        let closeIndex = -1
 
+        const first = this.lex.peek(0)
+
+        for (let i = 0; ; i++) {
+            const token = this.lex.peek(i)
+
+            if (token.type === 'EOF') return false
+
+            if (token.type === '[') {
+                square++
+            } else if (token.type === ']') {
+                square--
+
+                if (square === 0) {
+                    closeIndex = i
+                    break
+                }
+            } else if (token.type === '(' || token.type === 't(') {
+                paren++
+            } else if (token.type === ')') {
+                paren--
+            } else if (token.type === ',' && square === 1 && paren === 0) {
+                comma = true
+            }
+        }
+
+        // Generic application must be followed by a function call.
+        if (this.lex.peek(closeIndex + 1).type !== '(') return false
+
+        // A top-level comma cannot represent an index.
+        if (comma) return true
+
+        // Single generic arguments must look like types.
+        if (first.type !== 'ID') return first.type === 't('
+
+        const builtins = new Set([
+            'bool', 'char', 'string', 'str', 'void', 'int',
+            'i8', 'i16', 'i32', 'i64', 'i128',
+            'u8', 'u16', 'u32', 'u64', 'u128',
+            'f32', 'f64', 'usize', 'isize'
+        ])
+
+        return /^[A-Z]/.test(first.val) || builtins.has(first.val)
+    }
+    parse_generic_args(): FuncType[] {
+        const generics: FuncType[] = []
+
+        if (this.lex.peek().type !== ']') {
+            while (true) {
+                generics.push(this.parser.parseType())
+
+                if (this.lex.peek().type === ']') break
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                    if (this.lex.peek().type === ']') break
+                } else {
+                    throw SyntaxError(`Expected ',' or ']' in generic arguments`)
+                }
+            }
+        }
+
+        this.expect(']')
+        return generics
+    }
+
+    parse_call_args(): TExpr[] {
+        const args: TExpr[] = []
+
+        if (this.lex.peek().type !== ')') {
+            while (true) {
+                args.push(this.parse_expr(0))
+
+                if (this.lex.peek().type === ')') break
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                    if (this.lex.peek().type === ')') break
+                } else {
+                    throw SyntaxError(`Expected ',' or ')' in function call`)
+                }
+            }
+        }
+
+        this.expect(')')
+        return args
+    }
 }
