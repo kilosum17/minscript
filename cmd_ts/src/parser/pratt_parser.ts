@@ -20,6 +20,10 @@ export type TExpr =
     | { type: 'Closure', implicit: boolean, params: { name: string, type?: FuncType }[], body: BlockDecl }
     | { type: 'If', condition: TExpr, thenBranch: BlockDecl, elseBranch?: BlockDecl | TExpr }
     | { type: 'Index', object: TExpr, index: TExpr }
+    | { type: 'Array', items: TExpr[] }
+    | { type: 'Tuple', items: TExpr[] }
+    | { type: 'Map', entries: { key: TExpr, value: TExpr }[] }
+    | { type: 'Set', items: TExpr[] }
 
 export class PrattParser {
 
@@ -97,7 +101,10 @@ export class PrattParser {
         if (token.type === '#{') {
             return this.parse_closure(true)
         }
-
+        if (token.type === 'a[') return this.parse_array(true)
+        if (token.type === 'm{') return this.parse_map(true)
+        if (token.type === 's{') return this.parse_set(true)
+        if (token.type === 't(') return this.parse_tuple(true)
         throw SyntaxError(`Unexpected token ${token.val}`)
     }
 
@@ -323,4 +330,103 @@ export class PrattParser {
 
         return { type: 'If', condition, thenBranch, elseBranch }
     }
+
+    parse_array(skip_start = false): TExpr {
+        if (!skip_start) this.expect('a[')
+
+        const items: TExpr[] = []
+
+        if (this.lex.peek().type !== ']') {
+            while (true) {
+                items.push(this.parse_expr(0))
+
+                if (this.lex.peek().type === ']') break
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                    if (this.lex.peek().type === ']') break
+                } else {
+                    throw SyntaxError("Expected ',' or ']' in array")
+                }
+            }
+        }
+
+        this.expect(']')
+        return { type: 'Array', items }
+    }
+
+    parse_tuple(skip_start = false): TExpr {
+        if (!skip_start) this.expect('t(')
+
+        const items: TExpr[] = []
+
+        if (this.lex.peek().type !== ')') {
+            while (true) {
+                items.push(this.parse_expr(0))
+
+                if (this.lex.peek().type === ')') break
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                    if (this.lex.peek().type === ')') break
+                } else {
+                    throw SyntaxError("Expected ',' or ')' in tuple")
+                }
+            }
+        }
+
+        this.expect(')')
+        return { type: 'Tuple', items }
+    }
+    parse_map(skip_start = false): TExpr {
+        if (!skip_start) this.expect('m{')
+
+        const entries: { key: TExpr, value: TExpr }[] = []
+
+        if (this.lex.peek().type !== '}') {
+            while (true) {
+                const key = this.parse_expr(0)
+                this.expect(':')
+                const value = this.parse_expr(0)
+
+                entries.push({ key, value })
+
+                if (this.lex.peek().type === '}') break
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                    if (this.lex.peek().type === '}') break
+                } else {
+                    throw SyntaxError("Expected ',' or '}' in map")
+                }
+            }
+        }
+
+        this.expect('}')
+        return { type: 'Map', entries }
+    }
+    parse_set(skip_start = false): TExpr {
+        if (!skip_start) this.expect('s{')
+
+        const items: TExpr[] = []
+
+        if (this.lex.peek().type !== '}') {
+            while (true) {
+                items.push(this.parse_expr(0))
+
+                if (this.lex.peek().type === '}') break
+
+                if (this.lex.peek().type === ',') {
+                    this.lex.next()
+                    if (this.lex.peek().type === '}') break
+                } else {
+                    throw SyntaxError("Expected ',' or '}' in set")
+                }
+            }
+        }
+
+        this.expect('}')
+        return { type: 'Set', items }
+    }
+    
 }

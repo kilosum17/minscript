@@ -27,22 +27,30 @@ function printNode(node: AstNode): string {
             case 'StrExpr':
                 return `"${node.parts.map(p => (typeof p === 'string' ? p : printNode(p))).join('')}"`;
             case 'StructInit': {
-                const fields = node.fields.map(f => `${f.name} : ${printNode(f.val)}`)
-                return `{\n${fields}\n}`
+                const fields = node.fields.map(f => `${f.name}: ${printNode(f.val)}`);
+                return `{\n${fields.join(',\n')}\n}`;
             }
-            case 'Vec': {
-                return `v[${node.items.map(v => printNode(v)).join(', ')}]`
+            case 'Vec':
+                return `v[${node.items.map(printNode).join(', ')}]`;
+            case 'Array':
+                return `a[${node.items.map(printNode).join(', ')}]`;
+            case 'Tuple':
+                return `t(${node.items.map(printNode).join(', ')})`;
+            case 'Map': {
+                const entries = node.entries.map(e => `${printNode(e.key)}: ${printNode(e.value)}`);
+                return `m{${entries.join(', ')}}`;
             }
-            case "Closure": {
-                const params = node.params.map(s => `${s.name}${s.type ? ':' + printNode(s.type) : ''}`).join(', ')
-                return `#{ ${params} => ${printNode(node.body)}`
+            case 'Set':
+                return `s{${node.items.map(printNode).join(', ')}}`;
+            case 'Closure': {
+                const params = node.params.map(s => `${s.name}${s.type ? ':' + printNode(s.type) : ''}`).join(', ');
+                const paramsStr = params ? `${params} => ` : '';
+                return `#{${node.implicit ? '' : paramsStr}${printNode(node.body)}}`;
             }
-            case 'If': {
-                return `if ${printNode(node.condition)} ${printNode(node.thenBranch)} ${node.elseBranch ? ' else ' + printNode(node.elseBranch) : ''} `
-            }
-            case 'Index': {
-                return `${printNode(node.object)}[${printNode(node.index)}]`
-            }
+            case 'If':
+                return `if ${printNode(node.condition)} ${printNode(node.thenBranch)}${node.elseBranch ? ` else ${printNode(node.elseBranch)}` : ''}`;
+            case 'Index':
+                return `${printNode(node.object)}[${printNode(node.index)}]`;
         }
     }
 
@@ -51,21 +59,22 @@ function printNode(node: AstNode): string {
             return `/* skip: ${node.message} */`;
         case 'PackageDecl':
             return `package ${node.name}`;
-        case 'ImportDecl':
-            const as_ = node.rename ? `as ${node.rename}` : ''
-            return `import "${node.path}" ${as_}`;
+        case 'ImportDecl': {
+            const as_ = node.rename ? ` as ${node.rename}` : '';
+            return `import "${node.path}"${as_}`;
+        }
         case 'FuncDecl': {
             const pub = node.is_public ? 'pub ' : '';
             const asyncStr = node.is_async ? 'async ' : '';
             const params = printNode(node.params);
             const ret = node.return?.name ? ` -> ${printNode(node.return)}` : '';
-            const block = node.block ? printNode(node.block) : ''
-            const generics = printGenerics(node.generics)
+            const block = node.block ? printNode(node.block) : '';
+            const generics = printGenerics(node.generics);
             return `${pub}${asyncStr}fun ${node.name}${generics}${params}${ret} ${block}`;
         }
-        case "GenericItem": {
-            const generics = node.generics ? printGenerics(node.generics) : ''
-            return `${node.name}${generics}`
+        case 'GenericItem': {
+            const generics = node.generics ? printGenerics(node.generics) : '';
+            return `${node.name}${generics}`;
         }
         case 'ParamsList':
             return `(${node.params.map(printNode).join(', ')})`;
@@ -83,7 +92,7 @@ function printNode(node: AstNode): string {
             const mut = node.is_muttable ? 'var ' : 'let';
             const typeStr = node.lhs.type ? `: ${printNode(node.lhs.type)}` : '';
             if (node.is_short) {
-                const oper = node.is_muttable ? ':==' : ':='
+                const oper = node.is_muttable ? ':==' : ':=';
                 return `${node.lhs.name} ${oper} ${printNode(node.rhs)}`;
             }
             return `${mut} ${node.lhs.name}${typeStr} = ${printNode(node.rhs)}`;
@@ -93,11 +102,11 @@ function printNode(node: AstNode): string {
         case 'StructDecl': {
             const pub = node.is_public ? 'pub ' : '';
             const fields = printNode(node.fields);
-            const generics = printGenerics(node.generics)
+            const generics = printGenerics(node.generics);
             return `${pub}struct ${node.name}${generics} = ${fields}`;
         }
         case 'StructFieldList':
-            return `{\n${node.fields.map(f => `${printNode(f)}`).join(',\n')}\n}`;
+            return `{\n${node.fields.map(f => printNode(f)).join(',\n')}\n}`;
         case 'StructField': {
             const pub = node.is_public ? 'pub ' : '';
             return `${pub}${node.name}: ${printNode(node.type)}`;
@@ -106,32 +115,27 @@ function printNode(node: AstNode): string {
             const methods = node.methods.map(printNode).join('\n\n');
             return `impl ${node.name} {\n${methods}\n}`;
         }
-        case "return": {
-            return `return ${node.expr ? printNode(node.expr) : ''}`
-        }
-        case "UnionDecl": {
+        case 'return':
+            return `return ${node.expr ? printNode(node.expr) : ''}`;
+        case 'UnionDecl': {
             const pub = node.is_public ? 'pub ' : '';
-            const generics = printGenerics(node.generics)
+            const generics = printGenerics(node.generics);
             const fields = printNode(node.fields);
             return `${pub}union ${node.name}${generics} = ${fields}`;
         }
-        case "UnionFieldList": {
-            return `{\n${node.fields.map(f => `${printNode(f)}`).join(',\n')}\n}`;
-        }
-        case "UnionField": {
-            let field = ''
+        case 'UnionFieldList':
+            return `{\n${node.fields.map(f => printNode(f)).join(',\n')}\n}`;
+        case 'UnionField': {
+            let field = '';
             switch (node.data.type) {
-                case "plain": {
-                    field = ``
-                    break
-                }
-                case "tuple": {
-                    field = `(${node.data.items.map(n => printNode(n.type))})`
-                    break
-                }
-                case "struct": {
-                    field = `${printNode(node.data.fields)}`
-                }
+                case 'plain':
+                    break;
+                case 'tuple':
+                    field = `(${node.data.items.map(n => printNode(n.type)).join(', ')})`;
+                    break;
+                case 'struct':
+                    field = printNode(node.data.fields);
+                    break;
             }
             return `${node.name}: ${field}`;
         }
