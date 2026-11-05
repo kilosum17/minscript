@@ -8,7 +8,7 @@ import "std.collections" as col
 union Response[T, E] = {
     Success
     Failure(E)
-    Data{
+    Data {
         name:i32,
         info:string[T],
     }

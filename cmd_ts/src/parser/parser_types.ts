@@ -20,6 +20,7 @@ export type AstNode =
     | StatDecl
     | TExpr
     | ImplBlock
+    | InterBlock
     | GenericItem
 
 export type AstSkip = {
@@ -45,7 +46,8 @@ export type FuncDecl = {
     name: string,
     params: FuncParamsList
     return: FuncType,
-    block: BlockDecl,
+    generics: GenericItem[]
+    block?: BlockDecl,
 }
 
 export type FuncParamsList = {
@@ -149,6 +151,16 @@ export type ImplBlock = {
     kind: 'ImplBlock'
     name: string
     interfaces: [],
+    generics: GenericItem[]
+    methods: (FuncDecl)[]
+
+}
+
+
+export type InterBlock = {
+    kind: 'InterBlock'
+    name: string
+    generics: GenericItem[],
     methods: (FuncDecl)[]
 
 }

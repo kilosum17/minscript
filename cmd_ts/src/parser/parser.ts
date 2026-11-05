@@ -2,7 +2,7 @@ import type { Lexer } from "../lexer/lexer";
 import { Token, type TokenType } from "../lexer/lexer_types";
 import { isIdent } from "../utils/char_helpers";
 import { printNode2 } from "./parse_utils";
-import type { AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, GenericItem, ImplBlock, StatDecl, StructDecl, StructField, StructFieldList, UnionDecl, UnionField, UnionFieldList } from "./parser_types";
+import type { AstNode, BlockDecl, FuncDecl, FuncParam, FuncParamsList, FuncType, GenericItem, ImplBlock, InterBlock, StatDecl, StructDecl, StructField, StructFieldList, UnionDecl, UnionField, UnionFieldList } from "./parser_types";
 import { PrattParser, type TExpr } from "./pratt_parser";
 
 export const assigns = ["=", "+=", '-=', '*=', '/=', '%=']
@@ -60,6 +60,9 @@ export class Parser {
             } else if (kwd === 'union') {
                 this.skips = 0
                 node = this.parseUnion()
+            } else if (kwd === 'inter') {
+                this.skips = 0
+                node = this.parseInterBlock()
             } else if (kwd === 'impl') {
                 node = this.parseImplBlock()
             }
@@ -119,7 +122,7 @@ export class Parser {
         }
     }
 
-    parseFuncDecl(): FuncDecl {
+    parseFuncDecl(no_body_ok = false): FuncDecl {
         let n1 = this.next()
         let is_public = false
         let is_async = false
@@ -135,6 +138,7 @@ export class Parser {
 
         const n2 = this.expect('ID')
         const name = n2.val
+        const generics = this.tryParseGenerics()
         const n3 = this.expect('(')
         const params = this.parseParamsList()
         const n4 = this.expect(')')
@@ -148,11 +152,14 @@ export class Parser {
             return_ = { kind: 'Type', name: 'void', generics: [] }
         }
 
-        const block = this.parserBlock()
+        let block = undefined as undefined | BlockDecl
+        if (!(no_body_ok && this.lex.peek().type != '{')) {
+            block = this.parserBlock()
+        }
 
         return {
             kind: 'FuncDecl', name, is_public, is_async,
-            params, return: return_, block
+            params, return: return_, block, generics,
         }
     }
 
@@ -333,9 +340,10 @@ export class Parser {
     }
 
     parseImplBlock(): ImplBlock {
-        let n1 = this.expect('impl')
+        this.expect('impl')
         let n2 = this.expect('ID')
-        let n3 = this.expect('{')
+        const generics = this.tryParseGenerics()
+        this.expect('{')
 
         const methods = [] as (FuncDecl)[]
         while (this.peek().val != '}') {
@@ -343,8 +351,8 @@ export class Parser {
             methods.push(this.parseFuncDecl())
         }
 
-        const n4 = this.expect('}')
-        return { kind: 'ImplBlock', name: n2.val, interfaces: [], methods }
+        this.expect('}')
+        return { kind: 'ImplBlock', name: n2.val, interfaces: [], generics, methods }
     }
 
 
@@ -463,6 +471,23 @@ export class Parser {
         this.expect(']')
         // console.log('generics', generics)
         return generics
+    }
+
+    parseInterBlock(): InterBlock {
+        this.expect('inter')
+        let n2 = this.expect('ID')
+        const generics = this.tryParseGenerics()
+        this.expect('=')
+        this.expect('{')
+
+        const methods = [] as (FuncDecl)[]
+        while (this.peek().val !== '}') {
+            this.tryParseComment()
+            methods.push(this.parseFuncDecl(true))
+        }
+
+        this.expect('}')
+        return { kind: 'InterBlock', name: n2.val, generics, methods }
     }
 
 }

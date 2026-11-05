@@ -56,8 +56,9 @@ function printNode(node: AstNode): string {
             const asyncStr = node.is_async ? 'async ' : '';
             const params = printNode(node.params);
             const ret = node.return?.name ? ` -> ${printNode(node.return)}` : '';
-            const block = printNode(node.block);
-            return `${pub}${asyncStr}fun ${node.name}${params}${ret} ${block}`;
+            const block = node.block ? printNode(node.block) : ''
+            const generics = printGenerics(node.generics)
+            return `${pub}${asyncStr}fun ${node.name}${generics}${params}${ret} ${block}`;
         }
         case "GenericItem": {
             return `${node.name}`
