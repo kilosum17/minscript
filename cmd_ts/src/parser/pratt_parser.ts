@@ -8,6 +8,9 @@ export function SyntaxError(mes: string, lex?: Lexer) {
     const info = lex ? `[${lex.peek(-1).val} (${lex.peek().val}),${lex.peek(1).val}]` : ''
     return Error(`Syntax Error:${mes}${info}`)
 }
+export type Capture = { name: string, mode: 'val' | 'ref' | 'mut' }
+
+type FieldsResult = { spread?: TExpr, fields: { name: string, val: TExpr }[] }
 
 export type TExpr =
     | { type: 'Literal', value: string }
@@ -26,6 +29,9 @@ export type TExpr =
     | { type: 'Set', items: TExpr[] }
     | { type: 'StructInit', name?: string, fields: { name: string, val: TExpr }[] }
     | { type: 'Record', fields: { name: string, val: TExpr }[] }
+    | { type: 'Closure', implicit: boolean, captures: Capture[], params: { name: string, type?: FuncType }[], body: BlockDecl }
+    | { type: 'StructInit', name?: string, spread?: TExpr, fields: { name: string, val: TExpr }[] }
+    | { type: 'Record', spread?: TExpr, fields: { name: string, val: TExpr }[] }
 
 export class PrattParser {
 
@@ -74,17 +80,16 @@ export class PrattParser {
         if (token.type === 'ID') {
             if ((token.val === '_' || token.val === 'r') && this.lex.peek().type === '{') {
                 this.lex.next()
-                const fields = this.parse_fields()
-
-                if (token.val === '_') {
-                    return { type: 'StructInit', fields }
-                }
-
-                return { type: 'Record', fields }
+                const { spread, fields } = this.parse_fields()
+                return token.val === '_'
+                    ? { type: 'StructInit', spread, fields }
+                    : { type: 'Record', spread, fields }
             }
-
             return { type: 'Var', name: token.val }
         }
+        if (token.type === '#{') return this.parse_closure(true)
+        if (token.type === '#[') return this.parse_closure(true, true)
+        if (token.type === 'r{') return this.parse_record(true)
 
         if (token.type === 'if') return this.parse_if()
 
@@ -112,16 +117,11 @@ export class PrattParser {
             return this.parse_vec(true)
         }
 
-        if (token.type === '#{') {
-            return this.parse_closure(true)
-        }
         if (token.type === 'a[') return this.parse_array(true)
         if (token.type === 'm{') return this.parse_map(true)
         if (token.type === 's{') return this.parse_set(true)
         if (token.type === 't(') return this.parse_tuple(true)
-        if (token.type === 'r{') {
-            return this.parse_record(true)
-        }
+
         throw SyntaxError(`Unexpected token ${token.val}`)
     }
 
@@ -145,9 +145,8 @@ export class PrattParser {
             if (left.type !== 'Var') {
                 throw SyntaxError(`Expected a struct name before '{'`)
             }
-
-            const fields = this.parse_fields()
-            return { type: 'StructInit', name: left.name, fields }
+            const { spread, fields } = this.parse_fields()
+            return { type: 'StructInit', name: left.name, spread, fields }
         }
 
         if (token.type === '[') {
@@ -254,54 +253,6 @@ export class PrattParser {
         return { type: 'Vec', items }
     }
 
-    parse_closure(skip_start = false): TExpr {
-        if (!skip_start) this.expect('#{')
-
-        let implicit = false
-        let idx = 0
-
-        while (this.lex.peek(idx).type !== '}') {
-            if (this.lex.peek(idx).type === 'EOF') {
-                throw SyntaxError('Unterminated closure')
-            }
-
-            if (this.lex.peek(idx).type === '=>') {
-                implicit = true
-                break
-            }
-
-            idx++
-        }
-
-        const params: { name: string, type?: FuncType }[] = []
-
-        if (implicit) {
-            while (this.lex.peek().type !== '=>') {
-                const name = this.expect('ID')
-
-                if (this.lex.peek().type === ':') {
-                    this.expect(':')
-                    const type = this.parser.parseType()
-                    params.push({ name: name.val, type })
-                } else {
-                    params.push({ name: name.val })
-                }
-
-                if (this.lex.peek().type === ',') {
-                    this.lex.next()
-                } else if (this.lex.peek().type !== '=>') {
-                    throw SyntaxError(`Expected ',' or '=>' in closure parameters`)
-                }
-            }
-
-            this.expect('=>')
-        }
-
-        const body = this.parser.parserBlock(true)
-        // console.log('ClosuRebody', body)
-        return { type: 'Closure', implicit, params, body }
-    }
-
     parse_if(): TExpr {
         const condition = this.parse_expr(0, true)
         const thenBranch = this.parser.parserBlock()
@@ -396,6 +347,7 @@ export class PrattParser {
         this.expect('}')
         return { type: 'Map', entries }
     }
+
     parse_set(skip_start = false): TExpr {
         if (!skip_start) this.expect('s{')
 
@@ -420,36 +372,6 @@ export class PrattParser {
         return { type: 'Set', items }
     }
 
-    parse_record(skip_start = false): TExpr {
-        if (!skip_start) this.expect('r{')
-        return { type: 'Record', fields: this.parse_fields() }
-    }
-
-    parse_fields(): { name: string, val: TExpr }[] {
-        const fields: { name: string, val: TExpr }[] = []
-
-        if (this.lex.peek().type !== '}') {
-            while (true) {
-                const name = this.expect('ID')
-                this.expect(':')
-
-                const val = this.parse_expr(0)
-                fields.push({ name: name.val, val })
-
-                if (this.lex.peek().type === '}') break
-
-                if (this.lex.peek().type === ',') {
-                    this.lex.next()
-                    if (this.lex.peek().type === '}') break
-                } else {
-                    throw SyntaxError(`Expected ',' or '}' in initializer`)
-                }
-            }
-        }
-
-        this.expect('}')
-        return fields
-    }
     isGenericCallAhead(): boolean {
         let square = 1
         let paren = 0
@@ -542,4 +464,118 @@ export class PrattParser {
         this.expect(')')
         return args
     }
+
+    /** Returns how many tokens make up `...` (1 if lexed as one token, 3 if as three dots), or 0. */
+    private spreadLen(): number {
+        if (this.lex.peek().type === '...') return 1
+        if (
+            this.lex.peek().type === '.' &&
+            this.lex.peek(1).type === '.' &&
+            this.lex.peek(2).type === '.'
+        ) return 3
+        return 0
+    }
+
+    parse_record(skip_start = false): TExpr {
+        if (!skip_start) this.expect('r{')
+        const { spread, fields } = this.parse_fields()
+        return { type: 'Record', spread, fields }
+    }
+
+    parse_fields(): FieldsResult {
+        const fields: { name: string, val: TExpr }[] = []
+        let spread: TExpr | undefined
+
+        // `...base` is only allowed as the very first entry
+        const n = this.spreadLen()
+        if (n) {
+            this.lex.skip(n)
+            spread = this.parse_expr(0)
+            if (this.lex.peek().type === ',') {
+                this.lex.next()
+            } else if (this.lex.peek().type !== '}') {
+                throw SyntaxError(`Expected ',' or '}' after spread`, this.lex)
+            }
+        }
+
+        while (this.lex.peek().type !== '}') {
+            if (this.spreadLen()) {
+                throw SyntaxError(`Spread '...' is only allowed at the start of an initializer`, this.lex)
+            }
+            const name = this.expect('ID')
+            this.expect(':')
+            const val = this.parse_expr(0)
+            fields.push({ name: name.val, val })
+            if (this.lex.peek().type === ',') {
+                this.lex.next()
+            } else if (this.lex.peek().type !== '}') {
+                throw SyntaxError(`Expected ',' or '}' in initializer`, this.lex)
+            }
+        }
+        this.expect('}')
+        return { spread, fields }
+    }
+
+    parse_captures(): Capture[] {
+        const captures: Capture[] = []
+        while (this.lex.peek().type !== ']') {
+            let mode: Capture['mode'] = 'val'
+            if (this.lex.peek().val === '&') {
+                this.lex.next()
+                mode = 'ref'
+                if (this.lex.peek().type === 'mut') {
+                    this.lex.next()
+                    mode = 'mut'
+                }
+            }
+            const name = this.expect('ID')
+            captures.push({ name: name.val, mode })
+            if (this.lex.peek().type === ',') {
+                this.lex.next()
+            } else if (this.lex.peek().type !== ']') {
+                throw SyntaxError(`Expected ',' or ']' in capture list`, this.lex)
+            }
+        }
+        this.expect(']')
+        return captures
+    }
+
+    parse_closure(skip_start = false, with_captures = false): TExpr {
+        let captures: Capture[] = []
+        if (with_captures) {
+            if (!skip_start) this.expect('#[')
+            captures = this.parse_captures()
+            this.expect('{')            // `#[...]` must be followed by `{`
+        } else if (!skip_start) {
+            this.expect('#{')
+        }
+
+        // ---- unchanged below, only `captures` added to the result ----
+        let implicit = false
+        let idx = 0
+        while (this.lex.peek(idx).type !== '}') {
+            if (this.lex.peek(idx).type === 'EOF') throw SyntaxError('Unterminated closure')
+            if (this.lex.peek(idx).type === '=>') { implicit = true; break }
+            idx++
+        }
+        const params: { name: string, type?: FuncType }[] = []
+        if (implicit) {
+            while (this.lex.peek().type !== '=>') {
+                const name = this.expect('ID')
+                if (this.lex.peek().type === ':') {
+                    this.expect(':')
+                    params.push({ name: name.val, type: this.parser.parseType() })
+                } else {
+                    params.push({ name: name.val })
+                }
+                if (this.lex.peek().type === ',') this.lex.next()
+                else if (this.lex.peek().type !== '=>')
+                    throw SyntaxError(`Expected ',' or '=>' in closure parameters`)
+            }
+            this.expect('=>')
+        }
+        const body = this.parser.parserBlock(true)
+        return { type: 'Closure', implicit, captures, params, body }
+    }
+
 }

@@ -53,8 +53,8 @@ fun main() {
 
     let doubled = #{ it * 2 }
     let add = #{ left, right => left + right }
-    let capture = #[growable](x) => growable.push(x)
-    let explicit = (x: i32, y: i32) -> i32 => x + y
+    let capture = #[growable]{x => growable.push(x)}
+    let explicit = #{x: i32, y: i32 => x + y}
 
     let text = "Hello ${record.name}, count=${growable.len()}"
     let multi = """first line
@@ -62,18 +62,48 @@ second line ${first}
 """
     let raw = "C:\\users\\name\\file"
 
-    let number = 1_000.5e-2
-    let hex = 0xFF
-    let binary = 0b1010
-    let octal = 0o17
+    // not supporting 1_000.5e-2
+    let number = 0.001 
+    // TODO 0xFF
+    let hex = 0
+    let binary = 0 // 0b1010
+    let octal = 0  // 0o17
     let tuple_index = pair.0.1
-    let range = 1..10
-    let inclusive = 1..=10
+    let range = 0 // 1..10
+    let inclusive = 0 // 1..=10
 
     if parsed.is_ok() {
         println(text)
     } else {
         println("parse failed")
+    }
+
+    for {
+        println("Infinite")   
+    }
+    
+    for i in 1..10 {
+
+    }
+
+    let done = false
+    for done == true {
+
+    }
+    
+    for user in users {}
+    for user,idx in users{}
+    for key, val in map {}
+    
+    let role_info = match user.role { // , commas not required but can be used
+        Admin => "Admin",
+        Staff => "Staff",
+        _ => "Other",
+    } 
+
+    let is_adult = match age {
+        age > 18 => true
+        _ => false
     }
 
     // Keywords after a dot are ordinary member names.
