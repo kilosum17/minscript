@@ -11,6 +11,7 @@ export function SyntaxError(mes: string, lex?: Lexer) {
 export type Capture = { name: string, mode: 'val' | 'ref' | 'mut' }
 
 type FieldsResult = { spread?: TExpr, fields: { name: string, val: TExpr }[] }
+export type MatchArm = { pattern: TExpr, body: BlockDecl | TExpr }
 
 export type TExpr =
     | { type: 'Literal', value: string }
@@ -20,18 +21,22 @@ export type TExpr =
     | { type: 'Call', callee: TExpr, generics?: FuncType[], args: TExpr[] }
     | { type: 'StrExpr', parts: (string | TExpr)[] }
     | { type: 'Vec', items: TExpr[] }
-    | { type: 'Closure', implicit: boolean, params: { name: string, type?: FuncType }[], body: BlockDecl }
     | { type: 'If', condition: TExpr, thenBranch: BlockDecl, elseBranch?: BlockDecl | TExpr }
     | { type: 'Index', object: TExpr, index: TExpr }
     | { type: 'Array', items: TExpr[] }
     | { type: 'Tuple', items: TExpr[] }
     | { type: 'Map', entries: { key: TExpr, value: TExpr }[] }
     | { type: 'Set', items: TExpr[] }
-    | { type: 'StructInit', name?: string, fields: { name: string, val: TExpr }[] }
-    | { type: 'Record', fields: { name: string, val: TExpr }[] }
     | { type: 'Closure', implicit: boolean, captures: Capture[], params: { name: string, type?: FuncType }[], body: BlockDecl }
     | { type: 'StructInit', name?: string, spread?: TExpr, fields: { name: string, val: TExpr }[] }
     | { type: 'Record', spread?: TExpr, fields: { name: string, val: TExpr }[] }
+    | { type: 'Range', start?: TExpr, end?: TExpr, inclusive: boolean }
+    | { type: 'Match', scrutinee: TExpr, arms: MatchArm[] }
+    | { type: 'For', kind: 'loop', body: BlockDecl }                                   // for { }
+    | { type: 'For', kind: 'cond', cond: TExpr, body: BlockDecl }                      // for x == y { }
+    | { type: 'For', kind: 'in', vars: string[], iter: TExpr, body: BlockDecl }        // for a, b in xs { }
+    | { type: 'Break', value?: TExpr }
+    | { type: 'Continue' }
 
 export class PrattParser {
 
@@ -48,19 +53,23 @@ export class PrattParser {
         return n
     }
 
-    parse_expr(min_bp = 0, stopAtBrace = false): TExpr {
+    private noBrace = false
+    private with<T>(noBrace: boolean, f: () => T): T {
+        const prev = this.noBrace
+        this.noBrace = noBrace
+        try { return f() } finally { this.noBrace = prev }
+    }
+
+    parse_expr(min_bp = 0): TExpr {          // note: stopAtBrace parameter removed
         const token = this.lex.next()
         let left = this.parse_nul(token)
 
         while (true) {
             const next = this.lex.peek()
-
-            if (
-                next.type === 'EOF' ||
-                [')', ']', '}', ',', ';'].includes(next.type)
-            ) break
-
-            if (stopAtBrace && next.type === '{') break
+            if (next.type === 'EOF' || [')', ']', '}', ',', ';', '=>'].includes(next.type)) break
+            if (this.noBrace && next.type === '{') break
+            // a `(` or `[` at the start of a new line is a new statement, not a call/index
+            if (next.nl_before && (next.type === '(' || next.type === '[')) break
 
             const bp = this.get_infix_bp(next)
             if (bp == null || bp.left < min_bp) break
@@ -68,11 +77,14 @@ export class PrattParser {
             this.lex.next()
             left = this.parse_infix(next, left, bp.right)
         }
-
         return left
     }
 
     parse_nul(token: Token): TExpr {
+        const delimited = ['(', '"', 'v[', 'a[', 'm{', 's{', 't(', 'r{', '#{', '#[']
+        if (this.noBrace && delimited.includes(token.type)) {
+            return this.with(false, () => this.parse_nul(token))
+        }
         if (token.type === 'NUM' || token.type === 'true' || token.type === 'false') {
             return { type: 'Literal', value: token.val }
         }
@@ -90,8 +102,6 @@ export class PrattParser {
         if (token.type === '#{') return this.parse_closure(true)
         if (token.type === '#[') return this.parse_closure(true, true)
         if (token.type === 'r{') return this.parse_record(true)
-
-        if (token.type === 'if') return this.parse_if()
 
         if (token.type === '-') {
             const right = this.parse_expr(13)
@@ -122,10 +132,32 @@ export class PrattParser {
         if (token.type === 's{') return this.parse_set(true)
         if (token.type === 't(') return this.parse_tuple(true)
 
+        if (token.type === 'if') return this.parse_if()
+        if (token.type === 'match') return this.parse_match()
+        if (token.type === 'for') return this.parse_for()
+        if (token.type === 'continue') return { type: 'Continue' }
+        if (token.type === 'break') {
+            const t = this.lex.peek()
+            if (t.nl_before || ['EOF', ')', ']', '}', ',', ';'].includes(t.type)) return { type: 'Break' }
+            return { type: 'Break', value: this.parse_expr(0) }
+        }
+        if (token.type === '..' || token.type === '..=') {          // `..5`, `..=5`, `..`
+            return this.parse_range(undefined, token.type === '..=', 0.6)
+        }
+
         throw SyntaxError(`Unexpected token ${token.val}`)
     }
 
     parse_infix(token: Token, left: TExpr, right_bp: number): TExpr {
+        if (this.noBrace && (token.type === '(' || token.type === '[')) {
+            return this.with(false, () => this.parse_infix(token, left, right_bp))
+        }
+
+        if (token.type === '..' || token.type === '..=') {
+            if (left.type === 'Range') throw SyntaxError(`Ranges cannot be chained`, this.lex)
+            return this.parse_range(left, token.type === '..=', right_bp)
+        }
+
         const op = token.val
 
         if ([
@@ -188,6 +220,8 @@ export class PrattParser {
         if (token.type === '(') return { left: 16, right: 0 }
         if (token.type === 'v[') return { left: 16, right: 0 }
         if (token.type === '[') return { left: 16, right: 0 }
+        if (token.type === '..' || token.type === '..=') return { left: 0.5, right: 0.6 }
+
         return null
     }
 
@@ -254,7 +288,7 @@ export class PrattParser {
     }
 
     parse_if(): TExpr {
-        const condition = this.parse_expr(0, true)
+        const condition = this.with(true, () => this.parse_expr(0))
         const thenBranch = this.parser.parserBlock()
 
         let elseBranch: BlockDecl | TExpr | undefined
@@ -540,6 +574,10 @@ export class PrattParser {
         return captures
     }
 
+    parse_block_like(): TExpr {
+        return this.parse_nul(this.lex.next())
+    }
+
     parse_closure(skip_start = false, with_captures = false): TExpr {
         let captures: Capture[] = []
         if (with_captures) {
@@ -552,12 +590,15 @@ export class PrattParser {
 
         // ---- unchanged below, only `captures` added to the result ----
         let implicit = false
-        let idx = 0
-        while (this.lex.peek(idx).type !== '}') {
-            if (this.lex.peek(idx).type === 'EOF') throw SyntaxError('Unterminated closure')
-            if (this.lex.peek(idx).type === '=>') { implicit = true; break }
-            idx++
+        let depth = 0
+        for (let idx = 0; ; idx++) {
+            const t = this.lex.peek(idx)
+            if (t.type === 'EOF') throw SyntaxError('Unterminated closure')
+            if (['{', '#{', 'm{', 's{', 'r{'].includes(t.type)) depth++
+            else if (t.type === '}') { if (depth === 0) break; depth-- }
+            else if (t.type === '=>' && depth === 0) { implicit = true; break }
         }
+
         const params: { name: string, type?: FuncType }[] = []
         if (implicit) {
             while (this.lex.peek().type !== '=>') {
@@ -576,6 +617,68 @@ export class PrattParser {
         }
         const body = this.parser.parserBlock(true)
         return { type: 'Closure', implicit, captures, params, body }
+    }
+
+    private range_end_follows(): boolean {
+        const t = this.lex.peek()
+        if (t.type === 'EOF' || [')', ']', '}', ',', ';', '=>'].includes(t.type)) return false
+        if (this.noBrace && t.type === '{') return false   // `for i in 1.. {`
+        if (t.nl_before) return false
+        return true
+    }
+
+    parse_range(start: TExpr | undefined, inclusive: boolean, right_bp: number): TExpr {
+        const end = this.range_end_follows() ? this.parse_expr(right_bp) : undefined
+        if (inclusive && !end) throw SyntaxError(`'..=' needs an end`, this.lex)
+        return { type: 'Range', start, end, inclusive }
+    }
+    parse_match(): TExpr {
+        const scrutinee = this.with(true, () => this.parse_expr(0))
+        this.expect('{')
+        const arms = this.with(false, () => this.parse_match_arms())
+        this.expect('}')
+        return { type: 'Match', scrutinee, arms }
+    }
+
+    private parse_match_arms(): MatchArm[] {
+        const arms: MatchArm[] = []
+        while (this.lex.peek().type !== '}') {
+            if (this.lex.peek().type === 'EOF') throw SyntaxError('Unterminated match', this.lex)
+            const pattern = this.parse_expr(0)
+            this.expect('=>')
+            const body = this.lex.peek().type === '{'
+                ? this.parser.parserBlock()
+                : this.parse_expr(0)
+            arms.push({ pattern, body })
+            if (this.lex.peek().type === ',') this.lex.next()
+        }
+        return arms
+    }
+
+    parse_for(): TExpr {
+        const p0 = this.lex.peek()
+
+        // for { }
+        if (p0.type === '{') {
+            return { type: 'For', kind: 'loop', body: this.parser.parserBlock() }
+        }
+
+        // for a in xs / for a, b in xs
+        if (p0.type === 'ID') {
+            let i = 1
+            while (this.lex.peek(i).type === ',' && this.lex.peek(i + 1).type === 'ID') i += 2
+            if (this.lex.peek(i).val === 'in') {
+                const vars: string[] = []
+                for (let k = 0; k < i; k += 2) vars.push(this.lex.peek(k).val)
+                this.lex.skip(i + 1)
+                const iter = this.with(true, () => this.parse_expr(0))
+                return { type: 'For', kind: 'in', vars, iter, body: this.parser.parserBlock() }
+            }
+        }
+
+        // for cond { }
+        const cond = this.with(true, () => this.parse_expr(0))
+        return { type: 'For', kind: 'cond', cond, body: this.parser.parserBlock() }
     }
 
 }

@@ -82,7 +82,8 @@ second line ${first}
         println("Infinite")   
     }
     
-    for i in 1..10 {
+    // also i..=10
+    for i in 1..10 { 
 
     }
 
@@ -94,7 +95,7 @@ second line ${first}
     for user in users {}
     for user,idx in users{}
     for key, val in map {}
-    
+
     let role_info = match user.role { // , commas not required but can be used
         Admin => "Admin",
         Staff => "Staff",

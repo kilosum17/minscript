@@ -373,6 +373,12 @@ export class Parser {
     parserStatement(): TExpr | StatDecl {
         const p1 = this.peek()
         const p2 = this.peek(1)
+        if (p1.type === 'if' || p1.type === 'for' || p1.type === 'match') {
+            return this.pratt.parse_block_like()
+        }
+        if (p1.type === 'break' || p1.type === 'continue') {
+            return this.pratt.parse_expr(0)
+        }
         if (p1.type == 'return') {
             this.expect('return')
             let expr

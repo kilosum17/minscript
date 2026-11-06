@@ -18,5 +18,7 @@ export const mergeMap = {
     '+': '=',
     "*": "=",
     "&": "&",
-    "|": "|"
+    "|": "|",
+    '.': '.',
+    '..': new Set(['=', '.']),
 } as Record<string, string | Set<string>>
