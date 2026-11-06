@@ -17,7 +17,7 @@ export const kwsSet = new Set(KWS as any as string[])
 
 export const SIG = [
     "r{", "m{", "s{", "t(", "v[", 'a[',
-    "#{", '${',
+    "#{", '${', '#[',
 ] as const
 export const sigSet = new Set(SIG)
 
