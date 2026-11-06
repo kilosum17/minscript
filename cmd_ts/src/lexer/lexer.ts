@@ -1,3 +1,4 @@
+
 import { canMerge, isAlphaNumeric, isNewLine, isSpace, isSpecial, tryMerge } from "../utils/char_helpers";
 import { getTokenType, Token } from "./lexer_types";
 
@@ -11,6 +12,7 @@ type Part = {
     endLine: number
     endCol: number
     text: string
+    forceUnknown?: boolean
 }
 
 function merge_parts(p1: Part, p2: Part): Part {
@@ -35,12 +37,12 @@ export class Lexer {
     endPos = 0
     line = 0
     col = 0
-
     is_str = false
     is_multiline = false
     brace_depth = 0
     is_expr = false
 
+    private _getPos = 0
     private pendingPart?: Part
 
     tokenize(source: string) {
@@ -65,7 +67,7 @@ export class Lexer {
             this.pos = lex.endIdx
 
             if (!lex.text) {
-                if (lex.endIdx !== this.endPos) {
+                if (this.pos !== this.endPos) {
                     throw new Error(`Lexer failed at position ${this.pos}`)
                 }
                 if (this.is_str) {
@@ -74,12 +76,13 @@ export class Lexer {
                 break
             }
 
-            while (tryMerge(lex.text)) {
+            // Merge operators, but never merge string content.
+            while (!lex.forceUnknown && tryMerge(lex.text)) {
                 const lex2 = this.getNext()
 
                 if (!lex2.text) break
 
-                if (!lex2.ws_before && canMerge(lex.text, lex2.text)) {
+                if (!lex2.forceUnknown && !lex2.ws_before && canMerge(lex.text, lex2.text)) {
                     lex = merge_parts(lex, lex2)
                     this.pos = lex.endIdx
                 } else {
@@ -88,9 +91,11 @@ export class Lexer {
                 }
             }
 
+            let text = lex.text
+            // if (text == '\\"') text = '"'
             const tok = new Token()
-            tok.type = getTokenType(lex.text)
-            tok.val = lex.text
+            tok.type = lex.forceUnknown ? "UNK" : getTokenType(text)
+            tok.val = text
             tok.span = {
                 startCol: lex.startCol,
                 endCol: lex.endCol,
@@ -122,25 +127,23 @@ export class Lexer {
             }
         }
 
-        // Skip whitespace.
-        while (
-            isNotEnd(cur) &&
-            (isSpace(this.source[cur]) || isNewLine(this.source[cur]))
-        ) {
-            ws_before = true
-
-            if (isNewLine(this.source[cur])) {
-                nl_before = true
+        // Whitespace is skipped only outside string contents.
+        if (!this.is_str || this.is_expr) {
+            while (
+                isNotEnd(cur) &&
+                (isSpace(this.source[cur]) || isNewLine(this.source[cur]))
+            ) {
+                ws_before = true
+                if (isNewLine(this.source[cur])) nl_before = true
+                advance()
             }
-
-            advance()
         }
 
         const startPos = cur
         const startLine = this.line
         const startCol = this.col
 
-        const ret = (): Part => ({
+        const ret = (forceUnknown = false, textOverride?: string): Part => ({
             startIdx: startPos,
             endIdx: cur,
             ws_before,
@@ -149,72 +152,69 @@ export class Lexer {
             startCol,
             endLine: this.line,
             endCol: this.col,
-            text: this.source.slice(startPos, cur),
+            text: textOverride ?? this.source.slice(startPos, cur),
+            forceUnknown,
         })
 
-        // Currently scanning string contents.
+        // String content.
         if (this.is_str && !this.is_expr) {
             let chars = 0
 
             while (isNotEnd(cur)) {
-                // Interpolation starts with ${
+                // Escapes must be checked before quotes and interpolation.
+                if (this.source[cur] === "\\" && isNotEnd(cur + 1)) {
+                    advance(2)
+                    chars += 2
+                    continue
+                }
+
+                // Interpolation: ${...}
                 if (
                     this.brace_depth <= 0 &&
-                    this.source[cur] === '$' &&
-                    this.source[cur + 1] === '{'
+                    this.source[cur] === "$" &&
+                    this.source[cur + 1] === "{"
                 ) {
-                    // Return preceding text first.
                     if (chars > 0) break
 
                     advance(2)
                     this.brace_depth = 1
                     this.is_expr = true
-                    return ret()
+                    return ret(false, "${")
                 }
 
                 // Single-line closing quote.
                 if (!this.is_multiline && this.source[cur] === '"') {
-                    // Return preceding text first.
                     if (chars > 0) break
 
                     advance()
                     this.is_str = false
-                    this.is_expr = false
-                    return ret()
+                    return ret(false, '"')
                 }
 
-                // Multiline closing quotes.
+                // Multiline closing delimiter.
                 if (
                     this.is_multiline &&
                     this.source[cur] === '"' &&
                     this.source[cur + 1] === '"' &&
                     this.source[cur + 2] === '"'
                 ) {
-                    // Return preceding text first.
                     if (chars > 0) break
 
                     advance(3)
                     this.is_str = false
-                    this.is_expr = false
                     this.is_multiline = false
-                    return ret()
+                    return ret(false, '"')
                 }
 
-                // Escaped character: keep both characters in the string.
-                if (this.source[cur] === '\\' && isNotEnd(cur + 1)) {
-                    advance(2)
-                } else {
-                    advance()
-                }
-
+                advance()
                 chars++
             }
 
-            return ret()
+            return ret(true)
         }
 
         // Opening string delimiter.
-        if (this.source[cur] === '"' && !this.is_str) {
+        if (this.source[cur] === '"') {
             const multiline =
                 this.source[cur + 1] === '"' &&
                 this.source[cur + 2] === '"'
@@ -226,12 +226,13 @@ export class Lexer {
             this.is_expr = false
             this.brace_depth = 0
 
-            return ret()
+            // Keep the same quote token for both string forms.
+            return ret(false, '"')
         }
 
-        // Scanning an interpolation expression.
+        // Interpolation expression brace tracking.
         if (this.is_str && this.is_expr) {
-            if (this.source[cur] === '}') {
+            if (this.source[cur] === "}") {
                 this.brace_depth--
 
                 if (this.brace_depth <= 0) {
@@ -239,14 +240,12 @@ export class Lexer {
                     this.is_expr = false
                     return ret()
                 }
-            }
-
-            if (this.source[cur] === '{') {
+            } else if (this.source[cur] === "{") {
                 this.brace_depth++
             }
         }
 
-        // Special characters.
+        // Special characters and operators.
         if (isSpecial(this.source[cur])) {
             advance()
             return ret()
@@ -255,15 +254,13 @@ export class Lexer {
         // Identifiers and numbers.
         while (
             isNotEnd(cur) &&
-            (isAlphaNumeric(this.source[cur]) || this.source[cur] === '_')
+            (isAlphaNumeric(this.source[cur]) || this.source[cur] === "_")
         ) {
             advance()
         }
 
         return ret()
     }
-
-    private _getPos = 0
 
     next(): Token {
         const tok = this.tokens[this._getPos] || new Token()

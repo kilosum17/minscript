@@ -1,6 +1,6 @@
 package lexer_demo
 
-import "std.io"
+import "std.io" as io
 
 type Box[T] = { value: T }
 
@@ -29,10 +29,10 @@ fun collect_ids(users: Vec[User]) -> Vec[i64] {
 fun main() {
     // Generic calls and nested generic types do not use angle brackets.
     var long_string = "This is a long \n string ${name} and ${age}"
-    // var multiline = """
-    //    Multiline string with \t ${one}
-    //    Multiline string with \t ${two}
-    //    """
+    var multiline = """
+        Multiline string with \t ${one+it}
+        Multiline string with \t ${two}
+        """
     
     // let parsed: Result[User, string] = parse_user("{\"id\":1}")
     let nested: Map[string, Vec[Option[User]]] = m{
@@ -44,12 +44,12 @@ fun main() {
     let fixed = a[10, 20, 30]
     let growable = v[1, 2, 3, 4]
     let first = growable[0]
-    let record = r{ id: 7, name: "Grace", ...base }
+    let record = r{ ...base, id: 7, name: "Grace" } //...base not supported yet
     let lookup = m{ "one": 1, "two": 2 }
     let unique = s{ 1, 2, 3 }
     let pair = t("age", 42)
     let inferred = _{ host: "localhost", port: 8080 }
-    let tagged = '1{ id: 1, label: "primary" }
+    let tagged = _{ id: 1, label: "primary" } //'{} not supported yet
 
     let doubled = #{ it * 2 }
     let add = #{ left, right => left + right }

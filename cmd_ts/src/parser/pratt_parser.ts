@@ -298,7 +298,7 @@ export class PrattParser {
         }
 
         const body = this.parser.parserBlock(true)
-        console.log('ClosuRebody', body)
+        // console.log('ClosuRebody', body)
         return { type: 'Closure', implicit, params, body }
     }
 

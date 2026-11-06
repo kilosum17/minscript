@@ -38,7 +38,7 @@ export const OPERATORS = [
 export const operSet = new Set(OPERATORS as any as string[])
 
 const OTHERS = [
-    'UNK', 'EOF', 'ID', 'NUM', '"', 'STOP',
+    'UNK', 'EOF', 'ID', 'NUM', '"', 'STOP', 'STR_EXPR'
 ] as const
 export const othersSet = new Set(OTHERS)
 
@@ -50,6 +50,8 @@ export type TokenType =
 
 export function getTokenType(_val: string): TokenType {
     const val = _val as any
+    // if (val == '"' || val === '"""') return "STR_START"
+    if (val == '${') return 'STR_EXPR'
     if (othersSet.has(val) || kwsSet.has(val) || sigSet.has(val) || operSet.has(val)) {
         return val as TokenType
     }

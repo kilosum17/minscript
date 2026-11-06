@@ -102,15 +102,10 @@ export class Parser {
     }
 
     parseImportDecl(): AstNode {
-        this.next()
+        this.expect('import')
         this.expect('"')
-        const parts = []
-        let cur = this.next()
-        while (isIdent(cur.val) || cur.val == ".") {
-            parts.push(cur.val)
-            cur = this.next()
-        }
-        this.expect('"', cur)
+        const n1 = this.next()
+        this.expect('"')
         let rename = ""
         if (this.lex.peek().val === 'as') {
             this.expect('as')
@@ -118,7 +113,7 @@ export class Parser {
             rename = n1.val
         }
         return {
-            kind: 'ImportDecl', path: parts.join(''), rename,
+            kind: 'ImportDecl', path: n1.val, rename,
         }
     }
 
