@@ -39,6 +39,10 @@ export class Lexer {
     endPos = 0
     line = 0
     col = 0
+    is_str = false
+    is_multiline = false
+    brace_depth = 0
+    is_expr = false
 
     tokenize(source: string) {
         this.source = source
@@ -51,12 +55,13 @@ export class Lexer {
         while (true) {
             let lex = this.getNext()
             this.pos = lex.endIdx
-            // console.log('lexer', lex.text)
+            // console.log('lexer', lex.text, 'brss', this.brace_depth)
 
             if (!lex.text) {
                 if (lex.endIdx != this.endPos) {
-                    console.warn('*** Failed ***')
+                    console.warn(`*** Failed ***=${source[this.pos]}`)
                     console.log('..' + source.substring(Math.max(0, this.pos - 20), this.pos + 10))
+                    throw new Error(`lexer failed: str ${this.is_str} expr ${this.is_expr}`)
                 }
                 else console.log("Done <EOF>")
                 break
@@ -112,26 +117,12 @@ export class Lexer {
         let startPos = cur
         let startCol = this.col
 
-        if (isSpecial(this.source[cur])) {
-            // get-symbol
-            this.col += 1
-            let endPos = cur + 1
-            let endLine = this.line
-            let endCol = this.col
-            let text = this.source.slice(startPos, endPos)
-            console.log("Special", this.source[cur])
-            return {
-                startIdx: startPos, endIdx: endPos, ws_before, nl_before, startLine,
-                endLine, text, startCol, endCol
-            }
-        } else {
-            // get-word
-            console.log("Dwe", this.source[cur])
+        const text = () => {
+            let endPos = cur
+            return this.source.slice(startPos, endPos)
+        }
 
-            while (isNotEnd(cur) && isAlphaNumeric(this.source[cur]) || this.source[cur] == '_') {
-                this.col += 1
-                cur++
-            }
+        const ret = () => {
             let endPos = cur
             let endLine = this.line
             let endCol = this.col
@@ -139,6 +130,83 @@ export class Lexer {
             return {
                 startIdx: startPos, endIdx: endPos, ws_before, nl_before, startLine,
                 endLine, text, startCol, endCol
+            }
+        }
+
+        if (this.is_str && !this.is_expr) {
+            let chars = 0
+            while (true) {
+                if (this.brace_depth <= 0 && this.source[cur] === '$' && this.source[cur + 1] == '{') {
+                    this.brace_depth = 1
+                    this.is_expr = true
+                    cur++
+                    break
+                }
+                if (!this.is_multiline && this.source[cur] === '"') {
+                    if (chars === 0) {
+                        cur += 1
+                        this.is_str = false
+                        this.is_expr = false
+                    }
+                    break
+                }
+                if (this.is_multiline && (
+                    this.source[cur] == '"' && this.source[cur + 1] === '"' && this.source[cur + 1] === '"'
+                )) {
+                    if (chars === 0) {
+                        cur += 3
+                        this.is_str = false
+                        this.is_expr = false
+                        console.log(ret())
+                        throw new Error('Done')
+                    }
+                    break
+                }
+                chars++
+                cur++
+            }
+            console.log("STR_part", text())
+            return ret()
+        } else if (this.source[cur] === '"' && !this.is_str) {
+            let multiline = false
+            if (this.source[cur + 1] == '"' && this.source[cur + 2] === '"') {
+                multiline = true
+                cur += 3
+            } else {
+                cur += 1
+            }
+            this.is_str = true
+            this.is_multiline = multiline
+            console.log("STR_start", text(), 'multi', multiline)
+            return ret()
+        } else {
+            if (this.is_str && this.is_expr) {
+                if (this.source[cur] === '}') {
+                    this.brace_depth--
+                    if (this.brace_depth <= 0) {
+                        cur += 1
+                        this.is_expr = false
+                        return ret()
+                    }
+                }
+                if (this.source[cur] === '{') {
+                    this.brace_depth++
+                }
+            }
+            if (isSpecial(this.source[cur])) {
+                // get-symbol
+                this.col += 1
+                cur += 1
+                console.log("Special", this.source[cur])
+                return ret()
+            } else {
+                while (isNotEnd(cur) && isAlphaNumeric(this.source[cur]) || this.source[cur] == '_') {
+                    this.col += 1
+                    cur++
+                }
+                // get-word
+                console.log("Dwe", text())
+                return ret()
             }
         }
     }

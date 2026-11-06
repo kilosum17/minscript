@@ -4,8 +4,9 @@ import type { Token, TokenType } from "../lexer/lexer_types"
 import type { Parser } from "./parser"
 import type { BlockDecl, FuncType } from "./parser_types"
 
-export function SyntaxError(mes: string) {
-    return Error(`Syntax Error:${mes}`)
+export function SyntaxError(mes: string, lex?: Lexer) {
+    const info = lex ? `[${lex.peek(-1).val} (${lex.peek().val}),${lex.peek(1).val}]` : ''
+    return Error(`Syntax Error:${mes}${info}`)
 }
 
 export type TExpr =
@@ -130,7 +131,7 @@ export class PrattParser {
         if ([
             '.', '+', '-', '*', '/', '%',
             '==', '!=', '>', '<', '>=', '<=',
-            'and', 'or'
+            '&&', '||'
         ].includes(op)) {
             const right = this.parse_expr(right_bp)
             return { type: 'Binary', op, left, right }
@@ -168,8 +169,8 @@ export class PrattParser {
     get_infix_bp(token: Token): { left: number, right: number } | null {
         const op = token.val
 
-        if (op === 'or') return { left: 1, right: 2 }
-        if (op === 'and') return { left: 3, right: 4 }
+        if (op === '||') return { left: 1, right: 2 }
+        if (op === '&&') return { left: 3, right: 4 }
 
         if (['==', '!='].includes(op))
             return { left: 5, right: 6 }
@@ -533,7 +534,7 @@ export class PrattParser {
                     this.lex.next()
                     if (this.lex.peek().type === ')') break
                 } else {
-                    throw SyntaxError(`Expected ',' or ')' in function call`)
+                    throw SyntaxError(`Expected ',' or ')' in function call`, this.lex)
                 }
             }
         }

@@ -2,9 +2,9 @@ package lexer_demo
 
 import "std.io"
 
-/// Generic type arguments now use square brackets.
 type Box[T] = { value: T }
 
+// Generic type arguments now use square brackets.
 inter Convert[From, To] = {
     fun convert(this, value: From) -> To
 }
@@ -28,7 +28,13 @@ fun collect_ids(users: Vec[User]) -> Vec[i64] {
 
 fun main() {
     // Generic calls and nested generic types do not use angle brackets.
-    let parsed: Result[User, string] = parse_user("{\"id\":1}")
+    var long_string = "This is a long \n string ${name} and ${age}"
+    // var multiline = """
+    //    Multiline string with \t ${one}
+    //    Multiline string with \t ${two}
+    //    """
+    
+    // let parsed: Result[User, string] = parse_user("{\"id\":1}")
     let nested: Map[string, Vec[Option[User]]] = m{
         "admins": v[User.new(_{ id: 1, name: "Ada", roles: v["admin"] })],
         "guests": v[],
@@ -54,7 +60,7 @@ fun main() {
     let multi = """first line
 second line ${first}
 """
-    let raw = r`C:\users\name\file`
+    let raw = "C:\\users\\name\\file"
 
     let number = 1_000.5e-2
     let hex = 0xFF
@@ -72,5 +78,5 @@ second line ${first}
 
     // Keywords after a dot are ordinary member names.
     let fallback = parsed.or(None)
-    let propagated = await load_user()? 
+    let propagated = await load_user()?
 }

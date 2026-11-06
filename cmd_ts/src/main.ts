@@ -11,8 +11,8 @@ async function main(path: string) {
         // console.log(t.print())
     })
 
-    // console.log(lexer.tokens.slice(170, 400).map(s => s.val))
-    const parser = new Parser(lexer)
+    console.log(lexer.tokens.slice(0, 400).map(s => s.val))
+    // const parser = new Parser(lexer)
 
 
 }
