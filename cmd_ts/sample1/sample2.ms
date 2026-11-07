@@ -34,7 +34,8 @@ fun main() {
         Multiline string with \t ${two}
         """
     
-    // let parsed: Result[User, string] = parse_user("{\"id\":1}")
+    let parsed: Result[User, string] = parse_user("{\"id\":1}")
+    let parsed: Result[User, string] = parse_user.[User]("{\"id\":1}")
     let nested: Map[string, Vec[Option[User]]] = m{
         "admins": v[User.new(_{ id: 1, name: "Ada", roles: v["admin"] })],
         "guests": v[],
@@ -96,7 +97,8 @@ second line ${first}
     for user,idx in users{}
     for key, val in map {}
 
-    let role_info = match user.role { // , commas not required but can be used
+    // , commas not required but can be used
+    let role_info = match user.role { 
         Admin => "Admin",
         Staff => "Staff",
         _ => "Other",
