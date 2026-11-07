@@ -39,13 +39,13 @@
       (block (call Ok (call (. data len))))))
   (impl (for Drop) File (fun drop (params mut this) (block (call (. this close)))))
   (impl
-    (for (Add Money Money) (Sub Money Money))
+    (for (Plus Money Money) (Minus Money Money))
     Money
-    (fun add
+    (fun plus
       (params &this (rhs Money))
       (-> Money)
       (block (struct Money (cents (+ (. this cents) (. rhs cents))))))
-    (fun sub
+    (fun minus
       (params &this (rhs Money))
       (-> Money)
       (block (struct Money (cents (- (. this cents) (. rhs cents)))))))

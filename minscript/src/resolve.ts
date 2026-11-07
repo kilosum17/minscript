@@ -27,6 +27,7 @@ export type SymbolKind =
     | "package"         // an imported package (`import "std.json"` → json)
     | "import"          // an imported item, or an import whose target isn't known yet
     | "builtin-type" | "prelude-type" | "prelude-value"
+    | "variant"         // a union variant exported by the prelude (`Some`, `Ok`, `Less`)
 
 export type Sym = {
     id: number
@@ -37,6 +38,8 @@ export type Sym = {
     span: Span | null
     scope: Scope
     detail?: string             // e.g. the import path
+    std?: boolean               // declared by the prelude (std/prelude.ms)
+    owner?: Sym                 // variant: its union
 }
 
 export type Resolution = {
@@ -49,8 +52,23 @@ export type Resolution = {
     captures: Map<A.Node, Sym[]>
     /** Names left for the type checker. */
     deferred: A.Node[]
+    /** The subset of `deferred` that is unknown only because the file has a glob import. */
+    open: Set<A.Node>
     diagnostics: Diagnostic[]
+    /** The package scope: its names are the package's items. */
+    pkgScope: Scope
 }
+
+/** Options for `resolvePackage`. */
+export type ResolveOptions = {
+    /** The resolved prelude package; its items are visible everywhere. Defaults to std/prelude.ms. */
+    prelude?: Resolution | null
+    /** Resolving std itself: exempt from the orphan rule (std owns the built-in types). */
+    std?: boolean
+}
+
+/** Unions of the prelude whose variants are visible without qualification (spec §10.1). */
+const EXPORTED_VARIANTS: ReadonlySet<string> = new Set(["Option", "Result", "Ordering"])
 
 type ScopeKind = "prelude" | "package" | "file" | "type" | "function" | "block" | "closure" | "or" | "arm"
 
@@ -60,6 +78,7 @@ export class Scope {
     readonly parent: Scope | null
     /** closure without a header, or `or` without a name: provides `it` */
     provider = false
+    /** closure scope: the Closure node; `or` scope: the Or node (owner of the implicit `it`) */
     closure: A.Node | null = null
     /** file scope: has a glob import, so unknown names can't be reported */
     open = false
@@ -77,8 +96,15 @@ const VALUE_KINDS: ReadonlySet<SymbolKind> = new Set(["local", "param", "closure
 
 const isUpper = (s: string) => s.charCodeAt(0) >= 0x41 && s.charCodeAt(0) <= 0x5a
 
-export function resolvePackage(files: A.File[]): Resolution {
-    return new Resolver().run(files)
+export function resolvePackage(files: A.File[], opts: ResolveOptions = {}): Resolution {
+    const prelude = opts.prelude === undefined ? defaultPrelude() : opts.prelude
+    return new Resolver(prelude, opts.std ?? false).run(files)
+}
+
+/** The default prelude resolver, installed by src/prelude.ts (avoids an import cycle). */
+let defaultPrelude: () => Resolution | null = () => null
+export function setDefaultPrelude(get: () => Resolution | null): void {
+    defaultPrelude = get
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -94,6 +120,7 @@ class Resolver {
     private readonly decls = new Map<A.Node, Sym>()
     private readonly captures = new Map<A.Node, Sym[]>()
     private readonly deferred: A.Node[] = []
+    private readonly open = new Set<A.Node>()
     private readonly diagnostics: Diagnostic[] = []
     private readonly prelude = new Scope("prelude", null)
     private readonly pkg = new Scope("package", this.prelude)
@@ -101,11 +128,27 @@ class Resolver {
     private funCtx: FunCtx | null = null
     /** local type symbol → its members, for duplicate checks */
     private readonly members = new Map<Sym, MemberSource[]>()
+    private readonly isStd: boolean
 
-    constructor() {
+    constructor(prelude: Resolution | null, isStd: boolean) {
+        this.isStd = isStd
         for (const name of BUILTIN_TYPES) this.define(this.prelude, name, "builtin-type", null, null)
-        for (const name of PRELUDE_TYPES) this.define(this.prelude, name, "prelude-type", null, null)
+        if (prelude !== null) {
+            for (const [name, sym] of prelude.pkgScope.names) {
+                this.prelude.names.set(name, sym)
+                if (sym.kind === "union" && EXPORTED_VARIANTS.has(name) && sym.decl?.kind === "UnionDecl") {
+                    for (const v of sym.decl.variants) {
+                        const vs = this.define(this.prelude, v.name, "variant", v, v.span)
+                        vs.std = true
+                        vs.owner = sym
+                    }
+                }
+            }
+        }
+        // names the prelude file doesn't declare yet (type-level forms): known, but opaque
+        for (const name of PRELUDE_TYPES) if (!this.prelude.names.has(name)) this.define(this.prelude, name, "prelude-type", null, null)
         for (const [name, kind] of Object.entries(PRELUDE_VALUES)) {
+            if (this.prelude.names.has(name)) continue
             const sym = this.define(this.prelude, name, kind === "package" ? "package" : "prelude-value", null, null)
             if (kind === "package") sym.detail = "std.log"
         }
@@ -122,9 +165,10 @@ class Resolver {
         }
         // 3. member duplicates per local type
         for (const [sym, list] of this.members) this.checkMembers(sym, list)
+        if (this.isStd) for (const sym of this.pkg.names.values()) sym.std = true
         return {
             symbols: this.symbols, refs: this.refs, decls: this.decls, captures: this.captures,
-            deferred: this.deferred, diagnostics: this.diagnostics,
+            deferred: this.deferred, open: this.open, diagnostics: this.diagnostics, pkgScope: this.pkg,
         }
     }
 
@@ -341,7 +385,7 @@ class Resolver {
         const targetName = d.target.kind === "TName" ? d.target.path.join(".") : "this type"
 
         // orphan rule (spec §8.4): an impl lives in the package of the type, or of the interface
-        const isLocal = (sym: Sym | undefined) => sym !== undefined && sym.scope === this.pkg
+        const isLocal = (sym: Sym | undefined) => sym !== undefined && (sym.scope === this.pkg || (this.isStd && sym.kind === "builtin-type"))
         if (target !== undefined) {
             if (d.interfaces.length === 0 && !isLocal(target)) {
                 this.error("E_ORPHAN_IMPL", `methods for \`${targetName}\` can only be added in the package that declares it`, d.target.span)
@@ -595,6 +639,7 @@ class Resolver {
         if (sym !== undefined) return this.use(node, sym, scope)
         if (isUpper(name) || this.isOpen(scope)) {
             this.deferred.push(node)
+            if (this.isOpen(scope)) this.open.add(node)
             return
         }
         if (assigning) this.error("E_UNDECLARED_ASSIGNMENT", `\`${name}\` is not declared: declare it with \`let\`, \`var\`, \`:=\` or \`:==\``, node.span)
@@ -696,6 +741,7 @@ class Resolver {
             case "Or": {
                 this.resolveExpr(scope, e.expr)
                 const orScope = new Scope("or", scope)
+                orScope.closure = e             // owner node: links the implicit `it` back to this `or`
                 if (e.name === null) orScope.provider = true
                 else this.bind(orScope, e.name, "local", e, e.nameSpan ?? e.span)
                 return this.resolveExpr(orScope, e.rhs)
@@ -817,5 +863,6 @@ export function describeKind(kind: SymbolKind): string {
         case "builtin-type": return "built-in type"
         case "prelude-type": return "prelude type"
         case "prelude-value": return "prelude value"
+        case "variant": return "variant"
     }
 }

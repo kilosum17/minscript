@@ -49,9 +49,9 @@ impl Drop for File {
     fun drop(mut this) { this.close() }
 }
 
-impl Add[Money, Money], Sub[Money, Money] for Money {
-    fun add(&this, rhs: Money) -> Money { Money { cents: this.cents + rhs.cents } }
-    fun sub(&this, rhs: Money) -> Money { Money { cents: this.cents - rhs.cents } }
+impl Plus[Money, Money], Minus[Money, Money] for Money {
+    fun plus(&this, rhs: Money) -> Money { Money { cents: this.cents + rhs.cents } }
+    fun minus(&this, rhs: Money) -> Money { Money { cents: this.cents - rhs.cents } }
 }
 
 impl[T] Iterator[T] for Counter[T] {

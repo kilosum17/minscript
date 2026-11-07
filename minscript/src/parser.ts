@@ -368,9 +368,15 @@ class Parser {
         return params
     }
 
-    private parseFun(start: Token, pub: boolean, isAsync: boolean, mode: "item" | "sig"): A.FunDecl {
+    /** `member`: a method, which may be named after a keyword (`fun or`), since it is only called after `.` */
+    private parseFun(start: Token, pub: boolean, isAsync: boolean, mode: "item" | "sig", member = false): A.FunDecl {
         this.expect("fun")
-        const name = this.identName("a function name")
+        let name: string
+        if (member && isKeyword(this.cur.kind) && !RESERVED_KEYWORDS.has(this.cur.kind)) {
+            name = this.advance().kind
+        } else {
+            name = this.identName("a function name")
+        }
         const generics = this.parseGenericParams()
         const open = this.expect("(")
         const { receiver, params } = this.group(false, () => this.parseParams())
@@ -543,10 +549,10 @@ class Parser {
             const mstart = this.cur
             const pub = this.eat("pub") !== null
             if (this.at("fun")) {
-                methods.push(this.parseFun(mstart, pub, false, "item"))
+                methods.push(this.parseFun(mstart, pub, false, "item", true))
             } else if (this.at("async")) {
                 this.advance()
-                methods.push(this.parseFun(mstart, pub, true, "item"))
+                methods.push(this.parseFun(mstart, pub, true, "item", true))
             } else {
                 fields.push(this.parseField(mstart, pub, true))
             }
@@ -597,8 +603,8 @@ class Parser {
             while (this.at("@")) this.skipAttribute()
             const mstart = this.cur
             const mpub = this.eat("pub") !== null
-            if (this.at("fun")) methods.push(this.parseFun(mstart, mpub, false, "item"))
-            else if (this.at("async")) { this.advance(); methods.push(this.parseFun(mstart, mpub, true, "item")) }
+            if (this.at("fun")) methods.push(this.parseFun(mstart, mpub, false, "item", true))
+            else if (this.at("async")) { this.advance(); methods.push(this.parseFun(mstart, mpub, true, "item", true)) }
             else variants.push(this.parseVariant())
         })
         return { kind: "UnionDecl", span: this.sp(start), pub, name, generics, impls, variants, methods }
@@ -623,7 +629,7 @@ class Parser {
             const mstart = this.cur
             const mpub = this.eat("pub") !== null
             const isAsync = this.eat("async") !== null
-            methods.push(this.parseFun(mstart, mpub, isAsync, "sig"))
+            methods.push(this.parseFun(mstart, mpub, isAsync, "sig", true))
         })
         return { kind: "InterDecl", span: this.sp(start), pub, name, generics, supers, methods, composition: null }
     }
@@ -647,7 +653,7 @@ class Parser {
             const mstart = this.cur
             const pub = this.eat("pub") !== null
             const isAsync = this.eat("async") !== null
-            methods.push(this.parseFun(mstart, pub, isAsync, "item"))
+            methods.push(this.parseFun(mstart, pub, isAsync, "item", true))
         })
         return { kind: "ImplDecl", span: this.sp(start), generics, interfaces, target, methods }
     }

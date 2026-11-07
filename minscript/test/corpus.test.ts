@@ -1,13 +1,16 @@
-// Runs the lexer, parser and resolver over the `.ms` corpus (see test/README.md):
+// Runs the lexer, parser, resolver and type checker over the `.ms` corpus (see test/README.md):
 // - test/lexer/*.ms:   zero diagnostics, and the token dump must match the `.tokens` snapshot;
 // - test/parser/*.ms:  zero diagnostics, and the AST dump must match the `.ast` snapshot;
-// - test/programs:     zero diagnostics from the lexer, parser and resolver;
+// - test/programs:     zero diagnostics from the lexer, parser, resolver and type checker;
 // - test/errors:       the diagnostics must match the `//~` annotations exactly (code and line);
 // - test/resolve/*.ms: parse cleanly, resolver diagnostics match the annotations, and the
-//                      resolution dump matches the `.refs` snapshot.
+//                      resolution dump matches the `.refs` snapshot;
+// - test/check/*.ms:   parse and resolve cleanly, checker diagnostics match the annotations, and
+//                      the inferred types match the `.types` snapshot.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
+import "../src/prelude.ts"
 import assert from "node:assert/strict"
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
@@ -17,6 +20,9 @@ import { LEXER_CODES } from "../src/diagnostic.ts"
 import { dumpTokens } from "../src/dump.ts"
 import { lex } from "../src/lexer.ts"
 import { parse } from "../src/parser.ts"
+import { checkPackage } from "../src/check.ts"
+import { dumpTypes } from "../src/check_dump.ts"
+import { loadPrelude } from "../src/prelude.ts"
 import { resolvePackage } from "../src/resolve.ts"
 import { dumpResolution } from "../src/resolve_dump.ts"
 import { printFile } from "../src/sexpr.ts"
@@ -70,13 +76,41 @@ describe("parser snapshots (test/parser)", () => {
     }
 })
 
-describe("programs parse and resolve cleanly (test/programs)", () => {
+const fmt = (ds: { span: { line: number, col: number }, code: string, message: string }[]) => ds.map((d) => `${d.span.line}:${d.span.col} ${d.code} ${d.message}`)
+
+describe("the prelude (std/prelude.ms)", () => {
+    test("parses, resolves and type-checks cleanly", () => {
+        const p = loadPrelude()
+        assert.deepEqual(fmt(p.diagnostics), [])
+        assert.deepEqual(fmt(checkPackage([p.file], p.res).diagnostics), [])
+    })
+})
+
+describe("programs parse, resolve and type-check cleanly (test/programs)", () => {
     for (const file of msFiles(join(root, "programs"))) {
         test(rel(file), () => {
             const src = readFileSync(file)
             assert.deepEqual(diagnosticList(src), [])
-            const res = resolvePackage([parse(src).file])
-            assert.deepEqual(res.diagnostics.map((d) => `${d.span.line}:${d.span.col} ${d.code} ${d.message}`), [])
+            const parsed = parse(src)
+            const res = resolvePackage([parsed.file])
+            assert.deepEqual(fmt(res.diagnostics), [])
+            assert.deepEqual(fmt(checkPackage([parsed.file], res).diagnostics), [])
+        })
+    }
+})
+
+describe("type checker (test/check)", () => {
+    for (const file of msFiles(join(root, "check"))) {
+        test(rel(file), () => {
+            const text = readFileSync(file, "utf8")
+            const parsed = parse(text)
+            assert.deepEqual(fmt(parsed.diagnostics), [], "must parse cleanly")
+            const res = resolvePackage([parsed.file])
+            assert.deepEqual(fmt(res.diagnostics), [], "must resolve cleanly")
+            const checked = checkPackage([parsed.file], res)
+            const actual = checked.diagnostics.map((d) => `${d.span.line} ${d.code}`).sort()
+            assert.deepEqual(actual, annotations(text).sort())
+            snapshot(file, ".types", dumpTypes(res, checked, [parsed.file]))
         })
     }
 })

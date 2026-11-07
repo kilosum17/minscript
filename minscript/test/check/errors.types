@@ -1,0 +1,110 @@
+19:15   n: int
+20:10   s: Shape
+21:27   x: T
+25:9    a: int
+41:9    p: Point
+44:22   a: i64
+44:30   b: u8
+45:9    c: u8
+48:22   a: i32
+48:30   b: u8
+49:9    c: i64
+50:9    d: u32
+51:9    e: f64
+54:16   n: int
+54:24   s: string
+58:19   o: int?
+58:28   r: Result[int, string]
+62:18   p: Point
+63:9    x: unknown
+66:19   a: string
+66:30   b: &str
+67:9    s: string
+70:18   p: Point
+71:9    n: int
+74:18   big: i64
+75:9    small: u8
+76:9    annotated: Vec[int]
+79:26   o: int?
+80:9    v: int
+84:21   r: Result[int, string]
+85:9    v: int
+93:18   p: Point
+97:19   p: Point
+98:9    z: unknown
+102:9   s: unknown
+106:9   u: User
+110:9   u: User
+114:9   p: Point
+118:9   v: Vec[unknown]
+122:9   v: Vec[int]
+127:9   c: unknown
+131:9   x: unknown
+135:9   s: Shape
+136:9   a: f64
+137:9   b: f64
+145:9   s: string
+148:30  n: int
+150:9   x: unknown
+154:18  s: string
+155:9   c: unknown
+158:18  n: int
+159:9   x: unknown
+162:26  l: Light
+169:25  b: bool
+175:24  n: int
+182:19  o: int?
+182:28  l: Light
+183:9   a: int
+183:28  v: int
+184:9   b: int
+188:29  l: Light
+197:25  p: Point
+198:9   s: string
+202:9   b: u8
+205:27  o: int?
+206:14  v: int
+209:30  o: int?
+210:9   v: int
+214:27  o: int?
+215:9   v: int
+218:18  c: bool
+219:9   v: int
+
+-- diagnostics --
+25:18   E_TYPE_MISMATCH expected `int`, found `string`
+29:15   E_TYPE_MISMATCH expected `int`, found `string`
+33:12   E_TYPE_MISMATCH the function returns `int`, found `string`
+37:5    E_TYPE_MISMATCH the body should produce `string`, found `{integer}`
+41:30   E_TYPE_MISMATCH expected `int`, found `string`
+45:17   E_TYPE_MISMATCH expected `u8`, found `i64`
+55:8    E_NOT_TRUTHY a condition must be `bool`, an Option or a Result, found `int`: compare explicitly, e.g. `n != 0`
+63:13   E_INVALID_OPERANDS `+` can't be applied to `Point` and `{integer}`
+71:13   E_INVALID_CAST `Point` can't be used as `int`: `as` annotates a matching type or casts between numbers / pointers
+80:13   E_INVALID_TRY `?` on an Option returns `None`, so the function must return an Option (it returns `int`)
+85:13   E_INVALID_TRY `?` would return an error of type `string`, but the function's errors are `int`
+90:5    E_ARG_COUNT expected 1 argument, found 2
+94:5    E_NOT_CALLABLE `Point` can't be called
+98:13   E_UNKNOWN_FIELD `Point` has no field or method `z`
+102:13  E_UNKNOWN_MEMBER `Shape` has no variant or static method `Triangle`
+106:13  E_MISSING_FIELD missing field `name` in `User`
+114:33  E_UNKNOWN_FIELD `Point` has no field `z`
+118:13  E_CANNOT_INFER_TYPE can't infer the type of the elements of `[]`: add a type annotation, `as T`, or `.[T]`
+127:13  E_CANNOT_INFER_STRUCT_TYPE `_{ … }` takes its type from the context, and there is none here: name the type (`Config { … }`) or annotate it
+131:13  E_CANNOT_INFER_VARIANT unknown name `Blue`: no variant `Blue` in the expected type; qualify it (`Type.Blue`)
+141:5   E_INVALID_BLOCK_VALUE the body must end with a value of type `int`; the trailing `;` discards it
+145:13  E_AWAIT_OUTSIDE_ASYNC `await` is only allowed in an `async fun` (or `main`)
+150:13  E_SELECT_ARM_NOT_PROMISE a `select` arm waits on a Promise, found `int`
+155:13  E_NOT_INDEXABLE `string` can't be indexed: strings aren't integer-indexable, use `.bytes()`, `.chars()` or `.substring(a, b)`
+159:14  E_NOT_ITERABLE `int` can't be iterated with `for … in`
+163:5   E_NON_EXHAUSTIVE_MATCH this `match` on `Light` doesn't cover every case: missing `Green`
+170:5   E_NON_EXHAUSTIVE_MATCH this `match` on `bool` doesn't cover every case: missing `false`
+176:5   E_NON_EXHAUSTIVE_MATCH this `match` on `int` doesn't cover every case: add a `_ =>` arm
+190:9   E_UNKNOWN_VARIANT `Light` has no variant `Blue`
+195:6   E_MISSING_METHOD `Plain` implements `Named` but doesn't define `label`
+198:13  E_BOUND_NOT_SATISFIED `Point` doesn't implement `Named`
+202:17  E_INT_OUT_OF_RANGE `300` doesn't fit in `u8` (0 to 255)
+206:26  E_LET_ELSE_MUST_DIVERGE the `else` block of `let … else` must leave the scope: `return`, `break`, `continue` or `panic(…)`
+210:18  E_TYPE_MISMATCH `or` returns its right side from the function, which returns `Result[int, string]`, found `{integer}`
+215:18  E_TYPE_MISMATCH the fallback of `??` should be `int`, found `string`
+219:13  E_TYPE_MISMATCH the branches have different types: `{integer}` and `string`

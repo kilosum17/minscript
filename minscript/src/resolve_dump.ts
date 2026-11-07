@@ -11,6 +11,7 @@ import type * as A from "./ast.ts"
 import type { Resolution, Sym } from "./resolve.ts"
 
 function target(sym: Sym): string {
+    if (sym.std) return "prelude"
     const where = sym.span ? `${sym.span.line}:${sym.span.col} ` : ""
     switch (sym.kind) {
         case "builtin-type": return "builtin"

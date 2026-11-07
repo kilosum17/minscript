@@ -2,7 +2,7 @@
 9:27    int → builtin
 10:15   f64 → builtin
 12:13   int → builtin
-19:5    log → package "std.log"
+19:5    log → prelude
 31:5    send → 12:1 fun
 31:10   Text → deferred
 32:13   Close → deferred

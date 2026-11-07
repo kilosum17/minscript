@@ -65,6 +65,7 @@ Pipeline:
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
 | Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
 | Lexer (implemented) | — | — | template tokens for `${…}`; `"…"` interpolations stay on one line; lexer balances delimiters (§1.1, §1.5) |
+| Type checker (implemented, first version) | — | — | bidirectional inference; prelude written in MinScript (`std/prelude.ms`); `unknown` for std packages without signatures (§9.12) |
 | Name resolution (implemented) | — | — | redeclaration only in inner scopes; uppercase names and members deferred to the type checker (§8.7) |
 | Parser (implemented) | — | — | struct literals need a PascalCase name; `break x` is a label only if declared; one diagnostic per mistake (§4.2, §5.3, §5.4, §11) |
 | Waiting on several things | — | — | **`select { … }`**, random among ready arms; `for await`; `time.after`; `.cancel()` |
@@ -850,7 +851,7 @@ There are no default parameter values and no named arguments; `_{}` covers both.
 impl User { … }                  // inherent methods (same package as User)
 impl[T] Box[T] { … }
 impl Reader for File { … }
-impl Add, Sub for Money { … }
+impl Plus, Minus for Money { … }
 ```
 
 - **Orphan rule:** `impl X for T` must be in the package that owns `X` or owns `T`.
@@ -1216,11 +1217,57 @@ for await n in online.watch() { log.println("${n} online") }   // long-running: 
 - Names starting with `_` are reserved for intrinsics.
 - `std.json` derives serialization from them; `impl Serializer for T` overrides it.
 
+### 9.12 Type checking [D]
+
+The checker (`src/check.ts`) is **bidirectional**: every expression is checked against the type its context expects, if there is one. The expected type is what drives:
+- literals: `let x: u8 = 7`;
+- empty collections and `nil`;
+- `_{…}`;
+- closure parameters: `items.map(#{ it * 2 })`;
+- variants named without their type (§7.6).
+
+Generic calls get fresh inference variables, bound by unification with the arguments and the expected result.
+
+**Rules the checker applies** (beyond §3–§7):
+- **Inference scope:**
+  - An inference variable may be bound by later code in the same function: `var v = []` then `v.push(1)` gives `Vec[int]`.
+  - Anything still unknown at the end of the function is `E_CANNOT_INFER_TYPE`.
+  - Numeric literals then default to `int` / `f64`.
+- **Calls:**
+  - Missing arguments are allowed only for trailing parameters of type `void`: `Ok()`, `resolver.resolve()`.
+  - Calling a type calls its static `new`: `Signal(0)` is `Signal.new(0)`, and `Ref(x)` is `Ref.new(x)`.
+  - **`.[T]` on a static method that has no generics of its own supplies the type's generics:** `Topic.new.[string]()` is `Topic[string].new()`.
+- **Callbacks:**
+  - A closure may take fewer parameters than the function type it is passed as.
+  - The `Vec` pipeline callbacks (`map`, `filter`, `any`, `find`, `for_each`, …) receive `(item, index)`, so both `#{ it * 2 }` and `#{ n, i => … }` work.
+- **Arithmetic** needs operands of the same number type. If one side widens losslessly to the other (§9.5), the result is the wider type; otherwise convert with `as`. Other types use the operator interfaces (`Plus`, `Minus`, …).
+- **Errors:**
+  - `x?` needs the function to return an `Option` (for an Option) or a `Result` whose error type accepts the error.
+  - `x or rhs` returns `rhs` from the function, so `rhs` must match the function's result.
+- **Iteration:**
+  - `for x in e` iterates `Vec` / `Array` / `Slice` / `Set` (with `for x, i in` giving the index), `Map` (`for k, v in`), `Range`, and anything with `next() -> T?` or `iter()`.
+  - A `string` needs `.chars()` / `.bytes()` / `.lines()` (`E_NOT_ITERABLE`).
+- **Exhaustiveness** (first version):
+  - A `match` on a union must cover every variant with an irrefutable payload (`Some(_)`, not just `Some(1)`), or have a catch-all.
+  - `bool` must cover `true` and `false`, and a literal union every literal.
+  - Other types, and a `match` without a subject, need `_ =>`.
+- **Methods named after keywords:** a method may be named after a keyword (`fun or`), since it is only ever called after `.` (§1.4).
+
+**Gradual typing for std:**
+- Packages other than the prelude have no signatures yet, so their members have the type `unknown`.
+- `unknown` is compatible with everything and never produces a diagnostic. It also flows into inference variables, so no "can't infer" errors follow from it.
+- The same applies to names from glob imports.
+- When std packages get real signatures (written in MinScript, like the prelude), these checks tighten automatically.
+
+**Borrows** (`&T`, `&mut T`) are part of types but don't affect compatibility here: call sites never write `&` (§9.2). Whether each borrow is *valid* is checked by the ownership pass (§9.3), which comes next.
+
 ---
 
 ## 10. Prelude and std surface
 
 ### 10.1 Prelude
+
+The prelude is written in MinScript: [`std/prelude.ms`](../std/prelude.ms) declares every type, method and interface below. Bodies are `_builtin()` (an intrinsic of type `never`) implemented by each back end. The checker reads only the signatures, and `std/prelude.ms` must itself parse, resolve and type-check cleanly.
 
 - **Types:** `Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Resolver`, `Ref`, `Topic`, `Queue`, `Signal`, `Sub`, `Watcher`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`, `Panic`, `PanicKind`, `Ordering` (`Less` / `Equal` / `Greater`).
 - **Functions:** `assert`, `panic`.
@@ -1242,8 +1289,8 @@ inter Stringer = { fun to_str(&this) -> string }
 inter PartialEq[T] = { fun eq(&this, o: &T) -> bool }
 inter PartialOrd[T]: PartialEq[T] = { fun partial_cmp(&this, o: &T) -> Ordering? }
 inter Hash = { fun hash(&this) -> u64 }
-inter Add[R, O] = { fun add(&this, rhs: R) -> O }            // + Sub Mul Div Rem
-inter AddAssign[R] = { fun add_assign(&mut this, rhs: R) }   // + Sub/Mul/Div/RemAssign
+inter Plus[R, O] = { fun plus(&this, rhs: R) -> O }          // `+`; also Minus `-`, Times `*`, Divide `/`, Remainder `%`
+inter PlusAssign[R] = { fun plus_assign(&mut this, rhs: R) } // `+=`; also MinusAssign, TimesAssign, DivideAssign, RemainderAssign
 inter Index[I, T] = { fun index(&this, i: I) -> &T }
 inter IndexMut[I, T] = { fun index_mut(&mut this, i: I) -> &mut T }
 inter Iterator[T] = { fun next(&mut this) -> T? }
@@ -1339,6 +1386,21 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_RESERVED_IDENT` | declaring `it` / `itN` |
 | `E_THIS_OUTSIDE_METHOD` | `this` in a function without a receiver |
 | `E_SELF_OUTSIDE_TYPE` | `Self` outside a type, union, interface or impl |
+| `E_TYPE_MISMATCH` | a value's type doesn't match what is expected (binding, argument, field, return, branch, …) |
+| `E_INVALID_OPERANDS` | an operator applied to types it doesn't support (`point + 1`) |
+| `E_INVALID_TRY` | `?` on something that isn't an Option/Result, or in a function whose result can't carry it |
+| `E_ARG_COUNT` | wrong number of arguments (or of `.[T]` type arguments) |
+| `E_NOT_CALLABLE` | calling a value that isn't a function |
+| `E_UNKNOWN_FIELD` | a field or method that the type doesn't have |
+| `E_UNKNOWN_MEMBER` | `Type.x` where the type has no variant or static method `x` |
+| `E_MISSING_METHOD` | a type implements an interface without defining one of its required methods |
+| `E_BOUND_NOT_SATISFIED` | a generic argument doesn't implement the parameter's bound (`[T: Named]`) |
+| `E_CANNOT_INFER_TYPE` | a type still unknown at the end of the function: annotate, use `as T` or `.[T]` |
+| `E_INT_OUT_OF_RANGE` | an integer literal that doesn't fit its type |
+| `E_LET_ELSE_MUST_DIVERGE` | the `else` block of `let … else` can finish normally |
+| `E_NOT_INDEXABLE` | `x[i]` on a type that can't be indexed (strings: use `.chars()` / `.substring()`) |
+| `E_NOT_ITERABLE` | `for … in` over a value that can't be iterated |
+| `E_NON_EXHAUSTIVE_MATCH` | a `match` that doesn't cover every case |
 | `E_INVALID_CAST` | `as T` that is neither a valid type annotation nor a numeric/pointer cast |
 | `E_SELECT_ARM_NOT_PROMISE` | `select` arm expression is not a `Promise[T]` |
 | `E_AWAIT_OUTSIDE_ASYNC` | `await` / `for await` / `select` outside an `async fun` or `main` |
@@ -1745,7 +1807,9 @@ section[T](name: string) -> Result[T, json.Error]
 | 1 | **Borrowing two parts of one value at once** (a socket's read and write halves, two fields of `&mut this`). Today std splits into owned halves (`conn.split()`). Should the checker allow disjoint field borrows, Rust-style? | undecided: the spec is silent; std uses owned splits for now |
 | 2 | Parameter names in function types: `(id: int) -> bool` as well as `(int) -> bool` (documentation only) | not yet |
 | 3 | A named function-type form (`Fun[...]`) | skipped; use `(T) -> U` / `&(T) -> U` |
-| 4 | **Name clash:** `Sub[T]` is the subscription type (§9.10), but §10.2 also names the `-` operator interface `Sub[R, O]` (after `Add`). One of them needs another name: e.g. the operator interfaces `Plus` / `Minus` / `Times` / `Over` / `Mod`, or Rust-like `Add` / `Subtract` / …, or the subscription back to `Subscription[T]` | the stub uses `Sub` for subscriptions; the operator interface is unnamed for now |
+| 6 | **Implicit `Some`:** may a `T` be used where `T?` is expected (`fun f() -> int? { 5 }`), as TypeScript allows? | no: write `Some(5)`; `nil` / `None` for absence |
+| 7 | **Error conversion with `?`:** when the function's error type differs, should `?` convert through an interface (like Rust's `From`)? | no: the error types must match (`.map_err(#{…})` converts) |
+| 8 | **`Option.or` / `Result.or`** take "a value or `#{…}`" (§10.1). The prelude types the fallback loosely (`or[F](fallback: F)`); should there be two methods (`or(v)` / `or_else(#{…})`) so both are checked? | loose for now |
 | 5 | Mutability of bindings: should assigning to a `let` binding (`let x = 1; x = 2`) be a resolver error? `y = 0` where `y: &mut i32` writes through the borrow, so the check needs types | left to the type checker |
 
 **Resolved in this revision** (formerly open questions):
@@ -1768,3 +1832,4 @@ section[T](name: string) -> Result[T, json.Error]
 - Inherent `impl` blocks live in the type's package (any file).
 - Default method bodies are allowed in `inter`.
 - `Config` replaces `Project`.
+- Operator interfaces are `Plus` / `Minus` / `Times` / `Divide` / `Remainder` (and `…Assign`), so `Sub[T]` stays the subscription type.

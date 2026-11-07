@@ -18,7 +18,8 @@ export const PRELUDE_TYPES: readonly string[] = [
     "Topic", "Queue", "Signal", "Sub", "Watcher", "TopicOptions", "QueueOptions", "PublishError",
     // core interfaces
     "Copy", "Clone", "Drop", "Default", "Stringer", "PartialEq", "PartialOrd", "Hash", "Handle",
-    "Add", "Mul", "Div", "Rem", "AddAssign", "SubAssign", "MulAssign", "DivAssign", "RemAssign",
+    "Plus", "Minus", "Times", "Divide", "Remainder",
+    "PlusAssign", "MinusAssign", "TimesAssign", "DivideAssign", "RemainderAssign",
     "Index", "IndexMut", "Iterator", "AsyncIterator", "Iterable",
     // type-level forms
     "KeyOf", "ElementOf", "IndexOf", "Partial", "Omit", "Pick",

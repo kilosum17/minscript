@@ -1,5 +1,5 @@
 9:13    Deque → deferred
 10:13   heap_from → deferred
 10:23   d → 9:9 local
-11:5    log → package "std.log"
+11:5    log → prelude
 11:17   h → 10:9 local
