@@ -306,7 +306,7 @@ User { id: 1, name }               // named struct literal
 ```
 
 - Elements are separated by commas or newlines, and trailing commas are allowed.
-- `...expr` spreads into every literal kind.
+- `...expr` spreads into every literal kind, and into call arguments that bind a variadic parameter (`log.println(prefix, ...args)`).
 - `_{}` without an expected type is `E_CANNOT_INFER_STRUCT_TYPE`; it doubles as the named-arguments form: `serve(_{ host, port })`.
 - There is no bare `(a, b)` tuple: write `t(a, b)`.
 - Records with the same shape are the same type, so arrays of records need no tagging:
@@ -522,6 +522,9 @@ Primary      := Path [ '[' TypeArgs ']' ]      // glued '['
 - A `&` at the start of a type is a borrow; between two types it is an intersection.
 - `&(T) -> U` is a **borrowed (non-escaping) function**; `(T) -> U` is an **owned (escaping) function**.
 - When a `Path` names an interface, it denotes a dynamically dispatched value (§9.7).
+- **`void`** is the unit type, and its only value is `t()`.
+  - A payload of type `void` can be left out at construction: `Ok()` is `Ok(t())`, as in `Result[void, string]`. This is a semantic rule; the parser sees an ordinary call with zero arguments.
+  - **`never`** is the type of diverging expressions.
 
 ### 7.2 Built-in types [D]
 
@@ -561,7 +564,7 @@ pub type User: Stringer = {          // `: Interfaces` implemented inline (optio
     pub fun new(id: u64, name: string) -> User {      // static
         User { id, name }             // email → None, tags → [], active → true
     }
-    pub fun email(&this) -> &str { this.email ?? "none" }
+    pub fun display_email(&this) -> &str { this.email ?? "none" }   // a method can't share a field's name
     pub fun rename(&mut this, name: string) { this.name = name }
     pub fun to_str(&this) -> string { "User(${this.id})" }   // Stringer
 }
@@ -751,6 +754,7 @@ Call sites never write `&`; the LSP shows hints. `&mut this` methods need a `var
 4. A function may **return** a scoped value only when it derives from its receiver or borrowed parameters. The caller treats the result as borrowing from every borrowed argument (conservative, no annotations).
 5. Each scoped value's set of owners is inferred inside the function body. Using an owner mutably while a scoped value derived from it is still live is an error.
 6. To keep a value beyond its owner's scope, convert it to an owned one: `.to_str()`, `.to_vec()`, `.clone()`.
+7. **Temporary extension:** when a `let` binds a scoped value that borrows from a temporary, the temporary lives until the end of the enclosing block. So `let name = (await io.read_line()).trim()` is valid.
 
 ```rust
 let line = raw.trim()                 // &str borrowing `raw`
@@ -980,6 +984,33 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_USE_OF_POISONED` | value read after a caught panic, before re-assignment |
 | `E_SCRIPT_IN_EVAL` | a `task` script called while `mod.ms` is being evaluated |
 
+**Lexer and parser diagnostics** (exercised by `test/errors/`):
+
+| Code | Meaning |
+|---|---|
+| `E_UNEXPECTED_TOKEN` | generic: a token that doesn't fit here |
+| `E_UNTERMINATED_STRING` | `"` not closed before the end of the line |
+| `E_UNTERMINATED_COMMENT` | `/*` not closed before EOF |
+| `E_INVALID_ESCAPE` | unknown `\x` escape |
+| `E_INVALID_NUMBER` | `.5`, `0x`, `0b102` |
+| `E_INVALID_CHAR` | `'ab'`, `''` |
+| `E_INVALID_RECORD_KEY` | record key that isn't an identifier or quoted identifier |
+| `E_TOP_LEVEL_STATEMENT` | statement outside a function |
+| `E_IMPORT_AFTER_ITEM` | `import` after the first item |
+| `E_RESERVED_KEYWORD` | `while`, `loop`, … (with a hint: `for`) |
+| `E_KEYWORD_AS_IDENT` | keyword used as a binding name |
+| `E_OPEN_BRACE_NEWLINE` | declaration/control-flow `{` not on the header line |
+| `E_LEADING_PIPE_UNION` | old `type X = \| A \| B` (fix-it: `union X = { A  B }`) |
+| `E_INVALID_PARAM` | malformed parameter, e.g. `&items: T` |
+| `E_UNKNOWN_RECEIVER` | `self`, `mut self` (fix-it: `this`) |
+| `E_VARIADIC_NOT_LAST` | `...xs` followed by more parameters |
+| `E_EXPECTED_COLON` | field or param missing `:` |
+| `E_SHORT_DECL_TARGET` | `:=`/`:==` with a non-identifier left side, or `let x :=` |
+| `E_CLOSURE_HEADER_LINE` | closure params (`a =>`) not on the closure's first line |
+| `E_INVALID_CAPTURE` | capture that isn't `x`, `&x` or `&mut x` |
+| `E_GENERIC_ARGS_NEWLINE` | `.[` at the start of a line |
+| `E_EXPECTED_TYPE_ARGUMENTS` | empty `.[]` or `[]` type arguments |
+
 ---
 
 ## 12. Grammar summary (EBNF)
@@ -1030,9 +1061,12 @@ primary       = literal | ident | "this" | "Self" | "(" expr ")"
               | vec_lit | array_lit | tuple_lit | record_lit | map_lit | set_lit
               | inferred_lit | struct_lit | closure
               | if_expr | match_expr | "unsafe" block | "recover" block | block
+              | "for" block                                   (* infinite for as an expression: `break value` *)
               | "return" [ expr ] | "break" [ ident ] [ expr ] | "continue" [ ident ] ;
 postfix       = "." ( ident | INT ) | "?." ident | ".[" type_args "]"
               | "(" [ args ] ")" | "[" expr "]" | "?" ;
+args          = arg { "," arg } [ "," ] ;
+arg           = [ "..." ] expr ;
 closure       = ( "#{" | "#[" [ capture { "," capture } ] "]{" ) [ closure_head "=>" ] { stmt } "}" ;
 capture       = [ "&" [ "mut" ] ] ident ;
 closure_head  = cparam { "," cparam } [ "->" type ] ;
@@ -1048,6 +1082,8 @@ sep           = "," | NEWLINE ;
 ---
 
 ## 13. Parser test corpus (minimum set)
+
+The corpus lives in [`test/`](../test/README.md): `lexer/`, `parser/`, `errors/` (with inline `//~` diagnostics) and `programs/`. The cases below are the minimum set and are all covered there.
 
 ```rust
 t.0.1    1..10   1..=10   ..5    1.to_str()
@@ -1177,9 +1213,9 @@ pub fun config() -> Config {
             "test":    sh("ms test --parallel")
             "migrate": pkg("./tools/migrate")           // runs that package's main(args)
             "release": task(#{ args =>
-                sh("ms test")?
-                sh("ms build --target native --release")?
-                Ok(())
+                run("ms test")?
+                run("ms build --target native --release")?
+                Ok()
             })
         }
     }
@@ -1235,7 +1271,8 @@ pub union Script = {
     Package(string)                            // pkg("./tools/migrate"): runs that package's main
     Task((&Args) -> Result[void, string])      // task(#{…}): inline MinScript
 }
-pub fun sh(cmd: string) -> Script { Shell(cmd) }   // also usable inside a task, returning Result
+pub fun sh(cmd: string) -> Script { Shell(cmd) }                  // declares a shell script
+pub fun run(cmd: string) -> Result[void, string] { … }           // executes a command now (inside a task)
 ```
 
 ```bash
