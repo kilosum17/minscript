@@ -17,7 +17,7 @@ async fun basic(jobs: Queue[Job], events: Topic[Event], config: Signal[Config]) 
     }
 }
 
-async fun block_arms(sub: Subscription[Msg]) {
+async fun block_arms(sub: Sub[Msg]) {
     var s = sub
     select {
         Some(msg) = s.next() => {
@@ -38,7 +38,7 @@ async fun with_else(q: Queue[Job]) {
     }
 }
 
-async fun as_expression(sub: Subscription[int]) -> string {
+async fun as_expression(sub: Sub[int]) -> string {
     var s = sub
     label := select {
         Some(n) = s.next() => "got ${n}"
@@ -47,13 +47,13 @@ async fun as_expression(sub: Subscription[int]) -> string {
     label
 }
 
-async fun one_line(a: Subscription[int], b: Subscription[int]) {
+async fun one_line(a: Sub[int], b: Sub[int]) {
     var x = a
     var y = b
     select { Some(n) = x.next() => log.println(n), Some(m) = y.next() => log.println(m) }
 }
 
-async fun loops_and_control(sub: Subscription[Cmd], stop: Signal[bool]) {
+async fun loops_and_control(sub: Sub[Cmd], stop: Signal[bool]) {
     var s = sub
     var stop_watch = stop.watch()
     outer: for {
@@ -79,7 +79,7 @@ async fun task_promises() {
     }
 }
 
-async fun nested_patterns(sub: Subscription[Result[Order, string]]) {
+async fun nested_patterns(sub: Sub[Result[Order, string]]) {
     var s = sub
     select {
         Some(Ok(order)) = s.next() => ship(order)                  // Err or None disables the arm

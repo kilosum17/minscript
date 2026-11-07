@@ -1,8 +1,9 @@
 // Chat hub: every client that connects joins a shared room (a Topic), and each message it
 // sends is broadcast to all other clients. A Signal tracks how many are online.
-// Extends docs/history/samples/ws.rs; uses spec §4.9 (select) and §9.10 (Topic / Signal).
+// Extends docs/history/samples/ws.rs; uses spec §4.9 (select), §9.10 (Topic / Signal),
+// §9.1 (handles clone implicitly) and §7.6 (variants inferred from the expected type).
 //
-// `LIMITATION(n)` comments mark what's still missing in v0.2. This file must still parse cleanly.
+// The `LIMITATION` comment marks what's still missing in v0.2. This file must still parse cleanly.
 //
 // Assumed std.net.ws API:
 //   pub union Message = { Text(string)  Binary(Vec[u8])  Close }          // Clone (auto-derived)
@@ -13,8 +14,8 @@
 //   Reader.receive(&mut this) async -> Result[Message, ws.Error]          // cancel-safe (std.net rule)
 //   Writer.send(&this, msg: Message) async -> Result[void, ws.Error]
 //
-// LIMITATION(1): `split()` into owned halves is a std design choice. The language has no
-// "split borrow", so reading and writing the same connection concurrently needs separate owned handles.
+// LIMITATION: `split()` into owned halves is a std design choice. The language has no
+// "split borrow", so reading and writing the same connection concurrently needs separate owned handles (spec §18 #1).
 package main
 
 import "std.net.ws"
@@ -30,9 +31,8 @@ async fun handle_client(conn: ws.Connection, room: Topic[Chat], online: Signal[i
 
     online.update(#{ n => n += 1 })
 
-    // LIMITATION(2): outside a pattern, variants must be qualified (`ws.Message.Text`). They could
-    // resolve through the expected type (`msg: ws.Message`), as patterns do (spec §18 #11).
-    room.publish(r{ from: id, msg: ws.Message.Text("client ${id} joined") })
+    // `Text` resolves through the expected type: the `msg` field is a ws.Message (spec §7.6)
+    room.publish(r{ from: id, msg: Text("client ${id} joined") })
 
     // One task per client: wait for whichever comes first, a frame from the socket or an event
     // from the room. If both are ready, select picks one at random, so neither side starves.
@@ -59,7 +59,7 @@ async fun handle_client(conn: ws.Connection, room: Topic[Chat], online: Signal[i
     }
 
     online.update(#{ n => n -= 1 })
-    room.publish(r{ from: id, msg: ws.Message.Text("client ${id} left") })
+    room.publish(r{ from: id, msg: Text("client ${id} left") })
 }
 
 async fun report(online: Signal[int]) {
@@ -73,9 +73,8 @@ async fun run_hub(port: u16, ready: Resolver[Result[void, string]]) {
     let room = Topic.with.[Chat](_{ buffer: 256 })
     online := Signal(0)
 
-    // LIMITATION(3): passing a handle (Topic, Signal) to an owned parameter MOVES it, hence `.clone()`
-    // at every call. Handle types could be cloned implicitly, like Copy (spec §18 #8).
-    report(online.clone()).ignore()
+    // Topic and Signal are handles: passing one clones it implicitly (spec §9.1), so no `.clone()`
+    report(online).ignore()
 
     var server = ws.listen("127.0.0.1", port) or e => {
         ready.resolve(Err("failed to bind port ${port}: ${e}"))
@@ -87,7 +86,7 @@ async fun run_hub(port: u16, ready: Resolver[Result[void, string]]) {
     next_id :== 1 as ClientId
     for {
         conn := await server.accept() or continue
-        handle_client(conn, room.clone(), online.clone(), next_id).ignore()
+        handle_client(conn, room, online, next_id).ignore()
         next_id += 1
     }
 }
@@ -99,7 +98,7 @@ async fun run_bot(name: string, port: u16) {
     }
     let t(mut reader, writer) = conn.split()
 
-    await writer.send(ws.Message.Text("hi from ${name}")) or e => log.warn("${name}: send failed: ${e}")
+    await writer.send(Text("hi from ${name}")) or e => log.warn("${name}: send failed: ${e}")
 
     var received = 0
     for received < 3 {
@@ -110,7 +109,7 @@ async fun run_bot(name: string, port: u16) {
         }
     }
 
-    await writer.send(ws.Message.Close) or return
+    await writer.send(Close) or return
 }
 
 async fun main() {

@@ -29,4 +29,8 @@ MinScript is a language that aims for TypeScript-style concision, Rust-style own
   - methods may be written inline in `type`/`union` bodies;
   - `log` is in the prelude, while `println` needs an import.
   - Inter-task communication uses `Topic` (broadcast), `Queue` (one consumer), `Signal` (state), `Promise.new()` (one-shot), `select { … }` and `for await` (spec §4.9, §9.10). There are no channels.
+  - Handles (`Ref`, `Topic`, `Queue`, `Signal`) clone implicitly, so never write `.clone()` on them. Subscriptions are `Sub[T]`.
+  - Variants are inferred from the expected type: write `send(Text("hi"))` and `-> Shape { Empty }`; the qualified `Message.Text` stays valid.
+  - `map[k] = v` inserts or overwrites. `Ref.read` and `Ref.update` return the closure's value. Owned interface values are boxed implicitly, so don't write `Box[Inter]`.
+  - Avoid the self-wait: don't `for await` over a subscription in the same task that keeps its topic open until after the loop (`L_SELF_WAIT`).
 - Code should be valid against `docs/spec.md`. If you find a gap or contradiction while writing an example, fix the spec too and say so.

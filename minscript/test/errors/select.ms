@@ -4,7 +4,7 @@ async fun empty_select() {
     select { }                                  //~ E_SELECT_EMPTY
 }
 
-async fun else_not_last(s: Subscription[int]) {
+async fun else_not_last(s: Sub[int]) {
     var sub = s
     select {
         else => log.println("x")                //~ E_SELECT_ELSE_NOT_LAST
@@ -12,7 +12,7 @@ async fun else_not_last(s: Subscription[int]) {
     }
 }
 
-async fun two_else(s: Subscription[int]) {
+async fun two_else(s: Sub[int]) {
     var sub = s
     select {
         Some(n) = sub.next() => log.println(n)
@@ -21,7 +21,7 @@ async fun two_else(s: Subscription[int]) {
     }
 }
 
-async fun brace_on_next_line(s: Subscription[int]) {
+async fun brace_on_next_line(s: Sub[int]) {
     var sub = s
     select                                      //~ E_OPEN_BRACE_NEWLINE
     {
@@ -29,7 +29,7 @@ async fun brace_on_next_line(s: Subscription[int]) {
     }
 }
 
-async fun missing_arrow(s: Subscription[int]) {
+async fun missing_arrow(s: Sub[int]) {
     var sub = s
     select {
         Some(n) = sub.next() log.println(n)     //~ E_UNEXPECTED_TOKEN

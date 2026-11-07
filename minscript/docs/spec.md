@@ -58,7 +58,12 @@ Pipeline:
 | Field defaults | — | — | `type T = { indent: int = 4 }` |
 | `as` | numeric cast | numeric cast | **also a type annotation**: `g := [] as Vec[T]` |
 | Inter-task communication | — | channels deferred | **`Topic` (broadcast), `Queue` (one consumer), `Signal` (state)**, one-shot `Promise.new()` |
-| Closing / deadlocks | — | — | auto-close on last-handle drop; runtime `Deadlock` panic when all tasks are stuck |
+| Closing / deadlocks | — | — | auto-close on last-handle drop; runtime `Deadlock` panic (catchable) + lint `L_SELF_WAIT` |
+| Handle types | — | — | **cloned implicitly** (`Ref`, `Topic`, `Queue`, `Signal`, …): no `.clone()` at call sites |
+| Subscriptions | — | — | `Sub[T]` (short for subscription) |
+| Variant construction | qualified (`Msg.Text(…)`) | qualified | **inferred from the expected type**: `send(Text("hi"))` |
+| `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
+| Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
 | Waiting on several things | — | — | **`select { … }`**, random among ready arms; `for await`; `time.after`; `.cancel()` |
 
 ---
@@ -447,7 +452,7 @@ if user && user_is_admin { … }
 
 - Ints, strings and collections are **not** truthy (no `0` / `""` surprises). Use `n != 0` and `s.is_empty()`.
 - `&&`, `||` and `!` always produce `bool`. Using `||` for a value fallback (`let x: string = a || b`) is `E_USE_NULLISH`, with a fix-it to `??`.
-- Truthiness is a built-in rule, not a user-implementable interface [?].
+- Truthiness is a built-in rule for `bool`, `Option` and `Result` only. It is not a user-implementable interface, so a condition's meaning never depends on user code.
 - The linter warns on `Option[bool]` in a condition, because `Some(false)` is truthy.
 - When you need the payload, use `if let Ok(user) = res { … }`.
 
@@ -482,7 +487,7 @@ select {
    - A refutable pattern that doesn't match (e.g. `Some(job)` when the queue closed and `next()` returned `None`) **disables** that arm for this select, which keeps waiting on the others.
    - If every arm is disabled, the `else` arm runs. Without an `else`, the select panics with `SelectExhausted`.
 4. **`else`:** when there is an `else` arm, the select doesn't wait at all. If no arm is ready immediately, `else` runs (a non-blocking select).
-5. **Losing arms take nothing.** The std wait operations (`Subscription.next`, `Queue.publish`, `Watcher.next`, `time.after`, and network receives in `std.net`) are **cancel-safe**: a message is removed, or a slot is used, only by the arm that wins.
+5. **Losing arms take nothing.** The std wait operations (`Sub.next`, `Queue.publish`, `Watcher.next`, `time.after`, and network receives in `std.net`) are **cancel-safe**: a message is removed, or a slot is used, only by the arm that wins.
 6. **Promises of your own tasks are different.** Such a task is already running (§9.6). Losing a select only stops waiting for it; the task carries on, as if `.ignore()`d. Call `.cancel()` on it to stop it.
 7. **Borrowed receivers are allowed in arms.** Arm expressions count as awaited in the same expression (§9.6), so `sub.next()` on a `var` subscription is fine. Normal borrow rules still apply across arms: two arms both calling `sub.next()` take two `&mut` borrows of `sub` (an error). Use one arm per wait, and `match` inside its body.
 8. **`break` and `continue`** inside an arm refer to the enclosing loop. `select` is not a loop.
@@ -572,7 +577,7 @@ How the parser classifies the header:
 | Or | `Some(0) \| None` |
 | Range | `1..=5`, `'a'..='z'` |
 
-- Unqualified variants resolve through the prelude, then the scrutinee's type.
+- Unqualified variants resolve through the prelude, then the scrutinee's type. Construction in expressions follows the same idea, through the expected type (§7.6).
 - There are no reference patterns and no parameter destructuring.
 
 ---
@@ -627,6 +632,10 @@ Option[T] (T?)  Result[T, E]  Promise[T]   Ref[T]  Box[T]  Weak[T]
 Coercions done by the type checker:
 - `string → &str` and `Vec[T]`/`Array[T,N] → Slice[T]` are free.
 - `&str → string` copies, and is inserted implicitly where an owned `string` is required. The lint `L_IMPLICIT_STR_COPY` is off by default and can be enabled in the `lint` section of `mod.ms`, so the linter or LSP warns on these copies.
+
+**`Map` indexing:**
+- `m[k] = v` **inserts** `k` if it's missing and **overwrites** the value otherwise.
+- Reading `m[k]` (including `m[k] += 1` and `m[k].field = x`, which read first) panics if `k` is missing (`PanicKind.MissingKey`). Use `m.get(k) -> &V?`, `m.get(k) ?? default`, or `m.entry(k).or_insert(v)` when the key may be absent.
 
 ### 7.3 Type declarations, with inline methods [D]
 
@@ -710,6 +719,28 @@ pub type Route  = ElementOf[TypeOf(routes)]
 pub type Fields = KeyOf[Route]              // "name" | "lat" | "volume"
 ```
 
+### 7.6 Variant names are inferred from the expected type [D]
+
+When the type checker knows that a `union` type is expected, a bare variant name resolves to that union's variant. You don't write the type or its package:
+
+```rust
+fun send(msg: ws.Message) { … }
+
+send(Text("hi"))                         // ws.Message.Text
+send(Close)                              // ws.Message.Close
+room.publish(r{ from: id, msg: Text("joined") })   // field type ws.Message gives the expected type
+let m: ws.Message = Binary(bytes)
+fun area(s: Shape) -> f64 { … }
+area(Circle { r: 1.0 })                  // struct-like variant
+fun default_shape() -> Shape { Empty }   // return type is the expected type
+```
+
+- The expected type comes from the same places that drive `_{}` (§4.3): a parameter type, an annotated binding (`let x: T` or `as T`), a field type, a return type, a `match` arm whose type is already known, a Vec element type, and so on.
+- **Lookup order:** a variant of the expected union comes first, then ordinary name resolution. A local item with the same name is still reachable through its qualified path. Shadowing a variant this way is reported by the lint `L_SHADOWED_VARIANT`.
+- With no expected union type, the bare name falls back to normal lookup. If that fails, the error is `E_CANNOT_INFER_VARIANT`, with a fix-it that adds the qualifier (`Message.Text(…)`).
+- The qualified forms (`Message.Text`, `ws.Message.Text`) are always valid.
+- This is a name-resolution and type-checking rule. **The parser is unaffected**: `Text("hi")` is a call and `Circle { r: 1.0 }` is a struct literal either way.
+
 ---
 
 ## 8. Declarations and modules
@@ -744,6 +775,10 @@ import pub "./log"                // re-export
   - Two globs exporting the same name is an error only where that name is used (`E_AMBIGUOUS_IMPORT`), with a fix-it to import the item explicitly.
   - Unused imports cost nothing: the compiler tree-shakes at item level.
 - Everything is private by default.
+- **The package graph is acyclic** (like Go). An import cycle, direct or indirect, is `E_IMPORT_CYCLE`, and the message shows the cycle.
+  - Each package is type-checked and compiled **independently**, in dependency order. Packages with no dependency between them compile in parallel, and an unchanged package's compiled interface is reused from the cache.
+  - To break a cycle, move the shared types into a third package, or depend on an `inter` instead of the concrete type.
+  - Files inside one package may refer to each other freely, in any order.
 
 ### 8.2 Top-level items [D]
 
@@ -807,6 +842,18 @@ let fd = unsafe { open(path.as_ptr(), 0, 0) }
 - Primitives, and tuples or records made only of primitives, are `Copy`. Everything else moves.
 - Using a moved-from binding is `E_USE_AFTER_MOVE`.
 - `string` is immutable and shared, so it behaves as a value: there's no `.clone()` noise.
+- **Handle types are cloned implicitly.** A handle is a cheap reference-counted pointer to shared state: `Ref`, `Weak`, `Topic`, `Queue`, `Signal`, and std handles such as `ws.Writer`.
+  - Passing a handle by value, storing it, or capturing it in a closure **clones the handle** (a refcount increment) instead of moving it. The original stays usable, so there's no `.clone()` at call sites.
+  - Every clone points to the **same** underlying state. Nothing inside is copied.
+  - Handles implement the marker interface `Handle`. Only std (and `extern` bindings) may implement it, because the implicit clone must be cheap and side-effect free. User types get the same effect by wrapping state in a `Ref`.
+  - `Sub[T]`, `Watcher[T]` and `Resolver[T]` are **not** handles. Each one is a single receiving or resolving end, and moves as usual.
+
+```rust
+room := Topic.new.[Chat]()
+online := Signal(0)
+handle_client(conn, room, online, id).ignore()   // room and online are still usable here
+report(online).ignore()
+```
 
 ### 9.2 Parameter modes [D]
 
@@ -906,7 +953,7 @@ let shapes: Vec[Shape] = [Circle { r: 1.0 }, Square { s: 2.0 }]   // owned inter
 
 **Dynamic values:**
 - `&Inter` and `&mut Inter` are borrowed and never allocate.
-- An owned `Inter` value (in a field, a Vec, or a return) is **boxed implicitly**.
+- An owned `Inter` value (in a field, a Vec, or a return) is **boxed implicitly**. You never write `Box[Shape]`; `Box[T]` is only needed for recursive types (§7.3).
 - **Dyn safety** is checked at the use site: a method with its own generic parameters, or one that returns `Self` by value, can't be called through a dynamic value (`E_NOT_DYN_SAFE`).
 - `std` uses the dynamic form, with no compiler intrinsics:
 
@@ -950,6 +997,7 @@ if p.kind == PanicKind.Deadlock { … }             // built-in kinds: §11 runt
   - For a `Ref[T]` written by a panicking `update`, the poison is checked at runtime (the next access panics) until `.reset(v)` is called.
 - A panic in an async task unwinds to the task boundary. The Promise is then **rejected**: `await` re-panics in the awaiting task, and `.catch(#{…})` handles it.
 - A panic with no enclosing `recover` (in `main`, or in an `.ignore()`d task) prints the message and trace. The process then exits (`main`), or the task is dropped (`.ignore()`).
+- **Every panic kind is catchable**, including `Deadlock`, `Cancelled`, `Overflow`, `OutOfBounds` and `MissingKey`. A server can therefore contain any failure to one request or task. The only failures that end the process without reaching `recover` are ones that leave the runtime itself unusable: out of memory, and native stack exhaustion.
 - There is no `defer`; cleanup uses `Drop.drop(mut this)` at scope exit.
 - Use `Result` for errors a caller should handle, and panic + `recover` for "this request or job failed" boundaries (an HTTP handler, a CLI command, a task).
 
@@ -958,12 +1006,25 @@ if p.kind == PanicKind.Deadlock { … }             // built-in kinds: §11 runt
 | Type | Meaning | Key methods |
 |---|---|---|
 | `Box[T]` | unique heap allocation | `get()`, `set(v)` |
-| `Ref[T]` | atomically ref-counted with an RwLock (many readers or one writer) | `get() -> T` (clone), `read(#{…})`, `update(#{ v => … })` (v: `&mut T`), `clone()`, `weak()` |
+| `Ref[T]` | atomically ref-counted with an RwLock (many readers or one writer); a `Handle` | `get() -> T` (clone), `read[R](f: &(&T) -> R) -> R`, `update[R](f: &(&mut T) -> R) -> R`, `set(v)`, `weak()` |
 | `Weak[T]` | non-owning handle | `upgrade() -> Ref[T]?` |
+
+**Why `read` and `update` take a closure:**
+- `get()` returns a **clone** of the whole value, which is fine for a counter but costly for a large map.
+- `read` lends the value **without copying it**. The borrow can't outlive the lock: borrows can't be returned or stored (§9.3), so it's handed to a closure that runs while the lock is held, and the closure returns what you need.
+- `update` returns the closure's value so that a change and the answer it produces happen **under one lock**. A separate `get()` afterwards could see another task's change.
+
+```rust
+let users = Ref(m{ "ann": User { … } })
+n := users.read(#{ it.len() })                         // no copy of the map
+let name = users.read(#{ it.get("ann")?.name.to_str() })   // owned result out of the closure
+id := counter.update(#{ n => n += 1; n })              // increment and get the new value atomically
+users.update(#{ it["bob"] = User { … } })             // R = void
+```
 
 ### 9.10 Inter-task communication: Topic, Queue, Signal [D]
 
-There are no raw channels. Three handle types cover the common patterns. Each is a cheap `Clone` handle that can be shared across tasks and threads, like `Ref`.
+There are no raw channels. Three handle types cover the common patterns. Each is a `Handle` (§9.1), like `Ref`: it is shared across tasks and threads, and passing it clones it implicitly.
 
 | | Delivers | No one listening | Full | Payload |
 |---|---|---|---|---|
@@ -981,7 +1042,7 @@ pub type TopicOptions = { buffer: int = 64, replay: int = 0 }   // replay: last 
 Topic.new.[T]() -> Topic[T]
 Topic.with.[T](opts: TopicOptions) -> Topic[T]
 topic.publish(&this, v: T) -> int                     // sync, never waits; returns how many subscribers got it
-topic.subscribe(&this) -> Subscription[T]
+topic.subscribe(&this) -> Sub[T]
 topic.subscribers(&this) -> int
 topic.close(&this)                                    // subscribers drain, then see None (also on last-handle drop)
 
@@ -993,7 +1054,7 @@ Queue.with.[T](opts: QueueOptions) -> Queue[T]
 async queue.publish(&this, v: T) -> Result[void, PublishError[T]]                     // waits for space
 queue.try_publish(&this, v: T) -> Result[void, PublishError[T]]                       // Full if no space
 async queue.publish_timeout(&this, v: T, ms: int) -> Result[void, PublishError[T]]    // Full on timeout
-queue.subscribe(&this) -> Subscription[T]
+queue.subscribe(&this) -> Sub[T]
 queue.len(&this) -> int
 queue.close(&this)
 
@@ -1001,14 +1062,14 @@ queue.close(&this)
 async sub.next(&mut this) -> T?          // None once closed and drained; cancel-safe; AsyncIterator[T]
 sub.try_next(&mut this) -> T?
 sub.missed(&mut this) -> int             // Topic: messages dropped since the last call (always 0 for Queue)
-// dropping a Subscription unsubscribes
+// dropping a Sub unsubscribes
 
 // Signal: shared state
 Signal(v: T) -> Signal[T]
 signal.get(&this) -> T                   // clone of the current value
 signal.read[R](&this, f: &(&T) -> R) -> R
 signal.set(&this, v: T)                  // notifies watchers (if T: PartialEq, only when the value changed)
-signal.update(&this, f: &(&mut T) -> void)
+signal.update[R](&this, f: &(&mut T) -> R) -> R   // notifies watchers; returns the closure's value, like Ref.update
 signal.watch(&this) -> Watcher[T]
 async watcher.next(&mut this) -> T?      // the latest value since this watcher last looked; intermediate values skipped
 ```
@@ -1021,7 +1082,7 @@ printer := print_chats(room.subscribe())         // subscribe before publishing
 room.publish(r{ from: 1, text: "hi" })
 room.close()                                     // printer drains "hi", then its loop ends
 await printer
-// async fun print_chats(mut sub: Subscription[Chat]) { for await msg in sub { log.println(msg.text) } }
+// async fun print_chats(mut sub: Sub[Chat]) { for await msg in sub { log.println(msg.text) } }
 
 // work queue: each job reaches one worker; a fast worker simply takes more jobs
 jobs := Queue.new.[Job]()
@@ -1041,13 +1102,14 @@ for await n in online.watch() { log.println("${n} online") }   // long-running: 
 
 **Closing and lifetime [D]:**
 - A `Topic` or `Queue` closes explicitly with `close()`, or **automatically when its last handle is dropped**.
-  - Subscriptions don't count as handles, so they don't keep it open.
+  - Subscriptions (`Sub[T]`) don't count as handles, so they don't keep it open.
   - After closing, `publish` fails (Topic: returns 0; Queue: `Err(Closed(v))`). Subscribers drain whatever is buffered, then `next()` returns `None`.
 - A `Signal` behaves the same way: when its last handle drops, each `Watcher` returns its last unseen value (if any), then `None`. Watchers don't count as handles.
 - So a loop such as `for await x in sub` ends only when the topic or queue is closed. If the **same task** still holds the handle and only closes it after the loop, the task waits on itself forever (`test/parser/tasks.ms`, `topics_hang`). Consume in a separate task, or close before the loop.
+- The compiler flags that pattern with the lint `L_SELF_WAIT`, which is on by default: a `for await` over a subscription whose topic or queue handle the same function holds, with no `close()`/drop of it before the loop and no other task given a clone. When the lint can't see the problem, the runtime check below still catches it.
 
 **Deadlock detection [D]:** the runtime panics with `Deadlock` when **every** task is waiting and nothing could wake any of them: no timers pending, no I/O registered, no foreign callbacks outstanding.
-- The panic is raised in `main` and unwinds normally, so a `recover` in `main` can catch it.
+- The panic is raised in `main` and unwinds normally, so a `recover` in `main` can catch it (like every panic, §9.8).
 - Its message lists each blocked task with the `await` site it's stuck on.
 - Tasks waiting on I/O (a server's `accept()`) or on a timer are never treated as deadlocked. This check catches waits on Topic/Queue/Signal/Promise that only another task could complete, not every possible hang.
 - The check is always on, in every build, like overflow and other panics.
@@ -1165,12 +1227,15 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_AMBIGUOUS_IMPORT` | a name exported by two glob imports, then used |
 | `E_CANNOT_INFER_STRUCT_TYPE` | `_{}` with no expected type |
 | `E_CANNOT_INFER_GENERIC` | fix-it `.[T]` |
+| `E_CANNOT_INFER_VARIANT` | bare variant name with no expected union type: fix-it `Union.Variant` (§7.6) |
 | `E_INVALID_BLOCK_VALUE` | block value doesn't match the expected type |
 | `E_BORROW_IN_FIELD` | borrow type in a field declaration |
 | `E_CLOSURE_ESCAPES_BORROW` | borrowing closure used as an escaping one |
 | `E_BORROW_ACROSS_SPAWN` | un-awaited async call holding borrows |
 | `E_NOT_DYN_SAFE` | generic / `Self`-returning method called on a dynamic value |
 | `E_ORPHAN_IMPL` | `impl X for T` where neither `X` nor `T` is local |
+| `E_IMPORT_CYCLE` | packages import each other, directly or indirectly (§8.1) |
+| `E_HANDLE_IMPL` | `impl Handle for T` outside std / `extern` (§9.1) |
 | `E_INVALID_CAST` | `as T` that is neither a valid type annotation nor a numeric/pointer cast |
 | `E_SELECT_ARM_NOT_PROMISE` | `select` arm expression is not a `Promise[T]` |
 | `E_AWAIT_OUTSIDE_ASYNC` | `await` / `for await` / `select` outside an `async fun` or `main` |
@@ -1180,7 +1245,16 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_USE_OF_POISONED` | value read after a caught panic, before re-assignment |
 | `E_SCRIPT_IN_EVAL` | a `task` script called while `mod.ms` is being evaluated |
 
-**Runtime panics** (`p.kind: PanicKind` as `recover` sees it; not compile-time diagnostics). Other kinds: `User` (`panic`, `assert`), `Overflow`, `OutOfBounds`, `Unwrap`.
+**Lints** (warnings; each can be turned on or off in the `lint` section of `mod.ms`):
+
+| Code | Default | Meaning |
+|---|---|---|
+| `L_SELF_WAIT` | on | `for await` over a subscription whose topic/queue the same task keeps open until after the loop (§9.10) |
+| `L_SHADOWED_VARIANT` | on | a local item has the same name as a variant of the expected union (§7.6) |
+| `L_INT_NOT_PORTABLE` | on | `int` literal or constant outside the i32 range (§7.2) |
+| `L_IMPLICIT_STR_COPY` | off | implicit `&str → string` copy (§7.2) |
+
+**Runtime panics** (`p.kind: PanicKind` as `recover` sees it; not compile-time diagnostics). Other kinds: `User` (`panic`, `assert`), `Overflow`, `OutOfBounds`, `MissingKey`, `Unwrap`. All are catchable (§9.8).
 
 | Kind | Raised when |
 |---|---|
@@ -1319,6 +1393,7 @@ import "std.io.*"   import "std.io.{print, println}"
 for { }   for i < 3 { }   for x in xs { }   for k, v in m { }   for let Some(x) = it.next() { }
 outer: for x in xs { break outer }
 for await m in sub { }   for await ready() { }
+send(Text("hi"))   area(Circle { r: 1.0 })   m[k] = v   n := r.update(#{ c => c += 1; c })
 select { Some(j) = q.next() => run(j), time.after(10) => idle(), else => skip() }
 match { a > 1 => 1, _ => 0 }   match n { x if x > 5 => x, _ => 0 }
 let t(w, h) = dims()   let Ok(v) = r else { return }
@@ -1358,6 +1433,8 @@ Target: ≥ 60 tests before starting the type checker.
 12. Send arms in `select` (Go's `case ch <- v`); use `publish_timeout` / `try_publish` for now.
 13. `select biased { }` (choose arms in order instead of at random).
 14. Queue groups on Topics (`subscribe_group`), acknowledgements and redelivery.
+15. Workspaces / monorepos: several projects under one `mod.ms`.
+16. Dependency sources beyond `path:` and `git:` (`url:`, registries, workspace members).
 
 ---
 
@@ -1497,6 +1574,7 @@ ms run                           # lists the available scripts
 - **Evaluation is separate from execution.** Working out the script list (evaluating `config()`) is sandboxed (§17.5). A script body runs **only** when invoked by `ms run`, with normal permissions (fs, net, processes). Calling a `task` during evaluation is `E_SCRIPT_IN_EVAL`.
 - **`Package` scripts** are the preferred form for anything substantial, such as migrations or seeding. The code lives in a normal package with its own imports and dependencies, and `mod.ms` stays small.
 - Tools may register scripts too: `lint.setup` can add `scripts["lint"]`, which makes `ms run lint` available.
+- **Script dependencies are ordinary code.** There's no `depends_on` field: a `task` that needs another script first calls it, e.g. `task(#{ run("ms run gen")?; run("ms build") })`.
 
 ### 17.4 Tool sections and the pipeline
 
@@ -1556,25 +1634,27 @@ section[T](name: string) -> Result[T, json.Error]
 
 | # | Question | Default used |
 |---|---|---|
-| 1 | Implicit boxing of owned interface values (`Vec[Shape]`) | yes |
-| 2 | Should truthiness be user-implementable (a `Truthy` interface)? | no: built-in for bool/Option/Result only |
-| 3 | `int` on the JS back end: i32 or f64-safe 53-bit | i32 |
-| 4 | Field defaults (§7.3): only literals/const expressions, or any expression? | any expression, evaluated per construction |
-| 5 | Dependency spec prefixes beyond `path:` / `git:` (e.g. `url:`, workspace members) | only `path:` and `git:` in v0.2 |
-| 6 | Workspaces / monorepos: several projects under one `mod.ms` | deferred |
-| 7 | Script dependencies (`"build"` runs `"gen"` first) | written in code inside a `task` for now |
-| 8 | Handle types (`Ref`, `Topic`, `Queue`, `Signal`, `ws.Writer`) are cloned constantly. Should passing one by value clone it implicitly, as `Copy` does? | not yet: explicit `.clone()`, revisit after the hub example |
-| 9 | Default `Topic` buffer (64) and `Queue` capacity (1024) | as stated |
-| 10 | `Ref.read` / `update` return the closure's value (`read[R](f: &(&T) -> R) -> R`) | yes, matching `Signal.read` |
-| 11 | Unqualified variant construction through the expected type (`send(Text("hi"))` when `Message` is expected) | not yet: qualify (`ws.Message.Text`) |
-| 12 | Does `map[k] = v` insert a missing key, or panic? | insert (`IndexMut` on Map inserts); `map[k]` *read* panics |
-| 13 | Should the compiler also warn (a lint) when a task loops over a subscription to a Topic/Queue whose handle it holds and closes only after the loop? | not yet: the runtime `Deadlock` panic covers the single-task case |
-| 14 | Should `Deadlock` be catchable by `recover`, or always abort the process? | catchable in `main`, like any panic |
+| 1 | **Borrowing two parts of one value at once** (a socket's read and write halves, two fields of `&mut this`). Today std splits into owned halves (`conn.split()`). Should the checker allow disjoint field borrows, Rust-style? | undecided: the spec is silent; std uses owned splits for now |
+| 2 | Parameter names in function types: `(id: int) -> bool` as well as `(int) -> bool` (documentation only) | not yet |
+| 3 | A named function-type form (`Fun[...]`) | skipped; use `(T) -> U` / `&(T) -> U` |
 
-**Resolved in this revision:**
-- implicit `&str → string` copies, with a configurable lint;
-- poisoning after `recover`;
-- auto `to_str()` shows every field visible at the call site;
-- inherent `impl` blocks live in the type's package (any file);
-- default method bodies are allowed in `inter`;
+**Resolved in this revision** (formerly open questions):
+- **Handles clone implicitly**: `Ref`, `Topic`, `Queue`, `Signal` and std handles have no `.clone()` at call sites (§9.1). `Subscription` is renamed `Sub[T]`.
+- **Variants are inferred from the expected type** (`send(Text("hi"))`) (§7.6).
+- **`map[k] = v` inserts if missing, overwrites otherwise**; reading a missing key panics (§7.2).
+- **Owned interface values are boxed implicitly** (§9.7).
+- **Truthiness is built in**, for `bool`, `Option` and `Result` only (§4.7).
+- **Field defaults may be any expression**, evaluated per construction (§7.3).
+- **`Ref.read` and `Ref.update` (and `Signal.update`) return the closure's value** (§9.9).
+- **`int` is i32 on the JS back end** (§7.2).
+- **Default sizes:** a `Topic` buffer of 64 per subscriber and a `Queue` capacity of 1024 (§9.10).
+- **Self-waits** get both a lint (`L_SELF_WAIT`) and the runtime `Deadlock` panic (§9.10).
+- **`Deadlock` is catchable**, like every panic kind (§9.8).
+- **Dependencies** come from `path:` and `git:` only; workspaces are deferred (§15).
+- **Script dependencies** are written in code inside a `task` (§17.3). **Packages are acyclic** and compile independently (§8.1).
+- Implicit `&str → string` copies, with a configurable lint.
+- Poisoning after `recover`.
+- Auto `to_str()` shows every field visible at the call site.
+- Inherent `impl` blocks live in the type's package (any file).
+- Default method bodies are allowed in `inter`.
 - `Config` replaces `Project`.

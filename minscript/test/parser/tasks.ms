@@ -12,7 +12,8 @@ type Job = {
 // `for await` ends only when `next()` returns None, i.e. once the topic is closed (or its last
 // Topic handle is dropped) and drained. `room` is still alive here, and `room.close()` only runs
 // after the loop, so after "hello" the task waits on itself forever. If no other task, timer or
-// I/O can wake anything, the runtime panics with `Deadlock` (spec §9.10). The working version is
+// I/O can wake anything, the runtime panics with `Deadlock` (spec §9.10); the compiler also warns
+// with the lint `L_SELF_WAIT` on the `for await` line. The working version is
 // `topics()` below, which consumes the messages in a separate task.
 async fun topics_hang() {
     room := Topic.new.[string]()
@@ -48,7 +49,7 @@ async fun topics() {
     log.println("reader got ${count} messages")
 }
 
-async fun print_all(mut sub: Subscription[string]) -> int {
+async fun print_all(mut sub: Sub[string]) -> int {
     var count = 0
     for await msg in sub {                           // async iteration; ends after close + drain
         log.println(msg)
@@ -85,7 +86,7 @@ async fun queues() {
     log.println("pending: ${jobs.len()}")
 }
 
-async fun worker(n: int, mut sub: Subscription[Job]) {
+async fun worker(n: int, mut sub: Sub[Job]) {
     for await job in sub {
         body := await fetch(job.url)
         if let Some(reply) = job.reply {
@@ -108,6 +109,7 @@ async fun signals() {
 
     online.set(5)
     online.update(#{ n => n += 1 })
+    let now = online.update(#{ n => n += 1; n })     // update returns the closure's value (spec §9.9)
     current := online.get()
     let doubled = online.read(#{ it * 2 })
 
@@ -115,6 +117,32 @@ async fun signals() {
     for await n in watch {
         log.println("${n} online")
         if n == 0 { break }
+    }
+}
+
+// handles are cloned implicitly: one queue shared by a producer and several workers
+async fun shared_handles() {
+    jobs := Queue.new.[Job]()
+    let done = Signal(0)
+
+    for i in 0..3 {
+        counting_worker(jobs.subscribe(), done).ignore()   // `done` is cloned, not moved
+    }
+    producer(jobs).ignore()                                  // `jobs` is cloned, not moved
+    await jobs.publish(Job { id: 100, url: "last" }) or e => log.warn("closed")
+    log.println("done so far: ${done.get()}")
+}
+
+async fun counting_worker(mut sub: Sub[Job], done: Signal[int]) {
+    for await job in sub {
+        await fetch(job.url)
+        done.update(#{ n => n += 1 })
+    }
+}
+
+async fun producer(jobs: Queue[Job]) {
+    for i in 0..10 {
+        await jobs.publish(Job { id: i as u64, url: "u${i}" }) or break
     }
 }
 
