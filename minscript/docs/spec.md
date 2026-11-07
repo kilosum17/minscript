@@ -56,6 +56,7 @@ Pipeline:
 | Prelude | ? | | `log` included; `println` imported |
 | Project config | `ms.json` | | **`mod.ms`** (MinScript code: `Config`, deps, scripts, tool sections) |
 | Field defaults | — | — | `type T = { indent: int = 4 }` |
+| `as` | numeric cast | numeric cast | **also a type annotation**: `g := [] as Vec[T]` |
 
 ---
 
@@ -226,7 +227,7 @@ Tightest first:
 |---|---|---|---|
 | 1 | postfix `.x` `?.x` `(args)` `[i]` `.[T]` `?` | left | `(`, `[`, `.[` must not cross a newline |
 | 2 | prefix `-` `!` `await` | right | §3.1 |
-| 3 | `as T` | left | |
+| 3 | `as T` | left | type annotation or cast (§3.3) |
 | 4 | `*` `/` `%` | left | |
 | 5 | `+` `-` | left | |
 | 6 | `<<` `>>` | left | |
@@ -275,6 +276,34 @@ let port  = env.get("PORT")?.to_int() ?? 8080
 let token = cache.get(key) ?? fetch_token()        // fetch_token() runs only on a miss
 ```
 
+### 3.3 `as`: type annotation and cast
+
+`expr as T` has two meanings, chosen by the type checker. The parser always produces the same node, `As { expr, type }`.
+
+1. **Type annotation** (no runtime cost): `expr` is checked with `T` as its expected type. If that succeeds, `as` only fixes the type. This is how you give a type to values whose type can't be inferred from the value alone:
+   - empty collections (`[]`, `m{}`, `s{}`);
+   - `nil`;
+   - numeric literals;
+   - `_{…}`;
+   - generic calls that are inferred from their return type.
+2. **Cast:** if the annotation fails and both `expr`'s type and `T` are numeric (or both are raw pointers), it is a truncating/saturating cast. Any other case is `E_INVALID_CAST`.
+
+```rust
+g := [] as Vec[Map[string, int]]          // annotation: the value comes first, then its type
+var seen = s{} as Set[u64]
+cache :== m{} as Map[string, User]
+owner := nil as User?
+timeout := 500 as u16                     // literal annotation (no conversion happens)
+cfg := _{ host: "localhost", port: 80 } as Config
+user := json.parse(raw) as Result[User, json.Error]   // instead of json.parse.[User](raw)
+
+let small = big_number as u8              // cast: i64 → u8, truncating
+let ratio = count as f64 / total as f64   // casts
+```
+
+- `let g: Vec[Map[string, int]] = []` and `g := [] as Vec[Map[string, int]]` mean the same thing. Use whichever reads better: annotations suit declarations where the type matters most, and `as` suits places where the value matters most.
+- `as` binds tighter than arithmetic (§3), and its type operand is parsed greedily, `?` included: `x as i32?` is `x as Option[i32]`.
+
 ---
 
 ## 4. Expressions
@@ -308,6 +337,7 @@ User { id: 1, name }               // named struct literal
 - Elements are separated by commas or newlines, and trailing commas are allowed.
 - `...expr` spreads into every literal kind, and into call arguments that bind a variadic parameter (`log.println(prefix, ...args)`).
 - `_{}` without an expected type is `E_CANNOT_INFER_STRUCT_TYPE`; it doubles as the named-arguments form: `serve(_{ host, port })`.
+- Empty literals need a type from somewhere: an annotation, the surrounding context, or `as` (`[] as Vec[int]`, §3.3).
 - There is no bare `(a, b)` tuple: write `t(a, b)`.
 - Records with the same shape are the same type, so arrays of records need no tagging:
 
@@ -431,7 +461,7 @@ if user && user_is_admin { … }
 ```rust
 let name = expr          var name = expr
 name := expr             name :== expr           // sugar for let / var
-let name: T = expr
+let name: T = expr       name := expr as T       // same meaning (§3.3)
 let pattern = expr else { diverge }
 place = expr             place += expr           place ??= expr
 ```
@@ -791,7 +821,7 @@ nums.for_each(#[&mut total]{ total += it })
 
 - Implicit **lossless widening** is allowed: `i8→i16→i32→i64`, `uN→uM` (M > N), `uN→i(2N)`, `i32/u32→f64`, `f32→f64`. `int` widens to `i64` and narrows from nothing.
 - Every other conversion is explicit:
-  - `as` for truncating / saturating casts;
+  - `as` for truncating / saturating casts (when it isn't a plain type annotation, §3.3);
   - `.to_int()`, `.to_u8()` … for checked conversions, returning `Result`.
 - **Overflow always panics**, in every build. Explicit alternatives: `.wrapping_add()`, `.saturating_add()`, `.checked_add() -> T?`. There is one behaviour for debug and release.
 
@@ -980,6 +1010,7 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_BORROW_ACROSS_SPAWN` | un-awaited async call holding borrows |
 | `E_NOT_DYN_SAFE` | generic / `Self`-returning method called on a dynamic value |
 | `E_ORPHAN_IMPL` | `impl X for T` where neither `X` nor `T` is local |
+| `E_INVALID_CAST` | `as T` that is neither a valid type annotation nor a numeric/pointer cast |
 | `E_MISSING_FIELD` | struct literal omits a field that has no default and isn't optional |
 | `E_USE_OF_POISONED` | value read after a caught panic, before re-assignment |
 | `E_SCRIPT_IN_EVAL` | a `task` script called while `mod.ms` is being evaluated |
@@ -1097,6 +1128,7 @@ r{ a: 1 }   r"raw\n"
 x.or(1)   x or 1   x or e => Err(e)
 a ?? b ?? c   a?.b ?? "x"   a ?? b || c   // last: E_MIXED_NULLISH
 x ??= 5
+g := [] as Vec[Map[string, int]]   x as i32?   a as f64 / b as f64
 await f()?   await f()?.name   (await f()).trim()
 user?.name   (user?).name
 if res { }   if !opt && flag { }

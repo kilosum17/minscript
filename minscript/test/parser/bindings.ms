@@ -9,6 +9,7 @@ fun main() {
     let e: i64 = 50
     var f: string? = nil
     let g: Vec[Map[string, int]] = []
+    g2 := [] as Vec[Map[string, int]]   // same type, value first (§3.3)
 
     // assignment never declares
     d = 41
