@@ -57,6 +57,9 @@ Pipeline:
 | Project config | `ms.json` | | **`mod.ms`** (MinScript code: `Config`, deps, scripts, tool sections) |
 | Field defaults | — | — | `type T = { indent: int = 4 }` |
 | `as` | numeric cast | numeric cast | **also a type annotation**: `g := [] as Vec[T]` |
+| Inter-task communication | — | channels deferred | **`Topic` (broadcast), `Queue` (one consumer), `Signal` (state)**, one-shot `Promise.new()` |
+| Closing / deadlocks | — | — | auto-close on last-handle drop; runtime `Deadlock` panic when all tasks are stuck |
+| Waiting on several things | — | — | **`select { … }`**, random among ready arms; `for await`; `time.after`; `.cancel()` |
 
 ---
 
@@ -97,14 +100,14 @@ Comments are trivia, kept in a side list for the formatter and LSP.
 
 ```text
 Declarations: package import pub type union inter impl fun async let var mut extern
-Control:      if else match for in break continue return
+Control:      if else match select for in break continue return
 Expressions:  await or as unsafe recover true false nil this Self
 Type-level:   TypeOf
 Reserved:     while loop yield macro where dyn
 ```
 
 - **Implicit closure params:** `it`, and `it1`…`itN` (no leading zero). `it1 == it`. These are reserved identifiers.
-- **Prelude names, not keywords:** `Ok Err Some None Result Option Promise Ref Box Weak Vec Map Set Array Slice log assert panic`.
+- **Prelude names, not keywords:** `Ok Err Some None Result Option Promise Resolver Ref Topic Queue Signal Box Weak Vec Map Set Array Slice log assert panic Panic PanicKind`.
 - **A keyword after `.` or `?.` is a plain identifier:** `x.or(5)`, `r.in(x)`.
 
 ### 1.5 Literals [D]
@@ -452,6 +455,38 @@ if user && user_is_admin { … }
 
 `"${expr}"`. The value must implement `Stringer`, which is auto-generated (§9.7).
 
+### 4.9 `select`: wait on several Promises [D]
+
+```rust
+select {
+    Some(job) = jobs.next() => process(job)          // pattern = promise => body
+    Some(ev) = events.next() => log.println(ev)
+    cfg = config_watch.next() => reload(cfg)
+    time.after(5000) => log.println("idle")          // shorthand for `_ = time.after(5000)`
+    else => log.println("nothing ready")             // optional: makes the select non-blocking
+}
+```
+
+**Syntax:**
+- An arm is `pattern = expr => body` or `expr => body`. The parser tells them apart by a `=` token at depth 0 before the arm's `=>`.
+- Arms are separated by commas or newlines, like `match`.
+- `else =>` is optional; if present it must be the last arm and may appear only once.
+- `select` is an expression: its value is the value of the arm that ran.
+
+**Semantics:**
+1. **Start:** every arm's expression is evaluated top to bottom, and each must be a `Promise[T]` (`E_SELECT_ARM_NOT_PROMISE`). The select then waits until one of them completes.
+2. **Choice:**
+   - If several arms are ready at the same moment, **one is chosen at random**. This is fair: no arm can starve the others, the way Go's `select` works.
+   - The chosen value is matched against the arm's pattern, and that arm's body runs.
+3. **Disabled arms:**
+   - A refutable pattern that doesn't match (e.g. `Some(job)` when the queue closed and `next()` returned `None`) **disables** that arm for this select, which keeps waiting on the others.
+   - If every arm is disabled, the `else` arm runs. Without an `else`, the select panics with `SelectExhausted`.
+4. **`else`:** when there is an `else` arm, the select doesn't wait at all. If no arm is ready immediately, `else` runs (a non-blocking select).
+5. **Losing arms take nothing.** The std wait operations (`Subscription.next`, `Queue.publish`, `Watcher.next`, `time.after`, and network receives in `std.net`) are **cancel-safe**: a message is removed, or a slot is used, only by the arm that wins.
+6. **Promises of your own tasks are different.** Such a task is already running (§9.6). Losing a select only stops waiting for it; the task carries on, as if `.ignore()`d. Call `.cancel()` on it to stop it.
+7. **Borrowed receivers are allowed in arms.** Arm expressions count as awaited in the same expression (§9.6), so `sub.next()` on a `var` subscription is fine. Normal borrow rules still apply across arms: two arms both calling `sub.next()` take two `&mut` borrows of `sub` (an error). Use one arm per wait, and `match` inside its body.
+8. **`break` and `continue`** inside an arm refer to the enclosing loop. `select` is not a loop.
+
 ---
 
 ## 5. Statements
@@ -488,13 +523,25 @@ for let Some(x) = iter.next() { }  // conditional pattern
 for item in items { … }
 for item, idx in items { … }       // Vec: (item, index); Map: (key, value)
 for i in 0..10 { … }
+for await msg in sub { … }         // async iteration: awaits `next()` each time
+for await ready() { … }            // conditional loop whose condition awaits
 outer: for row in grid { for c in row { if c < 0 { break outer } } }
 ```
 
 How the parser classifies the header:
 - `{` right after `for` is the infinite form.
 - `let` right after `for` is the pattern form.
-- Otherwise, it is an iteration loop if an `in` keyword appears at depth 0 before the header `{`, and a conditional loop if not.
+- Otherwise, scan to the header's `{` at depth 0:
+  - with an `in` keyword, it is an iteration loop;
+  - without one, it is a conditional loop.
+- In an iteration loop, an `await` right after `for` makes it **async iteration**.
+- In a conditional loop, `await` is just the start of the condition expression.
+
+**Async iteration:**
+- `for await x in e` requires `e: AsyncIterator[T]` (§10.2). Each step is `await e.next()`, and the loop ends at `None`.
+- It is shorthand for `for { let Some(x) = await e.next() else { break }; … }`. When `e` is a place (e.g. `sub`), the place is borrowed mutably only during each `next()`, so the body may still use it (`sub.missed()`). Otherwise `e` is evaluated once into a hidden variable.
+- It is only allowed where `await` is: in an `async fun`, or in `main`.
+- The `await` keyword is required so that every suspension point stays visible.
 
 ### 5.4 Newlines and semicolons [D]
 
@@ -506,7 +553,7 @@ How the parser classifies the header:
 4. Postfix `(`, `[` and `.[` need `nl_before == false`. `.` and `?.` may cross a newline.
 5. Newlines are ignored inside `(…)` and `[…]`, but they matter again inside a nested `{…}`.
 6. `return`, `break` and `continue` followed by a terminator take no value.
-7. Opening braces of declarations and control flow go on the header line.
+7. Opening braces of declarations and control flow (including `select`) go on the header line.
 8. A trailing `;` after a block's last expression discards its value. The formatter strips every other `;`.
 
 ---
@@ -829,7 +876,21 @@ nums.for_each(#[&mut total]{ total += it })
 
 - Calling `async fun f() -> T` **schedules the task immediately** on the work-stealing runtime and returns `Promise[T]`. There's no `spawn`, and call sites aren't coloured.
 - `await p` suspends until `p` resolves. `main` may `await` without being declared `async`.
-- `Promise` API: `.then(#{…})`, `.catch(#{…})`, `.ignore()` (fire and forget; errors and panics are logged), and `Promise.all(Vec[Promise[T]]) -> Promise[Vec[T]]`.
+- `Promise` API:
+  - `.then(#{…})`, `.catch(#{…})`;
+  - `.ignore()`: fire and forget; errors and panics are logged; consumes the handle;
+  - `Promise.all(Vec[Promise[T]]) -> Promise[Vec[T]]`;
+  - `.timeout(ms) -> Promise[Result[T, Timeout]]`;
+  - `.cancel()`, `.is_done()`.
+- **One-shot promises:** `Promise.new.[T]() -> t(Promise[T], Resolver[T])`.
+  - `resolver.resolve(v)` completes the promise; `resolve()` with no argument works for `void` (like `Ok()`).
+  - If the resolver is dropped before resolving, the awaiter panics with `ResolverDropped`.
+  - Use these for "I'm ready" signals and for request/response: put the resolver inside a `Queue` job.
+- **Cancellation is cooperative.** `p.cancel()` asks the task to stop.
+  - The task stops at its next `await` (or `runtime.yield()`), unwinding as a panic does (`Drop` runs, `recover` sees `Cancelled`).
+  - Anyone awaiting a cancelled promise panics with `Cancelled`.
+  - To cancel a task later, keep its handle; `.ignore()` gives the handle up.
+- `time.after(ms) -> Promise[void]` is a cancel-safe timer for `select`.
 - `runtime.yield()` hands control back to the scheduler cooperatively.
 - **Borrows and await:** an async call with borrowed arguments or a borrowed receiver must be awaited in the same expression (`await client.receive()`). Storing such a Promise is `E_BORROW_ACROSS_SPAWN`; pass owned values or `Ref` handles instead.
 - Thread safety comes from these rules plus `Ref`; there are no `Send`/`Sync` markers.
@@ -879,6 +940,7 @@ let res = recover {                // Result[T, Panic]
 }
 let Err(p) = res else { … }
 log.println(p.message, p.file, p.line, p.trace)   // origin of the panic is preserved
+if p.kind == PanicKind.Deadlock { … }             // built-in kinds: §11 runtime panics; `panic(msg)` is PanicKind.User
 ```
 
 - While unwinding, `Drop` runs for every owned value in the frames being unwound.
@@ -899,7 +961,105 @@ log.println(p.message, p.file, p.line, p.trace)   // origin of the panic is pres
 | `Ref[T]` | atomically ref-counted with an RwLock (many readers or one writer) | `get() -> T` (clone), `read(#{…})`, `update(#{ v => … })` (v: `&mut T`), `clone()`, `weak()` |
 | `Weak[T]` | non-owning handle | `upgrade() -> Ref[T]?` |
 
-### 9.10 Introspection [D]
+### 9.10 Inter-task communication: Topic, Queue, Signal [D]
+
+There are no raw channels. Three handle types cover the common patterns. Each is a cheap `Clone` handle that can be shared across tasks and threads, like `Ref`.
+
+| | Delivers | No one listening | Full | Payload |
+|---|---|---|---|---|
+| `Topic[T]` | **every** subscriber gets each message | message dropped | per-subscriber buffer: oldest dropped, counted in `missed()`; **publish never waits** | cloned per subscriber (`T: Clone`) |
+| `Queue[T]` | **one** subscriber per message: the one that has waited longest | buffered | **publish waits** for space (`try_publish` doesn't) | moved |
+| `Signal[T]` | the **latest value**; watchers wake up on change | stays as the current value | n/a: overwritten | cloned on `get()` |
+
+**The method rule:** an operation that may wait is `async`, and returns a Promise. Each has a `try_` twin that never waits.
+
+API summary (signatures written informally as `receiver.method(…)`; all three types are in the prelude, `time.after` is in `std.time`):
+
+```rust
+// Topic: broadcast events
+pub type TopicOptions = { buffer: int = 64, replay: int = 0 }   // replay: last N messages for new subscribers
+Topic.new.[T]() -> Topic[T]
+Topic.with.[T](opts: TopicOptions) -> Topic[T]
+topic.publish(&this, v: T) -> int                     // sync, never waits; returns how many subscribers got it
+topic.subscribe(&this) -> Subscription[T]
+topic.subscribers(&this) -> int
+topic.close(&this)                                    // subscribers drain, then see None (also on last-handle drop)
+
+// Queue: work distribution (competing consumers)
+pub type QueueOptions = { capacity: int = 1024 }
+pub union PublishError[T] = { Full(T)  Closed(T) }    // the value is handed back
+Queue.new.[T]() -> Queue[T]
+Queue.with.[T](opts: QueueOptions) -> Queue[T]
+async queue.publish(&this, v: T) -> Result[void, PublishError[T]]                     // waits for space
+queue.try_publish(&this, v: T) -> Result[void, PublishError[T]]                       // Full if no space
+async queue.publish_timeout(&this, v: T, ms: int) -> Result[void, PublishError[T]]    // Full on timeout
+queue.subscribe(&this) -> Subscription[T]
+queue.len(&this) -> int
+queue.close(&this)
+
+// shared by Topic and Queue
+async sub.next(&mut this) -> T?          // None once closed and drained; cancel-safe; AsyncIterator[T]
+sub.try_next(&mut this) -> T?
+sub.missed(&mut this) -> int             // Topic: messages dropped since the last call (always 0 for Queue)
+// dropping a Subscription unsubscribes
+
+// Signal: shared state
+Signal(v: T) -> Signal[T]
+signal.get(&this) -> T                   // clone of the current value
+signal.read[R](&this, f: &(&T) -> R) -> R
+signal.set(&this, v: T)                  // notifies watchers (if T: PartialEq, only when the value changed)
+signal.update(&this, f: &(&mut T) -> void)
+signal.watch(&this) -> Watcher[T]
+async watcher.next(&mut this) -> T?      // the latest value since this watcher last looked; intermediate values skipped
+```
+
+```rust
+// broadcast: consume in another task. Looping on `sub` here while `room` is alive would hang:
+// the loop ends only after close, and nothing could close it.
+room := Topic.new.[Chat]()
+printer := print_chats(room.subscribe())         // subscribe before publishing
+room.publish(r{ from: 1, text: "hi" })
+room.close()                                     // printer drains "hi", then its loop ends
+await printer
+// async fun print_chats(mut sub: Subscription[Chat]) { for await msg in sub { log.println(msg.text) } }
+
+// work queue: each job reaches one worker; a fast worker simply takes more jobs
+jobs := Queue.new.[Job]()
+for i in 0..4 { worker(i, jobs.subscribe()).ignore() }
+await jobs.publish(Job { id: 1 }) or e => log.warn("queue closed")
+
+// request/response over a queue
+let t(reply, resolver) = Promise.new.[Price]()
+await jobs.publish(Job { id: 2, reply: resolver })
+price := await reply
+
+// state
+online := Signal(0)
+online.update(#{ n => n += 1 })
+for await n in online.watch() { log.println("${n} online") }   // long-running: ends when the last Signal handle drops
+```
+
+**Closing and lifetime [D]:**
+- A `Topic` or `Queue` closes explicitly with `close()`, or **automatically when its last handle is dropped**.
+  - Subscriptions don't count as handles, so they don't keep it open.
+  - After closing, `publish` fails (Topic: returns 0; Queue: `Err(Closed(v))`). Subscribers drain whatever is buffered, then `next()` returns `None`.
+- A `Signal` behaves the same way: when its last handle drops, each `Watcher` returns its last unseen value (if any), then `None`. Watchers don't count as handles.
+- So a loop such as `for await x in sub` ends only when the topic or queue is closed. If the **same task** still holds the handle and only closes it after the loop, the task waits on itself forever (`test/parser/tasks.ms`, `topics_hang`). Consume in a separate task, or close before the loop.
+
+**Deadlock detection [D]:** the runtime panics with `Deadlock` when **every** task is waiting and nothing could wake any of them: no timers pending, no I/O registered, no foreign callbacks outstanding.
+- The panic is raised in `main` and unwinds normally, so a `recover` in `main` can catch it.
+- Its message lists each blocked task with the `await` site it's stuck on.
+- Tasks waiting on I/O (a server's `accept()`) or on a timer are never treated as deadlocked. This check catches waits on Topic/Queue/Signal/Promise that only another task could complete, not every possible hang.
+- The check is always on, in every build, like overflow and other panics.
+
+**Picking one:**
+- Did something happen, and does everyone need to know? Use a **Topic**.
+- Does someone need to do this work? Use a **Queue**.
+- What is it right now? Use a **Signal**.
+- Is it a one-time answer? Use **`Promise.new()`**.
+- Is it shared mutable data? Use **`Ref`**.
+
+### 9.11 Introspection [D]
 
 - `T._get_info()` and `value._get_info()` are compile-time intrinsics that return `TypeInfo { name, kind, fields }`, respecting call-site visibility.
 - Names starting with `_` are reserved for intrinsics.
@@ -911,7 +1071,7 @@ log.println(p.message, p.file, p.line, p.trace)   // origin of the panic is pres
 
 ### 10.1 Prelude
 
-- **Types:** `Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Ref`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`.
+- **Types:** `Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Resolver`, `Ref`, `Topic`, `Queue`, `Signal`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`, `Panic`, `PanicKind`.
 - **Functions:** `assert`, `panic`.
 - **`log`**: `log.println`, `log.print`, `log.warn`, `log.error`.
 - **The core interfaces** in §10.2.
@@ -936,6 +1096,7 @@ inter AddAssign[R] = { fun add_assign(&mut this, rhs: R) }   // + Sub/Mul/Div/Re
 inter Index[I, T] = { fun index(&this, i: I) -> &T }
 inter IndexMut[I, T] = { fun index_mut(&mut this, i: I) -> &mut T }
 inter Iterator[T] = { fun next(&mut this) -> T? }
+inter AsyncIterator[T] = { async fun next(&mut this) -> T? }      // `for await`
 inter Iterable[T] = {
     fun iter(&this) -> Iterator[&T]
     fun iter_mut(&mut this) -> Iterator[&mut T]
@@ -1011,9 +1172,22 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_NOT_DYN_SAFE` | generic / `Self`-returning method called on a dynamic value |
 | `E_ORPHAN_IMPL` | `impl X for T` where neither `X` nor `T` is local |
 | `E_INVALID_CAST` | `as T` that is neither a valid type annotation nor a numeric/pointer cast |
+| `E_SELECT_ARM_NOT_PROMISE` | `select` arm expression is not a `Promise[T]` |
+| `E_AWAIT_OUTSIDE_ASYNC` | `await` / `for await` / `select` outside an `async fun` or `main` |
+| `E_SELECT_EMPTY` | `select { }` with no arms (parser) |
+| `E_SELECT_ELSE_NOT_LAST` | `else` arm followed by other arms, or two `else` arms (parser) |
 | `E_MISSING_FIELD` | struct literal omits a field that has no default and isn't optional |
 | `E_USE_OF_POISONED` | value read after a caught panic, before re-assignment |
 | `E_SCRIPT_IN_EVAL` | a `task` script called while `mod.ms` is being evaluated |
+
+**Runtime panics** (`p.kind: PanicKind` as `recover` sees it; not compile-time diagnostics). Other kinds: `User` (`panic`, `assert`), `Overflow`, `OutOfBounds`, `Unwrap`.
+
+| Kind | Raised when |
+|---|---|
+| `SelectExhausted` | every `select` arm is disabled and there is no `else` (§4.9) |
+| `Cancelled` | awaiting a cancelled promise, or inside the cancelled task (§9.6) |
+| `ResolverDropped` | a `Resolver` is dropped without resolving its promise (§9.6) |
+| `Deadlock` | every task is waiting and nothing can wake any of them (§9.10) |
 
 **Lexer and parser diagnostics** (exercised by `test/errors/`):
 
@@ -1084,14 +1258,14 @@ var_stmt      = "var" ident [ ":" type ] "=" expr ;
 short_decl    = ident ( ":=" | ":==" ) expr ;
 for_stmt      = [ ident ":" ] "for" ( block
                                     | "let" pattern "=" expr block
-                                    | pattern [ "," pattern ] "in" expr block
+                                    | [ "await" ] pattern [ "," pattern ] "in" expr block
                                     | expr block ) ;
 
 expr          = pratt( prefix, infix, postfix ) ;      (* precedence §3 *)
 primary       = literal | ident | "this" | "Self" | "(" expr ")"
               | vec_lit | array_lit | tuple_lit | record_lit | map_lit | set_lit
               | inferred_lit | struct_lit | closure
-              | if_expr | match_expr | "unsafe" block | "recover" block | block
+              | if_expr | match_expr | select_expr | "unsafe" block | "recover" block | block
               | "for" block                                   (* infinite for as an expression: `break value` *)
               | "return" [ expr ] | "break" [ ident ] [ expr ] | "continue" [ ident ] ;
 postfix       = "." ( ident | INT ) | "?." ident | ".[" type_args "]"
@@ -1105,6 +1279,8 @@ cparam        = [ "mut" ] ident [ ":" type ] ;
 if_expr       = "if" ( expr | "let" pattern "=" expr ) block [ "else" ( if_expr | block ) ] ;
 match_expr    = "match" [ expr ] "{" { arm sep } "}" ;
 arm           = ( pattern [ "if" expr ] | expr ) "=>" ( expr | block ) ;
+select_expr   = "select" "{" { select_arm sep } [ "else" "=>" ( expr | block ) [ sep ] ] "}" ;
+select_arm    = [ pattern "=" ] expr "=>" ( expr | block ) ;   (* `pattern =` present iff a depth-0 `=` precedes `=>` *)
 or_tail       = "or" [ ident "=>" ] ( expr | block ) ;
 
 sep           = "," | NEWLINE ;
@@ -1142,6 +1318,8 @@ union P = { Cash  Card { n: string }  fun is_cash(&this) -> bool { true } }
 import "std.io.*"   import "std.io.{print, println}"
 for { }   for i < 3 { }   for x in xs { }   for k, v in m { }   for let Some(x) = it.next() { }
 outer: for x in xs { break outer }
+for await m in sub { }   for await ready() { }
+select { Some(j) = q.next() => run(j), time.after(10) => idle(), else => skip() }
 match { a > 1 => 1, _ => 0 }   match n { x if x > 5 => x, _ => 0 }
 let t(w, h) = dims()   let Ok(v) = r else { return }
 if x == P { }
@@ -1177,7 +1355,9 @@ Target: ≥ 60 tests before starting the type checker.
 9. Width subtyping for records.
 10. Positional struct construction.
 11. Extension methods on foreign types.
-12. Signals / channels.
+12. Send arms in `select` (Go's `case ch <- v`); use `publish_timeout` / `try_publish` for now.
+13. `select biased { }` (choose arms in order instead of at random).
+14. Queue groups on Topics (`subscribe_group`), acknowledgements and redelivery.
 
 ---
 
@@ -1350,7 +1530,7 @@ section[T](name: string) -> Result[T, json.Error]
 ```
 
 - **Typed in and out:** each tool reads back its own `Options` type, with no string parsing and no `any`.
-- **Stored as a `json.Value` tree:** values are serialized with the auto-derived serializer (`_get_info()`, §9.10). That gives `ms config` a natural JSON output.
+- **Stored as a `json.Value` tree:** values are serialized with the auto-derived serializer (`_get_info()`, §9.11). That gives `ms config` a natural JSON output.
 - **Cross-tool reads:**
   - Reading another tool's section with its type means importing that tool's package (`c.section.[lint.Options]("lint")`).
   - Without the import, `raw_section("lint")` gives the untyped `json.Value`.
@@ -1383,6 +1563,13 @@ section[T](name: string) -> Result[T, json.Error]
 | 5 | Dependency spec prefixes beyond `path:` / `git:` (e.g. `url:`, workspace members) | only `path:` and `git:` in v0.2 |
 | 6 | Workspaces / monorepos: several projects under one `mod.ms` | deferred |
 | 7 | Script dependencies (`"build"` runs `"gen"` first) | written in code inside a `task` for now |
+| 8 | Handle types (`Ref`, `Topic`, `Queue`, `Signal`, `ws.Writer`) are cloned constantly. Should passing one by value clone it implicitly, as `Copy` does? | not yet: explicit `.clone()`, revisit after the hub example |
+| 9 | Default `Topic` buffer (64) and `Queue` capacity (1024) | as stated |
+| 10 | `Ref.read` / `update` return the closure's value (`read[R](f: &(&T) -> R) -> R`) | yes, matching `Signal.read` |
+| 11 | Unqualified variant construction through the expected type (`send(Text("hi"))` when `Message` is expected) | not yet: qualify (`ws.Message.Text`) |
+| 12 | Does `map[k] = v` insert a missing key, or panic? | insert (`IndexMut` on Map inserts); `map[k]` *read* panics |
+| 13 | Should the compiler also warn (a lint) when a task loops over a subscription to a Topic/Queue whose handle it holds and closes only after the loop? | not yet: the runtime `Deadlock` panic covers the single-task case |
+| 14 | Should `Deadlock` be catchable by `recover`, or always abort the process? | catchable in `main`, like any panic |
 
 **Resolved in this revision:**
 - implicit `&str → string` copies, with a configurable lint;
