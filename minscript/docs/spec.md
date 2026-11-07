@@ -1,14 +1,13 @@
-# MinScript Language Specification — v0.1 (Unified Draft)
+# MinScript Language Specification — v0.2 (Unified Draft)
 
-**Status:** First unified draft. Supersedes `spec-v1.rs`, `spec-v2.rs`, `merge_1.rs`, `notes_1.md` (kept for history).
+**Status:** Unified draft. Supersedes `spec-v1.rs`, `spec-v2.rs`, `merge_1.rs`, `notes_1.md` (kept for history).
 **Target:** Deterministic hand-written TypeScript lexer + recursive-descent / Pratt parser.
 **Date:** 2026-11-07
 
-Legend used in this document:
+Legend:
 
-- **[D]** decided (by you, or carried from earlier drafts unchanged)
-- **[N]** new in this draft (decided now, from your latest instructions/samples)
-- **[?]** proposed default, needs confirmation (see §16)
+- **[D]** decided
+- **[?]** proposed default, needs confirmation (§18)
 
 ---
 
@@ -16,10 +15,12 @@ Legend used in this document:
 
 MinScript combines:
 
-- TypeScript's concise literal and collection syntax.
-- Rust's ownership, borrowing and type safety, **without lifetime annotations**.
-- Go's small keyword set and simple control flow.
-- A compiler that is fast and simple to implement.
+- TypeScript's concise literals and collections.
+- Rust's ownership and borrowing, **without lifetime annotations**.
+- Go's small keyword set.
+- A compiler that is fast and simple.
+
+Convenience and concision come first, with as much performance as that allows.
 
 Pipeline:
 
@@ -27,25 +28,34 @@ Pipeline:
 2. **Parser**: purely syntactic AST.
 3. **Name resolution**: scopes, packages, imports.
 4. **Type checker**: inference, generics, interfaces, coercions.
-5. **Semantic analysis**: ownership, borrowing, mutability, escape analysis, comptime.
+5. **Semantic analysis**: ownership, borrowing, escape analysis, comptime.
 6. **Lowering**: HIR, then JS / WASM / C / LLVM back ends.
 
-**Fundamental rule [D]:** parsing never needs type information, symbol resolution or interface resolution. A syntactically valid file parses without knowing whether any referenced name exists.
+**Fundamental rule [D]:** parsing never needs type information, symbol resolution or interface resolution.
 
-### 0.1 What changed versus spec-v1 / spec-v2
+### 0.1 Change log
 
-| Topic | Before | Now |
-|---|---|---|
-| Closures | `#{}`, `(a) => …`, `#[x](a) => …` | **Only `#{…}` and `#[captures]{…}`** [N] |
-| Captures | names only | `#[x, &y, &mut z]{…}`: by value, borrow, mutable borrow [N] |
-| Generic args in types | `Vec<T>` | `Vec[T]` [N] |
-| Generic args in expressions | glued `<T>` (v1), `::<T>` (v2) | **`.[T]`**, e.g. `json.parse.[User](s)` [N] |
-| Generic params | `fun f<T>`, `impl<T>` | `fun f[T]`, `impl[T]` [N] |
-| `<` / `>` | needed whitespace rules and token splitting | always comparison operators, never generics [N] |
-| Sum types | `type X = \| A \| B(T)` | `union X = { A  B(T) }` [N] |
-| Loops | `for`, `while`, `loop` | `for` only (Go style) [N] |
-| Raw strings | `` r`…` `` | `r"…"` [N] |
-| Match guard | `x if cond =>` / `age > 18 =>` | `pat if cond =>`; subject-less `match { cond => … }` [N] |
+| Topic | spec-v1/v2 | v0.1 | v0.2 |
+|---|---|---|---|
+| Closures | `#{}`, `(a) => …` | `#{}`, `#[caps]{}` only | captures not exhaustive; implicit read-borrow |
+| Generics | `<T>`, `::<T>` | `Vec[T]`, `f.[T](x)` | — |
+| Sum types | `type X = \| A \| B` | `union X = { A  B }` | methods allowed in the body |
+| Loops | `for` / `while` / `loop` | `for` only | — |
+| Tagged records `'1{}` | yes | yes | **removed**: records are structural |
+| Methods | `impl` only | `impl` only | **inline in `type`/`union`** + `impl` |
+| Records vs structs | separate | separate | record ↔ struct conversion when shapes match |
+| Fallback | `.or()` | `.or()` | **`??`** (lazy) + `.or()` |
+| Conditions | `bool` only | `bool` only | **`bool`, `Option`, `Result`** are truthy |
+| Interfaces as values | no | no | **yes**: `&Stringer` is dynamic dispatch |
+| `int` | `i32` | `i32` | **platform width, ≥ 32 bits** |
+| Overflow | debug panic / release wrap | same | **always panics** |
+| Panics | abort | `recover {}` | unwind to the nearest `recover` |
+| `to_string()` | | | **`to_str()`** |
+| String ops | return `string` | | return `&str`; `try_*` variants return Option |
+| Imports | single path | | `"pkg.*"`, `"pkg.{a, b}"`, `"pkg.item"` |
+| Prelude | ? | | `log` included; `println` imported |
+| Project config | `ms.json` | | **`mod.ms`** (MinScript code: `Config`, deps, scripts, tool sections) |
+| Field defaults | — | — | `type T = { indent: int = 4 }` |
 
 ---
 
@@ -53,18 +63,15 @@ Pipeline:
 
 ### 1.1 Source [D]
 
-- UTF-8. CRLF is normalized to LF. A UTF-8 BOM is stripped.
-- Tabs and spaces are both whitespace.
-- Identifiers are ASCII in v0.1.
-
-Every token carries:
+- UTF-8. CRLF is normalized to LF. A BOM is stripped.
+- Identifiers are ASCII.
 
 ```ts
 type Token = {
     kind: TokenKind
-    span: Span          // start/end byte offset, line, col
-    ws_before: boolean  // any whitespace/comment immediately before
-    nl_before: boolean  // a newline occurred since the previous token
+    span: Span          // byte offsets + line/col
+    ws_before: boolean  // whitespace or comment directly before
+    nl_before: boolean  // a newline since the previous token
     match?: number      // openers: index of the matching closer
 }
 ```
@@ -74,192 +81,140 @@ Comments are trivia, kept in a side list for the formatter and LSP.
 ### 1.2 Comments [D]
 
 ```rust
-// line comment
-/// doc comment (attached to the next item)
-/* block comment, /* nestable */ */
+// line        /// doc (attaches to the next item)        /* block, /* nestable */ */
 ```
 
 ### 1.3 Identifiers [D]
 
-```text
-ident := [A-Za-z_][A-Za-z0-9_]*
-```
+`[A-Za-z_][A-Za-z0-9_]*`.
 
-- A lone `_` is the wildcard and is never a binding.
-- The linter, not the parser, enforces the convention: `PascalCase` for types, variants and interfaces, and `snake_case` for everything else.
-- Patterns rely on the convention: an uppercase-initial identifier is a constructor or constant path, and a lowercase one is a new binding (§6).
+- A lone `_` is the wildcard.
+- By convention, `PascalCase` is used for types, variants and interfaces, and `snake_case` for everything else (enforced by the linter).
+- In patterns, an uppercase-initial identifier is a constructor or constant, and a lowercase one is a binding.
 
-### 1.4 Keywords
+### 1.4 Keywords [D]
 
 ```text
 Declarations: package import pub type union inter impl fun async let var mut extern
 Control:      if else match for in break continue return
 Expressions:  await or as unsafe recover true false nil this Self
 Type-level:   TypeOf
-Reserved:     while loop yield macro where   (unused in v0.1, reserved so they can't become names)
+Reserved:     while loop yield macro where dyn
 ```
 
-- `union` is new [N]. `while` and `loop` are demoted to reserved [N] because `for` covers them (§5.4).
-- **Implicit closure parameters [D]:** `it`, plus `it1`, `it2`, …, `itN` (N a positive integer with no leading zero). `it1 == it`. These are reserved identifiers, not keywords.
-- **Prelude names, not keywords [D]:** `Ok Err Some None Result Option Ref Box Weak Promise assert panic`.
-- **After `.` or `?.` [D]:** a keyword lexes as a plain identifier, so `x.or(5)`, `x.in(r)` and `p.match()` are member accesses. The lexer only needs the previous token for this.
+- **Implicit closure params:** `it`, and `it1`…`itN` (no leading zero). `it1 == it`. These are reserved identifiers.
+- **Prelude names, not keywords:** `Ok Err Some None Result Option Promise Ref Box Weak Vec Map Set Array Slice log assert panic`.
+- **A keyword after `.` or `?.` is a plain identifier:** `x.or(5)`, `r.in(x)`.
 
-### 1.5 Literals
+### 1.5 Literals [D]
 
-**Integers [D]:** `123`, `1_000`, `0xFF`, `0b1010`, `0o17`.
-- No suffixes. Use `as` or an expected type instead.
+**Integers:** `123`, `1_000`, `0xFF`, `0b1010`, `0o17`.
+- No suffixes.
 - The default type is `int`.
-- An out-of-range literal is a compile error.
+- Out-of-range values are a compile error.
 
-**Floats [D]:** `1.5`, `1e9`, `2.5e-3`, `1_000.5`.
+**Floats:** `1.5`, `1e9`, `2.5e-3`, `1_000.5`.
 - `.5` and `5.` are not valid.
-- The default type is `f64`; a float adopts `f32` when the expected type is `f32`.
+- The default type is `f64`; a float adopts `f32` when that type is expected.
 
-**Number lexing rules [D]:**
-1. After a digit run, `.` belongs to the number only when a digit follows it. So `1..10` lexes as `1` `..` `10`, and `1.to_string()` lexes as `1` `.` `to_string`.
-2. When the previous token is a member `.`, only digits are lexed. So `t.0.1` lexes as `t` `.` `0` `.` `1` (tuple indexing).
+**Number lexing:**
+1. After a digit run, `.` belongs to the number only when a digit follows: `1..10` lexes as `1` `..` `10`, and `1.to_str()` as `1` `.` `to_str`.
+2. When the previous token is a member `.`, only digits are lexed: `t.0.1` lexes as `t` `.` `0` `.` `1`.
 
-**Booleans and absence [D]:** `true`, `false`, `nil`. `nil` is a keyword alias of the prelude constructor `None`.
+**Booleans and absence:** `true`, `false`, `nil`. `nil` is a keyword alias of `None`.
 
-**Characters [D]:** `'a'`, `'\n'`, `'\u{1F600}'`. Type `char` is a Unicode scalar value.
+**Characters:** `'a'`, `'\n'`, `'\u{1F600}'`. Type `char` is a Unicode scalar value.
 
-**Strings [D]:**
-- `"…"` is single-line. An unterminated string errors at the end of the line, which gives good error recovery.
+**Strings:**
+- `"…"` is single-line.
 - Escapes: `\n \r \t \0 \\ \" \' \$ \xNN \u{…}`.
-- Interpolation is written `${expr}` and may nest strings. The lexer keeps a mode stack of string and interpolation states, tracking brace depth.
-- `"""…"""` is multi-line, with escapes and interpolation active. The first newline after the opener is dropped, and the common leading indentation (measured from the closing `"""` line) is stripped.
+- Interpolation is `${expr}`. The lexer keeps a mode stack.
+- `"""…"""` is multi-line. The first newline is dropped, and the common indentation (measured from the closing line) is stripped.
+- Raw strings: `r"C:\path"`. No escapes or interpolation, may span lines, cannot contain `"`.
 
-**Raw strings [N]:** `r"C:\users\name"`.
-- No escapes and no interpolation.
-- May span lines.
-- Cannot contain `"`; use `"""` for that.
-- `r` must be glued to `"`.
+### 1.6 Glued sigil tokens [D]
 
-### 1.6 Glued sigil tokens [D, updated]
-
-These lex as **single tokens** only when the letter and the opener touch, and the letter is a whole identifier (not the tail of a longer one).
+These lex as single tokens only when glued, and only when the letter is a whole identifier:
 
 | Token | Meaning | Valid in |
 |---|---|---|
 | `r{` | anonymous record literal / record type | expr, type |
 | `m{` | map literal | expr |
 | `s{` | set literal | expr |
-| `t(` | tuple literal / tuple type / tuple pattern | expr, type, pattern |
+| `t(` | tuple literal / type / pattern | expr, type, pattern |
 | `a[` | fixed array literal | expr |
-| `_{` | inferred struct/record literal (type taken from the expected type) | expr |
-| `'N{` | tagged record literal (`'` + digits + `{`) | expr |
+| `_{` | inferred struct/record literal | expr |
 | `#{` | closure | expr |
 | `#[` | closure capture list (must be followed by a glued `{`) | expr |
-| `.[` | explicit generic arguments [N] | expr (postfix) |
+| `.[` | explicit generic arguments | expr (postfix) |
 | `r"` | raw string | expr |
 
-**No-glue contexts [N]:** a letter is *not* treated as a sigil when the previous token is `.`, `fun`, `type`, `union` or `inter`. So `fun t[T]()` declares a function named `t`, and `x.a[0]` indexes field `a`.
+- **No-glue contexts:** a letter is not a sigil when the previous token is `.`, `fun`, `type`, `union` or `inter`.
+- **Collisions:** `a[0]` is an array literal and `a [0]` indexes `a`; `t(1)` is a tuple and `t (1)` calls `t`. The resolver reports `E_SIGIL_SHADOWS_BINDING` when a sigil letter matches a visible binding.
+- **Vec literals are plain `[…]`.** In prefix position `[` is a literal; in postfix position it indexes.
 
-**Identifier collisions [D]:** `r m s t a` remain legal identifiers. The sigil wins lexically, so:
-
-```rust
-a[0]     // fixed array literal containing 0
-a [0]    // indexing a variable named `a`
-t(1, 2)  // tuple
-t (1, 2) // calling a function named `t`
-```
-
-The resolver reports `E_SIGIL_SHADOWS_BINDING` when a sigil letter matches a visible binding, and suggests a space or a rename. The formatter never removes that space.
-
-`'N{` versus a char literal: after `'`, if `'<char>'` matches it is a char; otherwise `'<digits>{` is a tag token.
-
-### 1.7 Operators and punctuation
+### 1.7 Operators [D]
 
 ```text
 Arithmetic:  +  -  *  /  %
 Bitwise:     &  |  ^  <<  >>          (unary bitwise-not is `!` on integers)
 Compare:     ==  !=  <  <=  >  >=
 Logical:     &&  ||  !
-Assign:      =  +=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=
+Nullish:     ??
+Assign:      =  +=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=  ??=
 Binding:     :=  :==
-Range:       ..  ..=
-Spread:      ...
-Arrows:      ->  =>
-Option:      ?  ?.
+Range:       ..  ..=       Spread: ...
+Arrows:      ->  =>        Option: ?  ?.
 Other:       .  ,  :  ;  @  ( ) [ ] { }
-Reserved:    ~  ??  ++  --            (lexed, always a parse error with a hint)
+Reserved:    ~  ++  --     (lexed, always a parse error with a hint)
 ```
 
-Because generics never use `<` / `>` [N], maximal munch is always correct: `>>` is always a shift, and the **type-argument token splitting from spec-v2 §1.6 is gone**.
+Generics never use `<` / `>`, so maximal munch is always correct and no token splitting is needed.
 
 ---
 
-## 2. Generics [N]
+## 2. Generics [D]
 
-### 2.1 Declaring generic parameters
-
-Generic parameters use square brackets directly after the declared name.
+### 2.1 Parameters: `[…]` after the declared name
 
 ```rust
 fun identity[T](value: T) -> T { value }
-
-fun convert[T, U: Convert[T, U]](value: T) -> U { … }
-
+fun largest[T: PartialOrd[T]](items: &Vec[T]) -> &T { … }
 type Box[T] = { value: T }
-
-union Response[T, E] = {
-    Success(T)
-    Failure(E)
-}
-
-inter Convert[From, To] = {
-    fun convert(&this, value: From) -> To
-}
-
-impl[T] Box[T] {
-    pub fun get(&this) -> &T { &this.value }
-}
+union Response[T, E] = { Success(T)  Failure(E) }
+inter Convert[From, To] = { fun convert(&this, v: From) -> To }
+impl[T] Box[T] { … }
 ```
 
-- Bounds use `:` and `&` for multiple bounds: `[T: Reader & Writer]`.
-- There is no `where` clause in v0.1.
-- Const generic parameters (`[T, N: usize]`) are deferred. Built-in `Array[T, N]` accepts an integer literal argument.
+- Bounds use `:`, with `&` for multiples: `[T: Reader & Writer]`.
+- There is no `where` clause.
+- Const params are deferred; built-in `Array[T, N]` takes an integer literal.
 
-### 2.2 Generic arguments in type position
-
-Wherever the parser expects a type, `Name[…]` with the `[` glued to the name is a type application:
+### 2.2 Type position: `Name[Args]`
 
 ```rust
-Vec[int]
-Map[string, Vec[User?]]
-Promise[Result[User, string]]
-Array[i32, 4]
-std.col.Vec[u8]
+Vec[int]   Map[string, Vec[User?]]   Promise[Result[User, string]]   Array[i32, 4]
 ```
 
-- The `[` must be glued (`ws_before == false`). Otherwise the type ends at the name.
-- Type arguments are types or integer literals.
+The `[` must be glued to the name.
 
-### 2.3 Explicit generic arguments in expressions: `.[…]`
+### 2.3 Expression position: `.[Args]`
 
-In expression position, generic arguments are supplied with the **`.[` postfix**. It is only needed when inference cannot work out the types.
+Only needed when inference can't determine the types:
 
 ```rust
-let user = json.parse.[User](json_str)      // User? — None when it doesn't parse as a User
+let user = json.parse.[User](json_str)     // Result[User, json.Error]
 let ids  = collect.[i64](items)
-let v    = Vec.new.[u8]()                   // generic static method
-let v2   = Vec.[u8].new()                   // generic type, then static member
-let b    = Box.[i32]{ value: 1 }            // generic struct literal
-let p    = parse_user.[User]("{\"id\":1}")
+let v    = Vec.new.[u8]()
+let v2   = Vec.[u8].new()
+let b    = Box.[i32]{ value: 1 }
+
+let u: Result[User, json.Error] = json.parse(json_str)   // inferred from the expected type: no .[ ]
 ```
 
-- `.[` is one token, and it is only legal as a postfix on an expression. Nothing else in the grammar starts with `.` followed by `[`, so there is no ambiguity.
-- `expr.[Args]` produces an AST node `GenericApply { target, args: Type[] }`. The parser does not check what follows it; name resolution checks that the target is generic.
-- `.[` may not start a new line. That would make it a chain continuation, and generic arguments aren't one.
-
-When the types can be inferred, leave `.[…]` out:
-
-```rust
-let u: User? = json.parse(json_str)          // T inferred from the expected type
-fun load() -> User? { json.parse(read()) }   // T inferred from the return type
-```
-
-The diagnostic `E_CANNOT_INFER_GENERIC` suggests the `.[…]` form.
+- `.[` is one postfix token and produces `GenericApply { target, args }`.
+- It may not start a new line.
+- When inference fails, `E_CANNOT_INFER_GENERIC` suggests `.[T]`.
 
 ---
 
@@ -269,41 +224,56 @@ Tightest first:
 
 | # | Operators | Assoc | Notes |
 |---|---|---|---|
-| 1 | postfix `.x` `?.x` `(args)` `[i]` `.[T]` `?` | left | `(` and `[` must not cross a newline |
-| 2 | prefix `-` `!` `await` | right | see 3.1 |
+| 1 | postfix `.x` `?.x` `(args)` `[i]` `.[T]` `?` | left | `(`, `[`, `.[` must not cross a newline |
+| 2 | prefix `-` `!` `await` | right | §3.1 |
 | 3 | `as T` | left | |
 | 4 | `*` `/` `%` | left | |
 | 5 | `+` `-` | left | |
 | 6 | `<<` `>>` | left | |
-| 7 | `&` | left | bitwise; Rust precedence, not C's |
+| 7 | `&` | left | |
 | 8 | `^` | left | |
 | 9 | `\|` | left | |
-| 10 | `==` `!=` `<` `<=` `>` `>=` | none | `a < b < c` is `E_NON_ASSOCIATIVE_OPERATOR` |
-| 11 | `&&` | left | |
+| 10 | `==` `!=` `<` `<=` `>` `>=` | none | chaining them is `E_NON_ASSOCIATIVE_OPERATOR` |
+| 11 | `&&` | left | operands must be truthy (§4.7) |
 | 12 | `\|\|` | left | |
-| 13 | `..` `..=` | none | |
-| 14 | `or` | left | §4.6 |
-| 15 | `=` and compound assignments | right | assignment evaluates to `void` |
+| 13 | `??` | right | mixing with `&&`/`\|\|` needs parentheses (`E_MIXED_NULLISH`) |
+| 14 | `..` `..=` | none | |
+| 15 | `or` | left | §4.6 |
+| 16 | `=`, compound assignments, `??=` | right | assignment evaluates to `void` |
 
-- `return`, `break` and `continue` are expressions of type `never`, so `x or return` and `x or break` are valid.
-- Unary `&` creates a borrow only where one is explicitly needed (§9.3). Unary `*` (dereference) appears only inside `unsafe`.
+- `return`, `break` and `continue` are expressions of type `never`.
+- Unary `&` appears only in captures, in sub-borrows (`&this.value`) and in raw-pointer code. Unary `*` appears only in `unsafe`.
 
-### 3.1 `await` and postfix `?` [D]
+### 3.1 `await` and `?`
 
-The operand of `await` is a postfix chain **up to but not including the first `?` or `?.`**. The postfix loop then continues on the awaited value.
+The operand of `await` is a postfix chain up to the first `?` or `?.`. After that, the postfix loop continues on the awaited value.
 
 ```rust
 await read_file(p)?          // (await read_file(p))?
 await get_user()?.name       // ((await get_user())?.name)
-(await fetch_name()).trim()  // method call on the result needs parentheses
+(await fetch()).trim()
 ```
 
-### 3.2 `?` versus `?.` [D]
+### 3.2 `?`, `?.` and `??`
 
-- `x?` (glued) **propagates**: `Err(e)` / `None` returns from the enclosing function or closure; otherwise it unwraps.
-- `x?.name` **optional-chains**: if `x` is absent, the whole chain is `None`, with no early return.
-- To propagate and then access a member, write `(x?).name`.
+| Form | When the value is absent (`None` / `Err`) | Result |
+|---|---|---|
+| `x?` | **returns** from the enclosing function or closure | `T` |
+| `x?.name` | the whole chain becomes `None` | `U?` |
+| `x ?? y` | evaluates `y` (**lazily**) | `T`, or `T?` if `y: T?` |
+| `x.or(y)` | `y` (evaluated eagerly; pass `#{…}` for lazy) | `T` |
+| `x or y` | evaluates `y` and **returns it** from the function | `T` |
+
+- `??` works on `Option[T]` and `Result[T, E]`; on a `Result` the error is discarded.
+- `a ?? b ?? c` chains.
+- `x ??= v` assigns when `x` (a `var` of type `T?`) is `None`.
 - In type position `T?` means `Option[T]`, and `T??` is an error.
+
+```rust
+let name  = user?.profile?.name ?? "anonymous"
+let port  = env.get("PORT")?.to_int() ?? 8080
+let token = cache.get(key) ?? fetch_token()        // fetch_token() runs only on a miss
+```
 
 ---
 
@@ -311,161 +281,146 @@ await get_user()?.name       // ((await get_user())?.name)
 
 ### 4.1 Blocks [D]
 
-A `{…}` block (of a function, closure, `if`, `match` arm, `or`, `unsafe` or `recover`) evaluates to its last expression when that expression has no trailing `;`. A trailing `;` discards the value.
+A block evaluates to its last expression when that expression has no trailing `;`. A trailing `;` discards the value. `return` is always available and never required.
 
 ```rust
 fun a() -> int { 5 }       // 5
-fun b() { foo() }          // void function: the final value is discarded
-fun c() -> int { 5; }      // error E_INVALID_BLOCK_VALUE
+fun c() -> int { 5; }      // E_INVALID_BLOCK_VALUE
 ```
-
-`return` is always available for early exit and is never required.
 
 ### 4.2 Bare `{` is always a block [D]
 
-There is no bare map, record or struct literal. Literals always use a sigil or a type name.
-
-A struct literal `Name { … }` is **not allowed directly in the header of `if`, `for` or `match`**; wrap it in parentheses. This is the Rust rule, and it keeps `if x == P { … }` unambiguous.
+There is no bare literal. A struct literal `Name {…}` is not allowed directly in an `if`/`for`/`match` header; wrap it in parentheses.
 
 ### 4.3 Literals [D]
 
 ```rust
 [1, 2, 3]                          // Vec[int]
 a[1, 2, 3]                         // Array[int, 3]
-t(1, "a", 2.5)                     // tuple; t(x) is a 1-tuple; t() is unit
-r{ name: "Ted", age: 26, ...base } // anonymous record (structural)
-m{ "one": 1, key_expr(): 2 }       // Map: keys are expressions
+t(1, "a")   t(x)   t()             // tuple, 1-tuple, unit
+r{ name: "Ted", age: 26, ...base } // structural record
+m{ "one": 1, key_expr(): 2 }       // Map; keys are expressions
 s{ 1, 2, 3 }                       // Set
-_{ host, port: 8080 }              // inferred struct/record; needs an expected type
-'1{ id: 1, name: "x" }             // tagged record (shape tag 1)
-User { id: 1, name }               // named struct literal; shorthand fields
+_{ host, port: 8080 }              // inferred from the expected type
+User { id: 1, name }               // named struct literal
 ```
 
-- Elements may be separated by commas or newlines, and trailing commas are allowed.
-- Record and struct keys are identifiers or quoted identifiers.
-- `...expr` spreads into `[]`, `a[]`, `r{}`, `m{}`, `s{}`, `_{}` and `Name {}`. The type checker checks spread compatibility.
-- `_{}` without an expected type is `E_CANNOT_INFER_STRUCT_TYPE`. `_{}` is the named-arguments story: `configure_server(_{ host, port })`.
-- Parentheses only group. **There is no bare `(a, b)` tuple**: use `t(a, b)` in expressions, types and patterns.
-
-### 4.4 Closures [N]
-
-`#{ … }` is **the only closure syntax**. Arrow functions `(a) => …`, `fun(x) {…}` and `#[x](a) => …` are all removed.
-
-#### Forms
+- Elements are separated by commas or newlines, and trailing commas are allowed.
+- `...expr` spreads into every literal kind.
+- `_{}` without an expected type is `E_CANNOT_INFER_STRUCT_TYPE`; it doubles as the named-arguments form: `serve(_{ host, port })`.
+- There is no bare `(a, b)` tuple: write `t(a, b)`.
+- Records with the same shape are the same type, so arrays of records need no tagging:
 
 ```rust
-#{ it * 2 }                        // implicit params: it == it1, it2, …, itN
-#{ it1 + it2 }
-#{ compute_default() }             // zero params (no `it` used)
-#{ n, idx => n > 50 }              // named params
-#{ x: i32, y: i32 => x + y }       // typed params
-#{ a: i32, b: i32 -> i32 => a + b }// typed params + return type
-#{ mut acc, cur => acc += cur; acc }  // `mut` param (owned, mutable local)
-#{ n =>                            // multi-line body; last expression is the value
-    let squared = n * n
-    squared + 5
+let routes = [
+    r{ name: "TRM", lat: -1.2194, volume: 80 },
+    r{ name: "Kasarani", lat: -1.2288, volume: 100 },
+]   // Vec[r{ name: string, lat: f64, volume: int }]
+```
+
+### 4.4 Closures [D]
+
+`#{…}` is the only closure syntax.
+
+```rust
+#{ it * 2 }                         // implicit: it == it1, it2 … itN
+#{ compute_default() }              // zero params
+#{ n, idx => n > 50 }               // named params
+#{ x: i32, y: i32 -> i32 => x + y } // typed params + return type
+#{ mut acc, cur => acc += cur; acc }
+#{ n =>
+    let sq = n * n
+    sq + 5                          // last expression is the value
 }
-```
 
-#### Capture lists
-
-```rust
-#[count]{ count + it }             // capture `count` by value (move, or copy if Copy)
-#[&cfg]{ cfg.port }                // capture by shared borrow
-#[&mut total]{ total += it }       // capture by mutable borrow
-#[]{ 42 }                          // captures nothing (explicitly)
+#[count]{ it + count }              // capture by value (move/copy)
+#[&mut total]{ total += it }        // capture by mutable borrow
 #[conn, &mut stats]{ msg => conn.send(msg); stats.sent += 1 }
 ```
 
-- Grammar: `#[` capture (`,` capture)* `]{` closure-body, where capture := `ident` | `&` `ident` | `&` `mut` `ident`.
-- The `{` after `]` must be glued. A capture list is only valid as a closure prefix.
+**Capture list:** `#[` capture {`,` capture} `]{` body, where capture := `ident` | `&ident` | `&mut ident`. The `{` must be glued to `]`.
 
-#### Parsing the header (deterministic, no backtracking)
+**Parsing the header** (bounded scan, no backtracking):
+- After `#{`, scan at depth 0 (skipping bracket groups with the matching-delimiter index).
+- If `=>` is reached, and every token before it is one of `ident mut , : & -> ? . _` or a skipped group, that prefix is the **parameter header**.
+- If the scan reaches a newline, `;`, `}` or any other token first (including `or`), there is **no header**.
+- So the header must be on the closure's first line.
 
-After `#{`, the parser scans forward at bracket depth 0, using the lexer's matching-delimiter index to skip `(…)`, `[…]`, `t(…)` and `r{…}` groups. It stops at the first of these:
-
-- `=>`: if every depth-0 token seen so far is one of `ident` `mut` `,` `:` `&` `->` `?` `.` `_`, then the tokens before `=>` are the **parameter header**.
-- a token with `nl_before`, a `;`, the closing `}`, or any other token: there is **no header**, and the body starts right after `#{`.
-
-So the header must sit on the first line of the closure. Because `or` is a keyword, `#{ f() or e => log(e) }` correctly has no header (§4.6).
-
-#### Rules
-
-- `it`, `itN` are only valid in header-less closures. Mixing them with named params is `E_IT_IN_NAMED_CLOSURE`.
-- With nested header-less closures, the innermost `it` wins and the linter warns. Use named params to reach an outer value.
-- Using `itK` where K exceeds the callee's arity is a type error, not a lexer limit.
-- A callback may use fewer parameters than the callee supplies: `vec.for_each(#{ log.println(it) })` ignores the index the callee passes.
+**Rules:**
+- `it`/`itN` may only be used in header-less closures (`E_IT_IN_NAMED_CLOSURE`). In nested closures the innermost `it` wins, and the linter warns.
+- A callback may use fewer parameters than the callee supplies.
 - `return` inside a closure returns from the closure.
-- Assignment is a `void` expression, so `#{ it += 10 }` is valid when `it` is `&mut T`.
-- There is no trailing-closure syntax: closures are always passed inside `(…)`.
-- Capture semantics (implicit borrows, escaping) are in §9.4.
+- Closures are passed inside `(…)`; there is no trailing-closure syntax.
+- Capture semantics are in §9.4.
 
-### 4.5 Control-flow expressions [D, updated]
+### 4.5 Control-flow expressions [D]
 
 ```rust
 let grade = if score >= 90 { "A" } else if score >= 75 { "B" } else { "C" }
 
-let tier = match role {
-    "Admin" => "Full Access"
-    "Operator" => "Standard"
-    _ => "Read Only"
-}
-
 let label = match n {
-    0 => "zero",
-    1..=5 => "small",
-    x if x > 100 => "huge",           // guard [N: `if` is required]
-    _ => "other",
+    0 => "zero"
+    1..=5 => "small"
+    x if x > 100 => "huge"
+    _ => "other"
 }
 
-let is_adult = match {                // subject-less match: first true arm wins [N]
-    age > 18 => true
+let adult = match {               // subject-less: the first true arm wins
+    age >= 18 => true
     _ => false
 }
 ```
 
-- `if` without `else` has type `void`.
-- `if`/`match` are expressions when every branch is present. `match` must be exhaustive.
-- Match arms are separated by commas or newlines; the comma after a block arm is optional.
-- The parentheses around a condition are optional and are just grouping.
-- `unsafe { … }` and `recover { … }` are block expressions (§9.8).
+- `if` without `else` is `void`. `match` must be exhaustive.
+- Arms are separated by commas or newlines.
+- Ranges: `a..b`, `a..=b`, `..b`, `a..`.
 
-Ranges: `a..b`, `a..=b`, `..b`, `a..`. Open ranges are only valid where the consumer accepts them.
-
-### 4.6 `or`: unwrap or diverge [D]
+### 4.6 `or`: unwrap or return [D]
 
 ```rust
 expr or RHS
 expr or name => RHS
 ```
 
-- If `expr` is `Ok(v)` or `Some(v)`, the whole expression evaluates to `v`.
-- If `expr` is `Err(e)` or `None`, **RHS is evaluated and returned from the enclosing function or closure**. `return` is implied, though `or return X` is also allowed.
-- In RHS, `it` is the `Err` payload (unavailable for `Option`). `or e => …` names the payload instead.
+- `Ok(v)` / `Some(v)` evaluates to `v`.
+- `Err(e)` / `None` evaluates RHS and **returns it from the enclosing function or closure**.
+- `it` is the error payload; `or e => …` names it instead.
 - RHS may be an expression, a block, `return …`, `break` or `continue`.
 
 ```rust
-let bytes  = await fs.read_file(path) or Err("IO failed: ${it}")
-let prefix = get_env_prefix() or Err("missing prefix")
-let user   = find_user(id) or e => {
-    log.println(e)
-    Err(e)
-}
-let line   = lines.next() or break
+let bytes = await fs.read_file(path) or Err("IO failed: ${it}")
+let user  = find_user(id) or e => { log.println(e); Err(e) }
+let line  = lines.next() or break
 ```
 
-**`.or(…)` is an ordinary method**, a value fallback that never returns early:
+The linter flags `x or <literal>` when the literal doesn't match the function's return type, since `??` was probably meant.
+
+### 4.7 Truthiness [D]
+
+The values allowed in an `if` / `for` condition and as operands of `&&`, `||` and `!` are:
+
+| Type | true when |
+|---|---|
+| `bool` | `true` |
+| `Option[T]` | `Some(_)` |
+| `Result[T, E]` | `Ok(_)` |
 
 ```rust
-let email   = raw_email.or("guest@minscript.dev")
-let timeout = cfg.timeout.or(#{ compute_default() })
+let res = json.parse.[User](s)
+if res { … }                   // instead of res.is_ok()
+if !cache.get(k) { … }
+if user && user_is_admin { … }
 ```
 
-Because `x or 0` returns `0` from the function while `x.or(0)` is a fallback, the linter flags `or <literal>` in a function whose return type is not that literal's type.
+- Ints, strings and collections are **not** truthy (no `0` / `""` surprises). Use `n != 0` and `s.is_empty()`.
+- `&&`, `||` and `!` always produce `bool`. Using `||` for a value fallback (`let x: string = a || b`) is `E_USE_NULLISH`, with a fix-it to `??`.
+- Truthiness is a built-in rule, not a user-implementable interface [?].
+- The linter warns on `Option[bool]` in a condition, because `Some(false)` is truthy.
+- When you need the payload, use `if let Ok(user) = res { … }`.
 
-### 4.7 String interpolation [D]
+### 4.8 String interpolation [D]
 
-`"${expr}"` only; there is no bare `$name`. The interpolated value must implement `Stringer` (§10.3).
+`"${expr}"`. The value must implement `Stringer`, which is auto-generated (§9.7).
 
 ---
 
@@ -474,90 +429,55 @@ Because `x or 0` returns `0` from the function while `x.or(0)` is a fallback, th
 ### 5.1 Bindings [D]
 
 ```rust
-let name = expr           // immutable
-var name = expr           // mutable
-name := expr              // sugar for let
-name :== expr             // sugar for var
+let name = expr          var name = expr
+name := expr             name :== expr           // sugar for let / var
 let name: T = expr
 let pattern = expr else { diverge }
-place = expr              // assignment; never declares
-place += expr             // compound assignment
+place = expr             place += expr           place ??= expr
 ```
 
-- `:=` and `:==` take only a plain identifier on the left.
+- `:=` and `:==` take only a plain identifier.
 - Assigning to an undeclared name is `E_UNDECLARED_ASSIGNMENT`.
-- The `else` block of `let … else` must diverge (`return`, `break`, `continue` or `panic`).
+- The `else` of `let … else` must diverge.
 
-### 5.2 Conditional patterns [D]
-
-```rust
-if let Some(user) = find(id) { … } else { … }
-for let Some(item) = iter.next() { … }    // replaces `while let`
-```
-
-### 5.3 Pattern destructuring [D]
+### 5.2 Destructuring and conditional patterns [D]
 
 ```rust
 let t(width, height) = get_dimensions()
 let Ok(data) = res else { return Err("read failed") }
 let User { id, name, .. } = user
+if let Some(u) = find(id) { … }
 ```
 
-### 5.4 Loops: `for` only [N]
+### 5.3 Loops: `for` only [D]
 
 ```rust
-for { … }                       // infinite
-for count < 3 { … }             // conditional (old `while`)
-for let Some(x) = it.next() { } // conditional pattern (old `while let`)
-for item in items { … }         // iteration
-for item, idx in items { … }    // two bindings: (item, index) for Vec, (key, value) for Map
+for { … }                          // infinite; `break value` makes it an expression
+for count < 3 { … }                // conditional
+for let Some(x) = iter.next() { }  // conditional pattern
+for item in items { … }
+for item, idx in items { … }       // Vec: (item, index); Map: (key, value)
 for i in 0..10 { … }
+outer: for row in grid { for c in row { if c < 0 { break outer } } }
 ```
 
-How the parser classifies the header (deterministic):
+How the parser classifies the header:
+- `{` right after `for` is the infinite form.
+- `let` right after `for` is the pattern form.
+- Otherwise, it is an iteration loop if an `in` keyword appears at depth 0 before the header `{`, and a conditional loop if not.
 
-1. `{` straight after `for`: infinite loop.
-2. `let` straight after `for`: conditional pattern.
-3. otherwise, scan to the header's `{` at depth 0. If an `in` keyword appears, it is an iteration loop; otherwise it is a conditional loop.
-
-`break value` is only allowed in an infinite `for { }`, which is then an expression. `break` and `continue` take optional labels:
-
-```rust
-outer: for row in grid {
-    for cell in row {
-        if cell == 0 { continue outer }
-        if cell < 0 { break outer }
-    }
-}
-```
-
-A label is `ident :` directly before `for` at statement start. Labels don't use `'`, which keeps them clear of char and tag literals.
-
-The `for a, b in x` behaviour is defined by std interfaces (`Iterable`, `Pairs`, §10.2), not hard-coded in the parser.
-
-### 5.5 Newlines and semicolons [D]
-
-Tokens carry `nl_before`, and the parser decides where statements end. It never inserts virtual `;` tokens.
+### 5.4 Newlines and semicolons [D]
 
 1. A statement ends at `;`, at a newline, or before `}` / EOF.
 2. A newline does **not** end a statement when:
-   - the previous token cannot end an expression: a binary operator, `,`, `.`, `?.`, `(`, `[`, `{`, `=`, `:=`, `:==`, `=>`, `->`, `:`, `as`, `or`, `await`, `mut`, `&`, `!`, `#{`, `#[`, `.[`, or
-   - the next token is `.`, `?.`, `&&`, `||`, `or`, `as`, `else`, `)`, `]`, `}` or `=>`.
-3. A newline **does** end the statement when the next line starts with `(`, `[`, `{`, `-`, `+`, `*`, `&`, `!` or `.[`. Write continuation operators at the end of the line.
-4. Postfix `(` call, `[` index and `.[` generics require `nl_before == false`. `.` and `?.` may cross a newline (method chains).
+   - the previous token cannot end an expression (binary operator, `,`, `.`, `?.`, `(`, `[`, `{`, `=`, `:=`, `:==`, `=>`, `->`, `:`, `as`, `or`, `??`, `await`, `mut`, `&`, `!`, `#{`, `#[`, `.[`), or
+   - the next token is `.`, `?.`, `&&`, `||`, `??`, `or`, `as`, `else`, `)`, `]`, `}` or `=>`.
+3. A newline **does** end the statement when the next line starts with `(`, `[`, `{`, `-`, `+`, `*`, `&`, `!` or `.[`.
+4. Postfix `(`, `[` and `.[` need `nl_before == false`. `.` and `?.` may cross a newline.
 5. Newlines are ignored inside `(…)` and `[…]`, but they matter again inside a nested `{…}`.
 6. `return`, `break` and `continue` followed by a terminator take no value.
-7. The opening `{` of `fun`, `if`, `else`, `for`, `match`, `impl`, `inter`, `type` and `union` must be on the header line (K&R).
-8. A trailing `;` after a block's final expression discards its value. The formatter strips every other `;`.
-
-```rust
-let result =
-    calculate(first, second)
-
-let name = get_user()
-    .profile
-    ?.display_name
-```
+7. Opening braces of declarations and control flow go on the header line.
+8. A trailing `;` after a block's last expression discards its value. The formatter strips every other `;`.
 
 ---
 
@@ -570,133 +490,151 @@ let name = get_user()
 | Binding | `user`, `mut user` |
 | Constructor | `None`, `Cash`, `Payment.Cash` |
 | Payload | `Ok(v)`, `Mpesa(code, amount)` |
-| Struct | `Card { number, exp: e, .. }` |
+| Struct / record | `Card { number, .. }`, `r{ name, .. }` |
 | Tuple | `t(x, y, ..)` |
 | Or | `Some(0) \| None` |
 | Range | `1..=5`, `'a'..='z'` |
 
-- Identifier case decides the meaning: lowercase binds, uppercase is a constructor or constant.
-- Unqualified variants resolve through the prelude first, then the scrutinee's type: `Cash` and `Payment.Cash` are both valid in `match payment`.
-- `nil` and `None` are the same pattern.
-- v0.1 has no reference patterns and no destructuring in function parameters.
+- Unqualified variants resolve through the prelude, then the scrutinee's type.
+- There are no reference patterns and no parameter destructuring.
 
 ---
 
 ## 7. Types
 
-### 7.1 Type grammar [N: brackets]
+### 7.1 Type grammar [D]
 
 ```text
 Type         := Intersection
-Intersection := Postfix ('&' Postfix)*         // only legal in bounds and `inter X = A & B`
-Postfix      := Primary '?'?                   // T? == Option[T]
-Primary      := Path [ '[' TypeArgs ']' ]      // '[' glued
-              | '&' ['mut'] Type               // borrow (params, receivers, captures)
-              | '*' ['mut'] Type               // raw pointer (extern/unsafe)
-              | 't(' [Type (',' Type)*] ')'    // tuple type
-              | 'r{' [Field (',' Field)*] '}'  // structural record type
-              | '(' [Type (',' Type)*] ')' '->' Type   // function type (right-assoc)
-              | '(' Type ')'                   // grouping
+Intersection := Postfix ('&' Postfix)*         // bounds, `inter X = A & B`
+Postfix      := Primary '?'?
+Primary      := Path [ '[' TypeArgs ']' ]      // glued '['
+              | '&' ['mut'] Type               // borrow
+              | '*' ['mut'] Type               // raw pointer
+              | 't(' [Types] ')'               // tuple
+              | 'r{' [Fields] '}'              // structural record
+              | '(' [Types] ')' '->' Type      // function (owned / escaping)
+              | '(' Type ')'
               | 'TypeOf' '(' ValuePath ')'
-              | StringLit | IntLit | 'true' | 'false'  // literal types
-TypeArgs     := (Type | IntLit) (',' (Type | IntLit))*
+              | StringLit | IntLit | 'true' | 'false'
 ```
 
-- A `&` at the start of a type is a borrow; between two complete types it is an intersection.
-- A function type always has `->`; a tuple type always uses `t(…)`.
-- `void` is the unit / no-value type. `never` is the type of diverging expressions.
+- A `&` at the start of a type is a borrow; between two types it is an intersection.
+- `&(T) -> U` is a **borrowed (non-escaping) function**; `(T) -> U` is an **owned (escaping) function**.
+- When a `Path` names an interface, it denotes a dynamically dispatched value (§9.7).
 
 ### 7.2 Built-in types [D]
 
 ```text
 bool  char  byte(=u8)
 i8 i16 i32 i64  u8 u16 u32 u64  isize usize
-int (= i32)     f32 f64
-void  never  string
+int  (platform width, at least 32 bits)
+f32 f64   void   never   string   str (only as &str = Slice[u8] view)
 Slice[T]  Array[T, N]  Vec[T]  Map[K, V]  Set[T]
-Option[T] (T?)  Result[T, E]  Promise[T]
-Ref[T]  Box[T]  Weak[T]
+Option[T] (T?)  Result[T, E]  Promise[T]   Ref[T]  Box[T]  Weak[T]
 ```
 
-- `string` is owned and immutable. It cannot be indexed by integer; use `.bytes()`, `.chars()` or `.substring(a, b)`. Offsets are byte-based and must land on char boundaries.
-- `Slice[T]` is a borrowed view (pointer + length). `string → Slice[u8]` and `Vec[T]`/`Array[T,N] → Slice[T]` are built-in coercions done by the type checker (see `test/samples/slices.rs`).
-- There is no `any` and there are no interface-typed values in v0.1 (§9.7).
+**`int`:**
+- It is 64-bit on 64-bit native targets, and 32-bit on WASM32 and JS (where 64-bit would need BigInt).
+- The only guarantee is **at least 32 bits**. Use `i64` when values can exceed 2³¹.
+- The linter flags `int` literals and constants outside the i32 range (`L_INT_NOT_PORTABLE`).
 
-### 7.3 Type declarations [N: `union`]
+**`string` and `&str`:**
+- `string` is owned and immutable.
+- `&str` is a borrowed view (`Slice[u8]`).
+- Strings are not integer-indexable. Use `.bytes()`, `.chars()` and `.substring(a, b)`; byte offsets must land on char boundaries.
 
-**Nominal struct**
+Coercions done by the type checker:
+- `string → &str` and `Vec[T]`/`Array[T,N] → Slice[T]` are free.
+- `&str → string` copies, and is inserted implicitly where an owned `string` is required. The lint `L_IMPLICIT_STR_COPY` is off by default and can be enabled in the `lint` section of `mod.ms`, so the linter or LSP warns on these copies.
+
+### 7.3 Type declarations, with inline methods [D]
 
 ```rust
-pub type User = {
+pub type User: Stringer = {          // `: Interfaces` implemented inline (optional)
     pub id: u64
     pub name: string
-    email: string?          // private field; optional
-    tags: Vec[string]
+    email: string?                    // private
+    tags: Vec[string] = []            // field default
+    active: bool = true
+
+    pub fun new(id: u64, name: string) -> User {      // static
+        User { id, name }             // email → None, tags → [], active → true
+    }
+    pub fun email(&this) -> &str { this.email ?? "none" }
+    pub fun rename(&mut this, name: string) { this.name = name }
+    pub fun to_str(&this) -> string { "User(${this.id})" }   // Stringer
 }
-```
 
-**Structural record alias**
-
-```rust
-type Point = r{ x: f64, y: f64 }
-```
-
-**Sum type**, using the `union` keyword with a block body:
-
-```rust
 pub union Payment = {
     Cash
     Mpesa(string)
     Card { number: string, exp: string }
+
+    pub fun is_cash(&this) -> bool { match this { Cash => true, _ => false } }
 }
 
-pub union Result[T, E] = {
-    Ok(T)
-    Err(E)
-}
-```
-
-- Variants are separated by newlines or commas.
-- Variant forms are `Name`, `Name(T, …)` and `Name { field: T, … }`.
-- Variants live in the union's namespace (`Payment.Cash`), and match patterns may use them unqualified.
-
-**Literal union**
-
-```rust
-pub type Role = "Admin" | "Operator" | "Guest"
-```
-
-Unions of arbitrary existing types (`int | string`) are not supported: use a `union`.
-
-**Alias**
-
-```rust
-type UserId = u64
+pub type Role = "Admin" | "Operator" | "Guest"     // literal union
+type Point = r{ x: f64, y: f64 }                    // structural alias (no methods)
+type Users = Vec[User]                              // alias
 type Config = TypeOf(default_config)
-type Users = Vec[User]
 ```
 
-**Fields:**
-- Separators are commas or newlines, and a trailing comma is allowed.
-- Fields are private by default; add `pub` per field.
-- Recursive types must use `Box`: `next: Box[Node[T]]?`.
+- In a body, a member starting with `fun`, `pub fun` or `async fun` is a method; anything else is a field (or, in a `union`, a variant).
+- Fields and variants are separated by commas or newlines, and are private by default.
+- **Field defaults:** `name: T = expr`.
+  - A field with a default, like a `T?` field (which defaults to `None`), may be left out of struct literals, `_{}` and record → struct conversions.
+  - The default expression is evaluated again for every value constructed, and cannot refer to other fields.
+  - Fields without a default are required (`E_MISSING_FIELD`).
+- `type X: A, B = {…}` declares that the body implements interfaces `A` and `B`.
+- Methods can't be attached to structural aliases (`E_METHODS_ON_STRUCTURAL`).
+- Recursive types use `Box`: `next: Box[Node[T]]?`.
 
-### 7.4 Type-level forms [D]
+`impl` blocks remain valid, for:
+- splitting methods across files of the same package;
+- generic or conditional impls (`impl[T: Stringer] Vec[T] { … }`);
+- implementing an interface separately (`impl Reader for File { … }`).
 
-- `TypeOf(path)` is the only keyword type form. It takes a value path (`a.b.c`), with no calls.
-- `KeyOf[T]`, `IndexOf[T]`, `ElementOf[T]`, `Partial[T]`, `Omit[T, K]` and `Pick[T, K]` are ordinary generic type names. The type checker evaluates them.
+Inline methods and `impl` blocks for the same type may coexist. A duplicate method name is `E_DUPLICATE_METHOD`.
+
+### 7.4 Nominal and structural typing [D]
+
+| Kind | Identity | Example |
+|---|---|---|
+| Named struct / union | **nominal** | `type User = {…}` |
+| Record | **structural**: same field names and types (order-insensitive) means the same type | `r{ id: u64 }` |
+| Tuple | structural | `t(int, string)` |
+
+**Conversion rules:**
+- record → named struct: implicit when the shapes match exactly. Missing fields are allowed only if they have a default or are `T?` (which become `None`).
+- named struct → record type: implicit when the shapes match exactly.
+- named struct → a different named struct: **never implicit**, even with the same shape. Spread it explicitly: `let b: B = _{ ...a }`.
+- No width subtyping in v0.2: extra fields don't match. Use spread or `Pick[T, K]`.
+
+This keeps nominal identity (so `Meters` and `Feet` stay distinct, methods have one owner, and the orphan rule works) while records stay the structural glue: a JSON shape, a config, or a quick return value can flow into a named type without boilerplate.
 
 ```rust
-let routes = [ '1{ name: "TRM", volume: 80 }, '1{ name: "Kasarani", volume: 100 } ]
+fun save(u: User) { … }
+save(r{ id: 1, name: "Ted", tags: [] })     // OK: shape matches User (email: None)
+fun log_pos(p: r{ x: f64, y: f64 }) { … }
+log_pos(Point2D { x: 1.0, y: 2.0 })         // OK: exact shape
+```
+
+### 7.5 Type-level forms [D]
+
+- `TypeOf(path)` is the only keyword form.
+- `KeyOf[T]`, `ElementOf[T]`, `IndexOf[T]`, `Partial[T]`, `Omit[T, K]` and `Pick[T, K]` are generic type names that the checker evaluates.
+
+```rust
 pub type Route  = ElementOf[TypeOf(routes)]
-pub type Fields = KeyOf[Route]              // "name" | "volume"
+pub type Fields = KeyOf[Route]              // "name" | "lat" | "volume"
 ```
 
 ---
 
 ## 8. Declarations and modules
 
-### 8.1 File structure [D]
+### 8.1 File structure and imports [D]
 
 ```text
 file    := package_decl import* item*
@@ -708,239 +646,245 @@ item    := ['pub'] (fun | type | union | inter | impl | let | extern)
 ```rust
 package app.users
 
-import "std.log"
-import "std.collections" as col
-import "./models"            // relative to this file's folder
-import pub "./log"           // re-export
+import "std.json"                 // binds package `json`
+import "std.io.println"           // binds one item
+import "std.io.{print, println}"  // binds several items
+import "std.collections.*"        // binds every pub item of the package
+import "app.models" as models
+import "./helpers"                // relative to this file's folder
+import pub "./log"                // re-export
 ```
 
-- **A folder is a package**: every file in it declares the same package name, which matches the folder.
-- Import paths starting with `./` or `../` are relative; otherwise the path is dotted and its first segment is a root (`std`, `app` for the current project's source root, or a dependency from `ms.json`).
-- The bound name is the last segment (`"std.collections"` binds `collections`) unless renamed with `as`.
-- `import pub` re-exports the imported module from this package.
-- Imports must come before any item.
-- **Everything is private by default**; `pub` exports it.
+- **A folder is a package**: all its files declare the same package name, which matches the folder.
+- **`main` is exempt:** it may live anywhere (`./src`, the root, …) and is located through `mod.ms` (§17).
+- Paths starting with `./` or `../` are relative. Otherwise the first segment is `std`, `app` (this project's source root), or a dependency.
+- The resolver decides whether the last segment is a package or an item.
+- **Glob imports** (`.*`):
+  - Local declarations shadow glob-imported names.
+  - Two globs exporting the same name is an error only where that name is used (`E_AMBIGUOUS_IMPORT`), with a fix-it to import the item explicitly.
+  - Unused imports cost nothing: the compiler tree-shakes at item level.
+- Everything is private by default.
 
 ### 8.2 Top-level items [D]
 
-Only declarations are allowed at the top level; there are no free statements.
-
-- `let` globals are **immutable**, and their initializers must be const-evaluable or a `Ref(…)` constructor.
-- Mutable global state must go through `Ref[T]`:
-
-```rust
-pub let MAX_CONNECTIONS: i32 = 10_000
-pub let sessions = Ref(m{ "admin": 0 })   // Ref[Map[string, int]]
-```
-
-`var` is not allowed at the top level (`E_GLOBAL_VAR`).
+- Only declarations are allowed at the top level.
+- Global `let`s are immutable, and their initializers must be const-evaluable or `Ref(…)`.
+- Mutable global state goes through `Ref[T]`.
+- Top-level `var` is `E_GLOBAL_VAR`.
 
 ### 8.3 Functions [D]
 
 ```text
 fun      := ['async'] 'fun' ident [GenericParams] '(' [receiver ','] params ')' ['->' Type] Block
-receiver := 'this' | '&' 'this' | '&' 'mut' 'this' | 'mut' 'this'
-param    := ['mut'] ident ':' Type
-          | '...' ident ':' Type          // variadic; binds Vec[T]; must be last
+receiver := 'this' | '&this' | '&mut this' | 'mut this'
+param    := ['mut'] ident ':' Type  |  '...' ident ':' Type     // variadic, last; binds Slice[T]
 ```
 
-```rust
-pub fun area(w: f32, h: f32) -> f32 { w * h }
-
-pub fun reset(mut x: i32, y: &mut i32) {   // x is an owned mutable local; y is a mutable borrow
-    x = 0
-    y = 0
-}
-```
-
-- Parameter passing modes are covered in §9.2.
-- There are no default parameter values and no named arguments; `_{}` covers both.
+There are no default parameter values and no named arguments; `_{}` covers both.
 
 ### 8.4 `impl` [D]
 
 ```rust
-impl User {
-    pub fun new(id: u64, name: string) -> User {      // static: no receiver
-        User { id, name, email: nil, tags: [] }
-    }
-    pub fun email(&this) -> string { this.email.or("none") }
-    pub fun rename(&mut this, name: string) { this.name = name }
-}
-
+impl User { … }                  // inherent methods (same package as User)
 impl[T] Box[T] { … }
 impl Reader for File { … }
-impl Add, Sub for Money { … }     // one body implementing several interfaces
+impl Add, Sub for Money { … }
 ```
 
-- `Self` is available inside every `inter` and `impl`.
-- If two interfaces in one `impl` declare the same method name, it is `E_AMBIGUOUS_IMPL_METHOD`.
-- **Orphan rule [?]:** `impl X for T` must be in the package that owns `X` or `T`.
+- **Orphan rule:** `impl X for T` must be in the package that owns `X` or owns `T`.
+- Inherent `impl T` must be in `T`'s package, but may be in any file of that package.
+- Duplicate method names across interfaces are `E_AMBIGUOUS_IMPL_METHOD`.
 
 ### 8.5 `inter` [D]
 
 ```rust
-pub inter Reader = {
-    fun read(&mut this, buf: &mut Vec[u8]) -> Result[int, string]
-}
-
-pub inter PartialOrd[T]: PartialEq[T] = {     // super-interface
-    fun partial_cmp(&this, other: &T) -> Option[Ordering]
-}
-
-pub inter ReadWriter = Reader & Writer        // composition, no body
-
-pub inter Default = {
-    fun default() -> Self
-}
+pub inter Reader = { fun read(&mut this, buf: &mut Vec[u8]) -> Result[int, IoError] }
+pub inter PartialOrd[T]: PartialEq[T] = { fun partial_cmp(&this, o: &T) -> Ordering? }
+pub inter ReadWriter = Reader & Writer
+pub inter Stringer = { fun to_str(&this) -> string }
 ```
 
-- Interfaces are implemented **explicitly** with `impl … for …`. This keeps type checking O(1) per lookup.
-- Interface methods are implicitly `pub`.
-- Default method bodies are [?] (§16).
-- There are no associated types; use extra generic parameters (`Add[RHS, Out]`).
+- Interfaces are implemented explicitly, either with `impl` or with `type X: Inter = {…}`.
+- Methods are implicitly `pub`.
+- Default method bodies are allowed.
+- There are no associated types; use extra generic parameters.
 
-### 8.6 `extern` and `unsafe` [D]
+### 8.6 `extern`, `unsafe`, attributes [D]
 
 ```rust
-extern "C" {
-    pub fun malloc(size: usize) -> *mut u8
-    pub fun free(ptr: *mut u8)
-}
-
-pub fun open_fd(path: string) -> Result[i32, string] {
-    let fd = unsafe { open(path.as_ptr(), 0, 0) }
-    if fd < 0 { return Err("open failed: ${fd}") }
-    Ok(fd)
-}
+extern "C" { pub fun malloc(size: usize) -> *mut u8 }
+let fd = unsafe { open(path.as_ptr(), 0, 0) }
 ```
 
-### 8.7 Attributes [D: reserved]
-
-`@name` / `@name(args)` before an item is reserved for later use (`@test`, `@inline`). The lexer emits `@`; the v0.1 parser reports `E_ATTRIBUTES_RESERVED`.
+`@attr` is reserved (`E_ATTRIBUTES_RESERVED`).
 
 ---
 
-## 9. Semantics (summary for the later passes)
-
-These rules don't affect the parser. They are recorded so that the syntax stays consistent with them.
+## 9. Semantics
 
 ### 9.1 Values, moves and copies [D]
 
-- Primitives (ints, floats, `bool`, `char`) and tuples or records made only of them implement `Copy`: assigning them copies.
-- Every other value **moves** on assignment or by-value passing. Using a moved-from binding is `E_USE_AFTER_MOVE`.
-- `string` is immutable and cheap to share; it behaves as Copy for the user (implemented as an immutable shared buffer).
-- The compiler generates `.clone()` on demand for types that don't define one.
+- Primitives, and tuples or records made only of primitives, are `Copy`. Everything else moves.
+- Using a moved-from binding is `E_USE_AFTER_MOVE`.
+- `string` is immutable and shared, so it behaves as a value: there's no `.clone()` noise.
 
 ### 9.2 Parameter modes [D]
 
 | Signature | Meaning | Call site |
 |---|---|---|
 | `x: T` | owned (moved, or copied if Copy) | `f(x)` |
-| `mut x: T` | owned, and mutable inside the callee | `f(x)` |
-| `x: &T` | shared borrow | `f(x)`: borrow is implicit |
-| `x: &mut T` | exclusive mutable borrow | `f(x)`: needs a `var` binding |
+| `mut x: T` | owned, mutable inside the callee | `f(x)` |
+| `x: &T` | shared borrow | `f(x)`: implicit |
+| `x: &mut T` | exclusive borrow | `f(x)`: needs a `var` binding |
 
-- Call sites never write `&`. The signature decides, and the LSP shows inlay hints.
-- `&mut this` methods can't be called on a `let` binding (`E_MUT_BORROW_OF_IMMUTABLE`).
+Call sites never write `&`; the LSP shows hints. `&mut this` methods need a `var` receiver.
 
-### 9.3 Borrow rules (no lifetimes) [D]
+### 9.3 Borrows and scoped values (no lifetime syntax) [D]
 
 1. Any number of shared borrows **or** exactly one mutable borrow may exist at a time.
-2. A value can't be used through its owner while a mutable borrow of it is live.
-3. **Borrows are scoped to the call** (or closure) that receives them. A borrow cannot be stored in a struct, a collection or a global.
-4. A function may **return** a borrow only when it derives from the receiver or a borrowed parameter (elision-like, as in `Index.index(&this) -> &T`). The returned borrow lives until the end of the caller's statement, or of its enclosing block when bound with `let`.
-5. Explicit `&x` / `&mut x` expressions appear only in capture lists, in returning a sub-borrow (`&this.value`), and in raw-pointer code.
+2. A **scoped value** is any value that contains a borrow: `&T`, `&str`, `Slice[T]`, `Vec[&str]`, `Iterator[&T]`, or a closure with borrow captures.
+3. Scoped values can be local variables, passed down to calls, and used in expressions. They **cannot** be:
+   - stored in struct, union or record **fields** (field types may not contain borrows: `E_BORROW_IN_FIELD`),
+   - stored in globals or `Ref`,
+   - captured by value into escaping closures,
+   - held across an un-awaited async call (§9.6).
+4. A function may **return** a scoped value only when it derives from its receiver or borrowed parameters. The caller treats the result as borrowing from every borrowed argument (conservative, no annotations).
+5. Each scoped value's set of owners is inferred inside the function body. Using an owner mutably while a scoped value derived from it is still live is an error.
+6. To keep a value beyond its owner's scope, convert it to an owned one: `.to_str()`, `.to_vec()`, `.clone()`.
 
-### 9.4 Closure captures and escaping [N]
+```rust
+let line = raw.trim()                 // &str borrowing `raw`
+let parts = line.split(",")           // Vec[&str], scoped
+let user = User { name: parts[0].to_str(), … }   // owned copy in a field
+// or rely on the implicit &str → string copy (§7.2)
+```
+
+### 9.4 Closure captures and escaping [D]
 
 | Capture | Written | Effect |
 |---|---|---|
-| implicit | free variable used inside `#{}` with no capture list | **shared borrow**, read-only |
-| by value | `#[x]` | `x` is moved, or copied if Copy, into the closure |
-| borrow | `#[&x]` | shared borrow (same as implicit, but explicit) |
+| implicit read | a free variable used without being listed | shared borrow (read-only) |
+| by value | `#[x]` | moved, or copied if Copy |
 | mutable borrow | `#[&mut x]` | exclusive borrow; `x` must be `var` |
+| explicit read | `#[&x]` | same as implicit (allowed, lint: redundant) |
 
-- Without a capture list, a closure may **read** any visible local or global. Writing to a captured local requires `#[&mut x]`.
-- Once a capture list is present, it is complete: using a local that isn't listed is `E_UNLISTED_CAPTURE`. Globals are always readable.
-- **A closure is non-escaping when it holds any borrow** (implicit or explicit). Per §9.3 rule 3, such a closure can only be passed to a borrowed function parameter (`f: &(T) -> U`), or called locally inside the scope where it was created.
-- **An escaping closure** has only by-value captures. It can be returned, stored, sent to another task, or passed to an owned function parameter (`f: (T) -> U`).
-- Passing a borrowing closure where an owned function type is expected is `E_CLOSURE_ESCAPES_BORROW`, with a fix-it to convert the captures to `#[x]`.
-- Capturing a `Ref[T]` by value clones the handle (increments the reference count).
+- **The capture list isn't exhaustive.** You list only what differs from the default (by-value captures and `&mut`); every other free local is borrowed read-only automatically.
+- **A closure that holds any borrow is scoped** (§9.3). It may be called locally or passed to a `&(T) -> U` parameter.
+- **An escaping closure** (returned, stored, sent to a task, or passed to `(T) -> U`) must hold only by-value captures. Otherwise it's `E_CLOSURE_ESCAPES_BORROW`, with a fix-it that adds `#[x]` for each implicitly borrowed local.
+- Capturing a `Ref[T]` by value clones the handle.
 
 ```rust
-fun apply(n: i32, f: &(i32) -> i32) -> i32 { f(n) }        // non-escaping parameter
-fun make_adder(n: i32) -> (i32) -> i32 { #[n]{ it + n } }   // escaping: by-value capture
+fun apply(n: i32, f: &(i32) -> i32) -> i32 { f(n) }        // non-escaping
+fun make_adder(n: i32) -> (i32) -> i32 { #[n]{ it + n } }   // escaping
 
 limit := 50
-high := nums.filter(#{ it > limit })        // implicit borrow of `limit`: fine
-
+high := nums.filter(#{ it > limit })        // implicit borrow
 var total = 0
 nums.for_each(#[&mut total]{ total += it })
-
-let adder = make_adder(10)
-log.println(adder(5))                         // 15
 ```
 
-### 9.5 Numeric conversions [D + ?]
+### 9.5 Numbers [D]
 
-- Implicit **lossless widening** is allowed: `i8→i16→i32→i64`, `u8→u16→u32→u64`, `uN → i(2N)`, `i32/u32→f64`, `f32→f64`.
-- Everything else needs `as` (truncating or saturating cast) or a `.to_*()` method that returns `Option` / `Result` (checked conversion).
-- Overflow panics in debug builds and wraps in release builds [?].
+- Implicit **lossless widening** is allowed: `i8→i16→i32→i64`, `uN→uM` (M > N), `uN→i(2N)`, `i32/u32→f64`, `f32→f64`. `int` widens to `i64` and narrows from nothing.
+- Every other conversion is explicit:
+  - `as` for truncating / saturating casts;
+  - `.to_int()`, `.to_u8()` … for checked conversions, returning `Result`.
+- **Overflow always panics**, in every build. Explicit alternatives: `.wrapping_add()`, `.saturating_add()`, `.checked_add() -> T?`. There is one behaviour for debug and release.
 
 ### 9.6 Async and concurrency [D]
 
-- `async fun f() -> T` makes the call `f()` return `Promise[T]`. The call **immediately schedules** the task on the work-stealing runtime; there is no `spawn` keyword and no function colouring at call sites.
-- `await p` suspends until `p` resolves. `main` may `await` whether or not it is declared `async`.
-- `Promise[T]` methods: `.then(#{…})`, `.catch(#{…})`, `.ignore()` (fire and forget; errors and panics are logged, not propagated), and the static `Promise.all(Vec[Promise[T]]) -> Promise[Vec[T]]`.
+- Calling `async fun f() -> T` **schedules the task immediately** on the work-stealing runtime and returns `Promise[T]`. There's no `spawn`, and call sites aren't coloured.
+- `await p` suspends until `p` resolves. `main` may `await` without being declared `async`.
+- `Promise` API: `.then(#{…})`, `.catch(#{…})`, `.ignore()` (fire and forget; errors and panics are logged), and `Promise.all(Vec[Promise[T]]) -> Promise[Vec[T]]`.
 - `runtime.yield()` hands control back to the scheduler cooperatively.
-- **Borrows and await [N]:** an async call with borrowed arguments (including a `&this` / `&mut this` receiver) must be **awaited in the same expression**: `await client.receive()`. Storing the `Promise` of such a call is `E_BORROW_ACROSS_SPAWN`. Pass owned values or `Ref` handles instead.
-- Thread safety comes from these rules plus `Ref`; there are no `Send`/`Sync` marker interfaces.
+- **Borrows and await:** an async call with borrowed arguments or a borrowed receiver must be awaited in the same expression (`await client.receive()`). Storing such a Promise is `E_BORROW_ACROSS_SPAWN`; pass owned values or `Ref` handles instead.
+- Thread safety comes from these rules plus `Ref`; there are no `Send`/`Sync` markers.
 
-### 9.7 Interfaces and dispatch [D]
+### 9.7 Interfaces: static and dynamic dispatch [D]
 
-- Static dispatch only (monomorphization) in v0.1.
-- There are no interface-typed values (`Vec[Stringer]`) and no `any`.
-- Variadic std functions such as `log.println(...args: T)` with `T: Stringer` are compiler intrinsics.
+```rust
+fun show_static[T: Stringer](x: &T) { … }   // monomorphized: zero cost
+fun show_dyn(x: &Stringer) { … }            // dynamic: fat pointer (data + vtable)
+
+let shapes: Vec[Shape] = [Circle { r: 1.0 }, Square { s: 2.0 }]   // owned interface values
+```
+
+**Dynamic values:**
+- `&Inter` and `&mut Inter` are borrowed and never allocate.
+- An owned `Inter` value (in a field, a Vec, or a return) is **boxed implicitly**.
+- **Dyn safety** is checked at the use site: a method with its own generic parameters, or one that returns `Self` by value, can't be called through a dynamic value (`E_NOT_DYN_SAFE`).
+- `std` uses the dynamic form, with no compiler intrinsics:
+
+```rust
+// std.log
+pub fun println(...args: &Stringer) { … }   // args: Slice[&Stringer], no allocation
+```
+
+**Auto-generated implementations (on demand):** the compiler generates these for any type whose fields all support them, unless the user writes their own:
+
+| Interface | Generated as |
+|---|---|
+| `Stringer.to_str()` | `User { id: 1, name: "Ted" }`, showing only fields visible at the call site's package |
+| `Clone.clone()` | field-wise |
+| `PartialEq.eq()` | field-wise |
+| `Hash.hash()` | field-wise |
+
+Generation only happens when the implementation is used, so unused code is never emitted.
 
 ### 9.8 Errors and panics [D]
 
-- Recoverable errors use `Result[T, E]` / `Option[T]`, propagated with `?` and `or`.
-- `panic(msg)` and `assert(cond, msg)` are unrecoverable at the call site.
-- `recover { … }` evaluates to `Result[T, PanicInfo]`: `Ok(block value)` normally, or `Err(info)` with message, file, line and package if the block panics.
-- There is no `defer`. Resources are released by the compiler-inserted `Drop.drop(mut this)` at scope exit.
+- **Expected failures** use `Result` / `Option`, with `?`, `or`, `??` and truthiness.
+- **Panics** come from `panic(msg)`, `assert(cond, msg)`, overflow, out-of-bounds indexing and failed unwraps.
 
-### 9.9 Heap and shared-state types [D]
+A panic **unwinds to the nearest enclosing `recover` block**, the same way in every build:
+
+```rust
+let res = recover {                // Result[T, Panic]
+    let items = [1, 3, 5]
+    process(items, 10)             // panics deep inside: no Result drilling needed
+}
+let Err(p) = res else { … }
+log.println(p.message, p.file, p.line, p.trace)   // origin of the panic is preserved
+```
+
+- While unwinding, `Drop` runs for every owned value in the frames being unwound.
+- **Poisoning:** a `var` that was mutably borrowed into a `recover` block that then panicked may be left half-updated, so it is marked **poisoned**.
+  - Reading a poisoned value before re-assigning it is a compile error (`E_USE_OF_POISONED`) on every path where the panic branch is taken.
+  - Assigning a fresh value clears the poison.
+  - For a `Ref[T]` written by a panicking `update`, the poison is checked at runtime (the next access panics) until `.reset(v)` is called.
+- A panic in an async task unwinds to the task boundary. The Promise is then **rejected**: `await` re-panics in the awaiting task, and `.catch(#{…})` handles it.
+- A panic with no enclosing `recover` (in `main`, or in an `.ignore()`d task) prints the message and trace. The process then exits (`main`), or the task is dropped (`.ignore()`).
+- There is no `defer`; cleanup uses `Drop.drop(mut this)` at scope exit.
+- Use `Result` for errors a caller should handle, and panic + `recover` for "this request or job failed" boundaries (an HTTP handler, a CLI command, a task).
+
+### 9.9 Heap and shared state [D]
 
 | Type | Meaning | Key methods |
 |---|---|---|
-| `Box[T]` | unique heap allocation (recursive types) | `get()`, `set(v)` |
-| `Ref[T]` | atomically ref-counted + RwLock (many readers / one writer) | `get() -> T` (clone), `read(#{…})`, `update(#{ v => … })` (v: `&mut T`), `clone()`, `weak()` |
-| `Weak[T]` | non-owning `Ref`, to break cycles | `upgrade() -> Ref[T]?` |
-
-```rust
-let cfg = Ref(Config { host: "127.0.0.1", port: 8080 })
-let worker_cfg = cfg                       // shares the handle (refcount 2)
-cfg.update(#{ c => c.port = 9090 })
-log.println(worker_cfg.get().port)         // 9090
-```
+| `Box[T]` | unique heap allocation | `get()`, `set(v)` |
+| `Ref[T]` | atomically ref-counted with an RwLock (many readers or one writer) | `get() -> T` (clone), `read(#{…})`, `update(#{ v => … })` (v: `&mut T`), `clone()`, `weak()` |
+| `Weak[T]` | non-owning handle | `upgrade() -> Ref[T]?` |
 
 ### 9.10 Introspection [D]
 
-- `T._get_info()` and `value._get_info()` are compile-time intrinsics that return `TypeInfo { name, kind, fields }`. Only fields visible at the call site are included, so private fields stay hidden from other packages.
-- Methods whose names start with `_` are reserved for intrinsics.
-- `std.json` builds its serializers on `_get_info()`, so no struct tags are needed. `impl Serializer for T` overrides that.
+- `T._get_info()` and `value._get_info()` are compile-time intrinsics that return `TypeInfo { name, kind, fields }`, respecting call-site visibility.
+- Names starting with `_` are reserved for intrinsics.
+- `std.json` derives serialization from them; `impl Serializer for T` overrides it.
 
 ---
 
-## 10. Prelude and std surface (sketch)
+## 10. Prelude and std surface
 
-This section only fixes the names; the full std API is a separate document.
+### 10.1 Prelude
 
-### 10.1 Prelude (available without imports)
+- **Types:** `Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Ref`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`.
+- **Functions:** `assert`, `panic`.
+- **`log`**: `log.println`, `log.print`, `log.warn`, `log.error`.
+- **The core interfaces** in §10.2.
 
-`Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Ref`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`, `assert`, `panic`, and the core interfaces below. Whether `log`/`println` are in the prelude is [?].
+Bare `println` / `print` are **not** in the prelude: `import "std.io.{print, println}"`.
 
-`Option`/`Result` helpers: `.or(v | #{…})`, `.is_some()`, `.is_none()`, `.is_ok()`, `.is_err()`, `.map(#{…})`, `.ok()`, `.err()`.
+`Option` / `Result` helpers: `.or(v | #{…})`, `.is_some()`, `.is_none()`, `.is_ok()`, `.is_err()`, `.map(#{…})`, `.ok()`, `.err()`, `.unwrap()` (panics).
 
 ### 10.2 Core interfaces
 
@@ -949,14 +893,14 @@ inter Copy = {}
 inter Clone = { fun clone(&this) -> Self }
 inter Drop = { fun drop(mut this) }
 inter Default = { fun default() -> Self }
-inter Stringer = { fun to_string(&this) -> string }
-inter PartialEq[T] = { fun eq(&this, other: &T) -> bool }        // == !=
-inter PartialOrd[T]: PartialEq[T] = { fun partial_cmp(&this, other: &T) -> Ordering? } // < <= > >=
-inter Hash = { fun hash(&this) -> u64 }                           // Map keys, Set items
-inter Add[R, O] = { fun add(&this, rhs: R) -> O }                 // also Sub Mul Div Rem
-inter AddAssign[R] = { fun add_assign(&mut this, rhs: R) }        // also Sub/Mul/Div/Rem-Assign
-inter Index[I, T] = { fun index(&this, i: I) -> &T }              // x[i]
-inter IndexMut[I, T] = { fun index_mut(&mut this, i: I) -> &mut T }   // x[i] = v, x[i] += v
+inter Stringer = { fun to_str(&this) -> string }
+inter PartialEq[T] = { fun eq(&this, o: &T) -> bool }
+inter PartialOrd[T]: PartialEq[T] = { fun partial_cmp(&this, o: &T) -> Ordering? }
+inter Hash = { fun hash(&this) -> u64 }
+inter Add[R, O] = { fun add(&this, rhs: R) -> O }            // + Sub Mul Div Rem
+inter AddAssign[R] = { fun add_assign(&mut this, rhs: R) }   // + Sub/Mul/Div/RemAssign
+inter Index[I, T] = { fun index(&this, i: I) -> &T }
+inter IndexMut[I, T] = { fun index_mut(&mut this, i: I) -> &mut T }
 inter Iterator[T] = { fun next(&mut this) -> T? }
 inter Iterable[T] = {
     fun iter(&this) -> Iterator[&T]
@@ -965,43 +909,76 @@ inter Iterable[T] = {
 }
 ```
 
-- `for x in c` calls `c.iter()` (yielding `&T`).
-- `for x in c.iter_mut()` and `for x in c.into_iter()` are explicit.
-- Pipelines (`.map`, `.filter`, …) on a collection call `.iter()` implicitly.
+`for x in c` uses `c.iter()`. Pipelines (`.map`, `.filter`, …) call `.iter()` implicitly.
 
-### 10.3 Naming conventions for std [D]
+### 10.3 std conventions [D]
 
-- `len()` (not `size`/`length`), `has()` (membership or substring), `get()` → `Option`.
-- `at(i)` allows negative indexing. `x[i]` panics when out of bounds.
-- `strip_suffix()` returns `Option`. `substring()` is for strings and `slice()` for Vecs.
+**Naming:**
+- `to_str()` converts anything to an owned `string`.
+- `len()`, `has()`, `get() -> T?`.
+- `at(i)` allows negative indices. `x[i]` panics when out of bounds.
+
+**String processing returns views and doesn't fail:**
+
+```rust
+impl string {   // (shown on string; implemented once on &str)
+    fun trim(&this) -> &str
+    fun substring(&this, start: int, end: int) -> &str
+    fun strip_prefix(&this, p: &str) -> &str          // returns self unchanged if absent
+    fun strip_suffix(&this, s: &str) -> &str
+    fun try_strip_prefix(&this, p: &str) -> &str?     // None if absent
+    fun try_strip_suffix(&this, s: &str) -> &str?
+    fun split(&this, sep: &str) -> Vec[&str]
+    fun to_lower(&this) -> string                     // new owned string
+    fun to_str(&this) -> string                       // owned copy
+}
+```
+
+So `path.strip_suffix(".enc")` needs no `.or(path)`.
+
+**Fallible parsing returns `Result`:**
+- `json.parse.[T](s) -> Result[T, json.Error]`
+- `"42".to_int() -> Result[int, ParseError]`
 
 ---
 
-## 11. Diagnostics (parser and resolver set)
+## 11. Diagnostics
 
 | Code | Meaning |
 |---|---|
 | `E_UNMATCHED_DELIMITER` | missing or mismatched closer |
-| `E_SIGIL_SHADOWS_BINDING` | `a[`, `t(` etc. used where a binding with that name is visible |
-| `E_ANGLE_GENERICS` | `Vec<T>` or `f<T>(x)`: fix-it `Vec[T]` / `f.[T](x)` |
-| `E_ARROW_CLOSURE` | `(a) => …` or `fun(x) {}`: fix-it `#{ a => … }` |
-| `E_CAPTURE_NOT_GLUED` | `#[x] {`: `{` must touch `]` |
-| `E_IT_IN_NAMED_CLOSURE` | `it` used in a closure that has named params |
-| `E_NON_ASSOCIATIVE_OPERATOR` | `a < b < c`, `1..2..3` |
+| `E_SIGIL_SHADOWS_BINDING` | sigil letter used while a binding of that name is visible |
+| `E_ANGLE_GENERICS` | `Vec<T>` / `f<T>(x)`: fix-it `Vec[T]` / `f.[T](x)` |
+| `E_ARROW_CLOSURE` | `(a) => …`, `fun(x) {}`: fix-it `#{ a => … }` |
+| `E_CAPTURE_NOT_GLUED` | `#[x] {` |
+| `E_IT_IN_NAMED_CLOSURE` | `it` used with named params |
+| `E_NON_ASSOCIATIVE_OPERATOR` | `a < b < c` |
+| `E_MIXED_NULLISH` | `a ?? b \|\| c` without parentheses |
+| `E_USE_NULLISH` | `\|\|` used as a value fallback: fix-it `??` |
+| `E_NOT_TRUTHY` | condition of a type other than bool/Option/Result |
 | `E_INVALID_ASSIGNMENT_TARGET` | assignment to a non-place |
 | `E_INVALID_PATTERN` | malformed pattern |
-| `E_BARE_TUPLE` | `(a, b)` used as a tuple: fix-it `t(a, b)` |
-| `E_BARE_BRACE_LITERAL` | `{ k: v }` where a literal was intended: fix-it `_{…}` / `r{…}` / `m{…}` |
-| `E_STRUCT_LITERAL_IN_HEADER` | `if x == P { … }` with struct literal `P {…}` |
-| `E_RESERVED_OPERATOR` | `++`, `--`, `??`, `~` |
-| `E_ATTRIBUTES_RESERVED` | `@attr` before an item |
+| `E_BARE_TUPLE` | `(a, b)`: fix-it `t(a, b)` |
+| `E_BARE_BRACE_LITERAL` | `{ k: v }`: fix-it `_{}` / `r{}` / `m{}` |
+| `E_TAGGED_RECORD_REMOVED` | `'1{…}`: fix-it `r{…}` |
+| `E_STRUCT_LITERAL_IN_HEADER` | `if x == P { … }` |
+| `E_RESERVED_OPERATOR` | `++`, `--`, `~` |
+| `E_ATTRIBUTES_RESERVED` | `@attr` |
 | `E_GLOBAL_VAR` | top-level `var` |
+| `E_DUPLICATE_METHOD` | same method inline and in `impl` |
+| `E_METHODS_ON_STRUCTURAL` | methods on a record alias |
+| `E_AMBIGUOUS_IMPORT` | a name exported by two glob imports, then used |
 | `E_CANNOT_INFER_STRUCT_TYPE` | `_{}` with no expected type |
-| `E_CANNOT_INFER_GENERIC` | generic argument not inferable: fix-it `.[T]` |
+| `E_CANNOT_INFER_GENERIC` | fix-it `.[T]` |
 | `E_INVALID_BLOCK_VALUE` | block value doesn't match the expected type |
-| `E_CLOSURE_ESCAPES_BORROW` | borrowing closure used where an escaping one is required |
-| `E_UNLISTED_CAPTURE` | local used but missing from the explicit capture list |
+| `E_BORROW_IN_FIELD` | borrow type in a field declaration |
+| `E_CLOSURE_ESCAPES_BORROW` | borrowing closure used as an escaping one |
 | `E_BORROW_ACROSS_SPAWN` | un-awaited async call holding borrows |
+| `E_NOT_DYN_SAFE` | generic / `Self`-returning method called on a dynamic value |
+| `E_ORPHAN_IMPL` | `impl X for T` where neither `X` nor `T` is local |
+| `E_MISSING_FIELD` | struct literal omits a field that has no default and isn't optional |
+| `E_USE_OF_POISONED` | value read after a caught panic, before re-assignment |
+| `E_SCRIPT_IN_EVAL` | a `task` script called while `mod.ms` is being evaluated |
 
 ---
 
@@ -1010,13 +987,14 @@ inter Iterable[T] = {
 ```text
 file          = package_decl { import } { item } ;
 package_decl  = "package" ident { "." ident } ;
-import        = "import" [ "pub" ] STRING [ "as" ident ] ;
+import        = "import" [ "pub" ] STRING [ "as" ident ] ;   (* STRING: path[.item | .{a,b} | .*] *)
 
-item          = { attr } [ "pub" ] ( fun_decl | type_decl | union_decl | inter_decl
-                                   | impl_decl | let_decl | extern_decl ) ;
+item          = [ "pub" ] ( fun_decl | type_decl | union_decl | inter_decl
+                          | impl_decl | let_decl | extern_decl ) ;
 generic_params= "[" generic_param { "," generic_param } [","] "]" ;
 generic_param = ident [ ":" bound ] ;
 bound         = type_path { "&" type_path } ;
+impl_list     = ":" type_path { "," type_path } ;
 
 fun_decl      = [ "async" ] "fun" ident [ generic_params ]
                 "(" [ receiver [ "," ] ] [ params ] ")" [ "->" type ] block ;
@@ -1024,20 +1002,21 @@ receiver      = [ "&" [ "mut" ] | "mut" ] "this" ;
 params        = param { "," param } [ "," ] ;
 param         = [ "mut" ] ident ":" type | "..." ident ":" type ;
 
-type_decl     = "type" ident [ generic_params ] "=" ( struct_body | type ) ;
-struct_body   = "{" { field sep } "}" ;
-field         = [ "pub" ] ident ":" type ;
-union_decl    = "union" ident [ generic_params ] "=" "{" { variant sep } "}" ;
-variant       = ident [ "(" type { "," type } ")" | struct_body ] ;
+type_decl     = "type" ident [ generic_params ] [ impl_list ] "=" ( struct_body | type ) ;
+struct_body   = "{" { ( field | method ) sep } "}" ;
+field         = [ "pub" ] ident ":" type [ "=" expr ] ;
+method        = [ "pub" ] fun_decl ;
+union_decl    = "union" ident [ generic_params ] [ impl_list ] "=" "{" { ( variant | method ) sep } "}" ;
+variant       = ident [ "(" type { "," type } ")" | "{" { field sep } "}" ] ;
 inter_decl    = "inter" ident [ generic_params ] [ ":" bound ] "=" ( inter_body | bound ) ;
 inter_body    = "{" { fun_sig sep } "}" ;
 fun_sig       = [ "async" ] "fun" ident [ generic_params ] "(" [ receiver [","] ] [ params ] ")" [ "->" type ] [ block ] ;
-impl_decl     = "impl" [ generic_params ] [ type_path { "," type_path } "for" ] type "{" { item } "}" ;
+impl_decl     = "impl" [ generic_params ] [ type_path { "," type_path } "for" ] type "{" { method } "}" ;
 let_decl      = "let" ident [ ":" type ] "=" expr ;
 extern_decl   = "extern" STRING "{" { [ "pub" ] fun_sig sep } "}" ;
 
 block         = "{" { stmt } "}" ;
-stmt          = let_stmt | var_stmt | short_decl | for_stmt | item_in_block | expr [ ";" ] ;
+stmt          = let_stmt | var_stmt | short_decl | for_stmt | expr [ ";" ] ;
 let_stmt      = "let" pattern [ ":" type ] "=" expr [ "else" block ] ;
 var_stmt      = "var" ident [ ":" type ] "=" expr ;
 short_decl    = ident ( ":=" | ":==" ) expr ;
@@ -1046,23 +1025,22 @@ for_stmt      = [ ident ":" ] "for" ( block
                                     | pattern [ "," pattern ] "in" expr block
                                     | expr block ) ;
 
-expr          = pratt( prefix, infix, postfix )         (* precedence table §3 *)
+expr          = pratt( prefix, infix, postfix ) ;      (* precedence §3 *)
 primary       = literal | ident | "this" | "Self" | "(" expr ")"
               | vec_lit | array_lit | tuple_lit | record_lit | map_lit | set_lit
-              | inferred_lit | tagged_lit | struct_lit | closure
-              | if_expr | match_expr | unsafe_block | recover_block | block
+              | inferred_lit | struct_lit | closure
+              | if_expr | match_expr | "unsafe" block | "recover" block | block
               | "return" [ expr ] | "break" [ ident ] [ expr ] | "continue" [ ident ] ;
 postfix       = "." ( ident | INT ) | "?." ident | ".[" type_args "]"
               | "(" [ args ] ")" | "[" expr "]" | "?" ;
-closure       = [ "#[" [ capture { "," capture } ] "]{" | "#{" ]   (* "]{" glued *)
-                [ closure_head "=>" ] { stmt } "}" ;
+closure       = ( "#{" | "#[" [ capture { "," capture } ] "]{" ) [ closure_head "=>" ] { stmt } "}" ;
 capture       = [ "&" [ "mut" ] ] ident ;
 closure_head  = cparam { "," cparam } [ "->" type ] ;
 cparam        = [ "mut" ] ident [ ":" type ] ;
 if_expr       = "if" ( expr | "let" pattern "=" expr ) block [ "else" ( if_expr | block ) ] ;
 match_expr    = "match" [ expr ] "{" { arm sep } "}" ;
-arm           = ( pattern [ "if" expr ] | expr ) "=>" ( expr | block ) ;   (* expr arm only in subject-less match *)
-or_expr       = expr "or" [ ident "=>" ] ( expr | block ) ;
+arm           = ( pattern [ "if" expr ] | expr ) "=>" ( expr | block ) ;
+or_tail       = "or" [ ident "=>" ] ( expr | block ) ;
 
 sep           = "," | NEWLINE ;
 ```
@@ -1071,124 +1049,276 @@ sep           = "," | NEWLINE ;
 
 ## 13. Parser test corpus (minimum set)
 
-Each case checks the token stream, the AST shape, the spans and the expected diagnostics.
-
 ```rust
-t.0.1                    // tuple index chain
-1..10   1..=10   ..5     // ranges
-1.to_string()            // int then member
-a[0]    a [0]            // array literal vs index
-t(1)    t (1)            // tuple vs call
-fun t[T]() {}            // no-glue after `fun`
-x.a[0]                   // no-glue after `.`
-Vec[Map[string, Vec[User?]]]   // nested type args
-json.parse.[User](s)     // explicit generics
-Vec.[u8].new()           // generic type then static member
-Box.[i32]{ value: 1 }    // generic struct literal
-a<b   a < b   a>>b       // always comparison/shift
-'1{ id: 1 }   '1'        // tag vs char
-r{ a: 1 }   r"raw\n"     // record vs raw string
+t.0.1    1..10   1..=10   ..5    1.to_str()
+a[0]     a [0]   t(1)    t (1)   [1, 2]   x[0]
+fun t[T]() {}    x.a[0]
+Vec[Map[string, Vec[User?]]]
+json.parse.[User](s)   Vec.[u8].new()   Box.[i32]{ value: 1 }
+a<b   a < b   a>>b
+'1{ id: 1 }              // E_TAGGED_RECORD_REMOVED
+r{ a: 1 }   r"raw\n"
 x.or(1)   x or 1   x or e => Err(e)
+a ?? b ?? c   a?.b ?? "x"   a ?? b || c   // last: E_MIXED_NULLISH
+x ??= 5
 await f()?   await f()?.name   (await f()).trim()
 user?.name   (user?).name
-#{ it * 2 }   #{ it1 + it2 }
-#{ x, y => x + y }   #{ x: i32 -> i32 => x * 2 }
-#{ f() or e => log(e) }  // no header: `or` stops the scan
-#[n]{ it + n }   #[&cfg]{ cfg.port }   #[&mut total]{ total += it }
-#[x] { }                 // E_CAPTURE_NOT_GLUED
-(a) => a                 // E_ARROW_CLOSURE
-Vec<int>                 // E_ANGLE_GENERICS
+if res { }   if !opt && flag { }
+#{ it * 2 }   #{ it1 + it2 }   #{ x, y => x + y }   #{ x: i32 -> i32 => x * 2 }
+#{ f() or e => log(e) }        // no header
+#[n]{ it + n }   #[&mut total]{ total += it }   #[x] { }   // last: E_CAPTURE_NOT_GLUED
+(a) => a                       // E_ARROW_CLOSURE
+Vec<int>                       // E_ANGLE_GENERICS
+type User: Stringer = { id: u64  fun to_str(&this) -> string { "u" } }
+union P = { Cash  Card { n: string }  fun is_cash(&this) -> bool { true } }
+import "std.io.*"   import "std.io.{print, println}"
 for { }   for i < 3 { }   for x in xs { }   for k, v in m { }   for let Some(x) = it.next() { }
 outer: for x in xs { break outer }
-match { a > 1 => 1, _ => 0 }
-match n { x if x > 5 => x, _ => 0 }
-let t(w, h) = dims()
-let Ok(v) = r else { return }
-if x == P { }            // P not parsed as a struct literal
-let s = """
-    multi ${name}
-    """
+match { a > 1 => 1, _ => 0 }   match n { x if x > 5 => x, _ => 0 }
+let t(w, h) = dims()   let Ok(v) = r else { return }
+if x == P { }
+let r = recover { risky() }
 foo
-(bar)                    // two statements (R3)
+(bar)                          // two statements
 user
-    .profile             // one chained expression
+    .profile                   // one chain
 ```
 
 Target: ≥ 60 tests before starting the type checker.
 
 ---
 
-## 14. Deferred (not in v0.1)
+## 14. Back ends (goals)
 
-1. Dynamic dispatch / interface-typed values, and `any`.
-2. Associated types; `where` clauses; const generic params beyond `Array[T, N]`.
-3. Default parameter values, named arguments, and destructuring parameters.
-4. Range indexing (`v[1..3] → Slice[T]`).
-5. Expression-bodied functions (`fun f(x: int) -> int => x * 2`).
-6. Init-captures (`#[cfg = cfg.clone()]{…}`).
-7. Attributes (`@test`, `@inline`) and user macros.
-8. Unicode identifiers.
-9. Custom operators.
-10. Trailing-closure syntax.
-11. Positional struct construction (`Config("0.0.0.0", 3000)`).
-12. Record mutation helpers (`.patch()`, `.set(key, v)`).
-13. Signals / channels (pub-sub, MPSC).
-14. Tooling: linter, test runner, LSP, doc generator, debugger.
+- **JS:** first target, and the fastest feedback loop. It enables hot reload during development (including the planned Android UI framework), and serves as the interpreter for `mod.ms` (§17).
+- **WASM, C (tiny-c), LLVM:** native targets sharing the same HIR.
+- Panics lower to exceptions on JS, and to unwinding (landing pads / tables) on native targets.
 
 ---
 
-## 15. Rewrites for existing docs and samples
+## 15. Deferred (not in v0.2)
+
+1. `any` and downcasting (`x.as_type.[User]()`).
+2. Associated types, `where` clauses, const generic params beyond `Array[T, N]`.
+3. Default params, named args, destructuring params.
+4. Range indexing (`v[1..3] → Slice[T]`).
+5. Expression-bodied functions.
+6. Init-captures (`#[cfg = cfg.clone()]{…}`).
+7. Attributes, macros, custom operators, trailing closures.
+8. Unicode identifiers.
+9. Width subtyping for records.
+10. Positional struct construction.
+11. Extension methods on foreign types.
+12. Signals / channels.
+
+---
+
+## 16. Rewrites for existing docs and samples
 
 | Old | New |
 |---|---|
-| `(n) => n * 2`, `(a, b) => { … }` | `#{ it * 2 }`, `#{ a, b => … }` |
-| `fun(file_path) { … }` | `#{ file_path => … }` |
+| `(n) => n * 2`, `fun(x) { … }` | `#{ it * 2 }`, `#{ x => … }` |
 | `#[growable]{x => growable.push(x)}` | `#[&mut growable]{ x => growable.push(x) }` |
-| `#[items, scale](x) => …` | `#[&mut items, scale]{ x => … }` |
-| `(a: i32, b: i32) -> i32 { … }` | `#{ a: i32, b: i32 -> i32 => … }` |
 | `Vec<T>`, `fun f<T>`, `impl<T> X<T>` | `Vec[T]`, `fun f[T]`, `impl[T] X[T]` |
-| `json.parse<T>(s)`, `parse::<T>(s)`, `json.parse[T](s)` | `json.parse.[T](s)` |
-| `List.new<u8>()` | `Vec.new.[u8]()` |
+| `json.parse<T>(s)`, `parse::<T>(s)` | `json.parse.[T](s)`, which returns `Result` |
 | `type R = \| Ok(T) \| Err(E)` | `union R = { Ok(T)  Err(E) }` |
-| `union R[T,E] = { … info: string[T] }` | the field type `string[T]` is invalid (`string` isn't generic) |
-| `while cond { }`, `loop { }`, `while true` | `for cond { }`, `for { }` |
-| `while let Some(x) = …` | `for let Some(x) = … { }` |
+| `type User = {…}` + `impl User {…}` | either (inline methods preferred for simple types) |
+| `'1{ … }` | `r{ … }` |
+| `while c {}`, `loop {}`, `while let` | `for c {}`, `for {}`, `for let` |
 | `match age { age > 18 => … }` | `match { age > 18 => … }` |
 | `` r`C:\x` `` | `r"C:\x"` |
-| `v[1, 2]` | `[1, 2]` [?] |
-| `let (w, h) = …`, `-> (int, int)` | `let t(w, h) = …`, `-> t(int, int)` |
-| `{ host, port }`, `User.new2({…})` | `_{ host, port }`, `User.new2(_{…})` |
-| `let m = { "a": 1 }` | `m{ "a": 1 }` |
-| `int32`, `int64`, `List<T>` | `i32`, `i64`, `Vec[T]` |
-| `mut self`, `self` | `mut this`, `this` |
-| `inter<Self> Default` | `inter Default` (`Self` is implicit) |
-| `fun f(): T`, `inline fun` | `fun f() -> T`, `@inline` (deferred) |
-| `res: = recover{}` | `res := recover { }` |
-| `Type(conf)`, `KeyOf(TypeOf(m))` | `TypeOf(conf)`, `KeyOf[TypeOf(m)]` |
-| `and`, `not`, `none`, `some()` | `&&`, `!`, `None`/`nil`, `Some()` |
-| `namespace std.sys { }` | `package std.sys` |
-| `Result<nil, string>` | `Result[void, string]` |
-| `local_no = 20` (new var) | `local_no := 20` |
+| `v[1, 2]` | `[1, 2]` |
+| `x.to_string()` | `x.to_str()` |
+| `path.strip_suffix(".enc").or(path)` | `path.strip_suffix(".enc")` |
+| `raw.or("x")`, `if res.is_ok()` | `raw ?? "x"`, `if res` |
+| `let (w, h)`, `-> (int, int)` | `let t(w, h)`, `-> t(int, int)` |
+| `{ host, port }` | `_{ host, port }` |
+| `int32`, `List<T>`, `mut self` | `i32`, `Vec[T]`, `mut this` |
+| `println(…)` (no import) | `log.println(…)`, or `import "std.io.println"` |
+| `and`, `not`, `none` | `&&`, `!`, `None`/`nil` |
+| `ms.json` | `mod.ms` |
 
 ---
 
-## 16. Open questions (each has a working default)
+## 17. Project file: `mod.ms` [D]
 
-| # | Question | Default used in this draft |
+A project has **one** configuration file at its root, `mod.ms`. It replaces `ms.json`, and holds:
+- the project metadata;
+- dependencies;
+- scripts (`ms run dev`);
+- every tool's settings (build, fmt, lint, test, LSP, bundler, and third-party tools).
+
+This keeps the project root free of per-tool config files. There is also one generated, machine-owned `mod.lock`. `ms config` prints the resolved `Config` as JSON.
+
+### 17.1 Shape
+
+```rust
+package mod
+
+import "build.*"                    // toolchain API: Config, Script, sh, task, pkg, target, Os …
+import "ms.fmt"                     // first-party tools (version comes with the toolchain)
+import "ms.test"
+import "acme.lint@^1.2"             // third-party tool: version pinned in the import
+
+pub fun config() -> Config {
+    var c = Config {
+        name: "sample1"
+        version: "1.0.1"
+        main: "./src"                                   // optional (§17.6)
+
+        deps: m{
+            "http": "^2.1.0"                            // registry, semver range
+            "utils": "path:../utils"                    // local package
+            "orm": "git:github.com/acme/orm#v0.4.1"     // git tag / rev
+        }
+
+        scripts: m{
+            "dev":     sh("ms build --target js --watch --hot")
+            "test":    sh("ms test --parallel")
+            "migrate": pkg("./tools/migrate")           // runs that package's main(args)
+            "release": task(#{ args =>
+                sh("ms test")?
+                sh("ms build --target native --release")?
+                Ok(())
+            })
+        }
+    }
+
+    if target.os == Os.Android {                        // per-platform deps
+        c.deps["android.ui"] = "^0.3.0"
+    }
+
+    c.tools([                                           // tool pipeline (§17.4)
+        fmt.setup(_{ indent: 4 }),
+        test.setup(_{ parallel: true }),
+        lint.setup(_{ strict: true, warn: ["L_IMPLICIT_STR_COPY"] }),
+    ])
+}
+```
+
+### 17.2 The `Config` type
+
+```rust
+// package build
+pub type Config = {
+    pub name: string                          // required
+    pub version: string                       // required (semver)
+    pub main: string?                         // default: §17.6
+    pub deps: Map[string, string] = m{}
+    pub dev_deps: Map[string, string] = m{}
+    pub scripts: Map[string, Script] = m{}
+    sections: Map[string, json.Value] = m{}   // tool settings, via the methods below
+
+    pub fun tools(mut this, ts: Vec[Tool]) -> Config { … }    // applies each tool in order
+    pub fun set_section[T](&mut this, name: string, value: T) { … }
+    pub fun section[T](&this, name: string) -> Result[T, json.Error] { … }
+    pub fun raw_section(&this, name: string) -> json.Value? { … }
+}
+pub type Tool = (Config) -> Config
+```
+
+**Why these choices:**
+
+- **`name` and `version` are separate named fields**, not positional `new(name, version)` arguments. A struct literal is self-describing, field defaults (§7.3) let you skip what you don't need, and `ms config` can print it as-is.
+- **Dependencies are a `Map[string, string]`** (package to source spec), not `Vec[t(string, string)]`:
+  - keys are unique, so a duplicate dependency is impossible;
+  - tools can do lookups (`c.deps.has("http")`);
+  - it prints as a plain JSON object.
+  - The value is a semver range (`"^2.1.0"`) or a prefixed source (`"path:…"`, `"git:…#rev"`), like npm. Everything fits in one string, and the toolchain validates the format (`E_BAD_DEP_SPEC`).
+  - Per-platform or conditional dependencies are ordinary code (`if target.os == …`), so no special syntax is needed.
+
+### 17.3 Scripts: `ms run <name>`
+
+```rust
+pub union Script = {
+    Shell(string)                              // sh("…"): runs a shell command line
+    Package(string)                            // pkg("./tools/migrate"): runs that package's main
+    Task((&Args) -> Result[void, string])      // task(#{…}): inline MinScript
+}
+pub fun sh(cmd: string) -> Script { Shell(cmd) }   // also usable inside a task, returning Result
+```
+
+```bash
+ms run dev
+ms run migrate -- --steps 2      # everything after `--` is passed as Args
+ms dev                           # shorthand, when `dev` isn't a built-in command
+ms run                           # lists the available scripts
+```
+
+- **Evaluation is separate from execution.** Working out the script list (evaluating `config()`) is sandboxed (§17.5). A script body runs **only** when invoked by `ms run`, with normal permissions (fs, net, processes). Calling a `task` during evaluation is `E_SCRIPT_IN_EVAL`.
+- **`Package` scripts** are the preferred form for anything substantial, such as migrations or seeding. The code lives in a normal package with its own imports and dependencies, and `mod.ms` stays small.
+- Tools may register scripts too: `lint.setup` can add `scripts["lint"]`, which makes `ms run lint` available.
+
+### 17.4 Tool sections and the pipeline
+
+- A tool is an escaping function `Config -> Config`.
+- `c.tools([...])` applies the tools **in order**. Each one reads the current `Config`, writes its own section, may read other tools' sections, may add scripts, and returns the result.
+
+```rust
+// package ms.fmt
+pub type Options = {
+    indent: int = 4
+    max_width: int = 100
+    trailing_commas: bool = true
+}
+
+pub fun setup(o: Options) -> Tool {
+    #[o]{ mut c =>
+        c.set_section("fmt", o)
+        c
+    }
+}
+
+// inside the fmt tool at run time:
+let opts = cfg.section.[Options]("fmt") ?? Options {}   // all defaults
+```
+
+**Section format:** neither `(string, any)` nor `Map[string, string]`. The signatures are
+
+```rust
+set_section[T](name: string, value: T)
+section[T](name: string) -> Result[T, json.Error]
+```
+
+- **Typed in and out:** each tool reads back its own `Options` type, with no string parsing and no `any`.
+- **Stored as a `json.Value` tree:** values are serialized with the auto-derived serializer (`_get_info()`, §9.10). That gives `ms config` a natural JSON output.
+- **Cross-tool reads:**
+  - Reading another tool's section with its type means importing that tool's package (`c.section.[lint.Options]("lint")`).
+  - Without the import, `raw_section("lint")` gives the untyped `json.Value`.
+  - The section name is, by convention, the tool's package name. Two tools writing the same section is `E_SECTION_CONFLICT` at evaluation time.
+
+### 17.5 Evaluation rules
+
+- `config()` runs in a **sandboxed, deterministic interpreter** (the JS back end). It has no network, no file writes and no processes. It may read `target`, `env` and files under the project root.
+- The result is cached by a hash of `mod.ms`, `mod.lock`, `target` and the env vars that were read. The LSP re-evaluates only when these change.
+- **Bootstrapping:**
+  - Packages imported by `mod.ms` itself (tools) carry their version in the import string (`"acme.lint@^1.2"`), so the toolchain can fetch them **without evaluating the file first**.
+  - `ms.*` tools are versioned with the toolchain.
+  - Ordinary dependencies go in `deps`.
+
+### 17.6 Entry point
+
+- `main` (from `Config.main`) is the folder holding `package main`.
+- If it's omitted, the toolchain uses `./src` when that folder exists, and the project root otherwise.
+
+---
+
+## 18. Open questions
+
+| # | Question | Default used |
 |---|---|---|
-| 1 | Vec literal: `[1,2]` or `v[1,2]` (your newest samples use `v[`) | **`[1,2]`**. Now that generics use `.[`, a prefix `[` is unambiguous, and `v` is a very common binding name (`#{ k, v => v[0] }`) that `v[` would break. |
-| 2 | `int` = `i32`, or platform width (notes_1) | `i32` (spec-v1/v2 decision) |
-| 3 | Is `union` + block body acceptable in place of `type X = \| A \| B`? | yes (from sample1.ms) |
-| 4 | Go-style `for` only, dropping `while`/`loop`? | yes (from sample2.ms) |
-| 5 | `r"…"` raw strings in place of `` r`…` `` | `r"…"` (from sample1.ms) |
-| 6 | Borrowed vs owned function types (`&(T)->U` non-escaping, `(T)->U` escaping) as the escape-analysis mechanism | yes (§9.4) |
-| 7 | Implicit capture = shared borrow only; mutation needs `#[&mut x]` | yes |
-| 8 | Once a capture list is present, it must be complete | yes |
-| 9 | `json.parse` returns `T?` (as in your example) or `Result[T, ParseError]` | `T?` in examples; I'd recommend `Result` for the std API so callers get an error message |
-| 10 | `log`/`println` in the prelude | `log` is prelude; `println` is not |
-| 11 | Default method bodies in `inter` | allowed (grammar permits an optional block) |
-| 12 | `'N{}` tags: numeric shape groups (`'1`, `'2` …) | yes; same N in one literal context → same type |
-| 13 | Missing record fields auto-fill | only `T?` fields become `None`; the rest are required |
-| 14 | Overflow | panic in debug, wrap in release |
-| 15 | Orphan rule | `impl X for T` only in the package owning `X` or `T` |
-| 16 | Entry point | `fun main()` in `package main`; the folder-name rule is relaxed for `main` |
+| 1 | Implicit boxing of owned interface values (`Vec[Shape]`) | yes |
+| 2 | Should truthiness be user-implementable (a `Truthy` interface)? | no: built-in for bool/Option/Result only |
+| 3 | `int` on the JS back end: i32 or f64-safe 53-bit | i32 |
+| 4 | Field defaults (§7.3): only literals/const expressions, or any expression? | any expression, evaluated per construction |
+| 5 | Dependency spec prefixes beyond `path:` / `git:` (e.g. `url:`, workspace members) | only `path:` and `git:` in v0.2 |
+| 6 | Workspaces / monorepos: several projects under one `mod.ms` | deferred |
+| 7 | Script dependencies (`"build"` runs `"gen"` first) | written in code inside a `task` for now |
+
+**Resolved in this revision:**
+- implicit `&str → string` copies, with a configurable lint;
+- poisoning after `recover`;
+- auto `to_str()` shows every field visible at the call site;
+- inherent `impl` blocks live in the type's package (any file);
+- default method bodies are allowed in `inter`;
+- `Config` replaces `Project`.
