@@ -1,0 +1,29 @@
+(file parser_functions
+  (fun empty (params) (block))
+  (fun area pub (params (width f32) (height f32)) (-> f32) (block (* width height)))
+  (fun explicit_return pub (params (x int)) (-> int) (block (return (* x 2))))
+  (fun void_discards (params) (block (call compute)))
+  (fun semicolon_discards (params) (block (; (call compute))))
+  (fun reset (params (mut x i32) (y (&mut i32))) (block (= x 0) (= y 0)))
+  (fun borrow (params (user (& User))) (-> (& str)) (block (. user name)))
+  (fun variadic
+    (params (prefix string) (...args (& Stringer)))
+    (block (call (. log println) prefix (... args))))
+  (fun trailing_comma (params (a int) (b int)) (-> int) (block (+ a b)))
+  (fun returns_closure (params) (-> (fn (params int) int)) (block (closure (captures) (+ it 1))))
+  (fun fetch_user pub async
+    (params (id u64))
+    (-> (Option User))
+    (block
+      (let raw (await (call (. db query) (template "select * from users where id = " id ""))))
+      (call (?. raw to_user))))
+  (fun no_return async (params) (block (await (call (. runtime yield)))))
+  (fun calls
+    (params)
+    (block
+      (call empty)
+      (call area 2.0 3.0)
+      (call variadic "x" 1 "two" 3.0)
+      (call trailing_comma 1 2)
+      (call configure (_ (host "localhost") (port 8080)))
+      (call (. log println) "a" "b"))))

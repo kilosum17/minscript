@@ -1,0 +1,22 @@
+(file app.users
+  (import "std.log")
+  (import "std.json")
+  (import "std.io.println")
+  (import "std.io.{print, println, read_line}")
+  (import "std.collections.*")
+  (import "app.models" as models)
+  (import "./helpers")
+  (import "../shared/util" as util)
+  (import pub "./log")
+  (import pub "std.time.{Duration, Instant}")
+  (let pub MAX_CONNECTIONS i32 10000)
+  (let pub SYSTEM_NAME string "MinScript-Engine")
+  (let sessions (call Ref (map ("admin" 0))))
+  (let pub VERSION "0.2.0")
+  (fun handler pub
+    (params)
+    (block
+      (let u (struct (. models User) (id 1) (name "Ted")))
+      (call (. util check) u)
+      (call println (call (. json stringify) u))))
+  (fun private_helper (params) (block)))

@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "MinScript compiler front end (lexer first; parser next)",
+  "description": "MinScript compiler front end: lexer and parser",
   "engines": {
     "node": ">=23.6"
   },
@@ -11,7 +11,8 @@
     "test": "node --test src/*.test.ts test/*.test.ts",
     "test:update": "UPDATE_SNAPSHOTS=1 node --test src/*.test.ts test/*.test.ts",
     "typecheck": "tsc",
-    "lex": "node src/cli.ts lex"
+    "lex": "node src/cli.ts lex",
+    "parse": "node src/cli.ts parse"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

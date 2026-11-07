@@ -1,0 +1,67 @@
+(file parser_inter_impl
+  (inter Reader pub (fun read (params &mut this (buf (&mut (Vec u8)))) (-> (Result int string))))
+  (inter Writer pub
+    (fun write (params &mut this (data (& (Slice u8)))) (-> (Result int string)))
+    (fun flush (params &mut this) (-> (Result void string)) (block (call Ok))))
+  (inter ReadWriter pub (and Reader Writer))
+  (inter PartialOrd pub
+    (generics T)
+    (supers (PartialEq T))
+    (fun partial_cmp (params &this (other (& T))) (-> (Option Ordering)))
+    (fun lt
+      (params &this (other (& T)))
+      (-> bool)
+      (block (== (call (. this partial_cmp) other) (call Some Less)))))
+  (inter Default pub (fun default (params) (-> Self)))
+  (inter Shape pub
+    (fun area (params &this) (-> f64))
+    (fun name (params &this) (-> string) (block "shape"))
+    (fun render async (params &this (ctx (&mut Canvas)))))
+  (type File (fields (fd i32)))
+  (impl File
+    (fun open pub
+      (params (path string))
+      (-> (Result File string))
+      (block (call Ok (struct File (fd 3)))))
+    (fun close pub (params mut this) (block (call (. sys close) (. this fd))))
+    (fun by_value (params this) (-> i32) (block (. this fd))))
+  (impl
+    (for Reader)
+    File
+    (fun read (params &mut this (buf (&mut (Vec u8)))) (-> (Result int string)) (block (call Ok 0))))
+  (impl
+    (for Reader Writer)
+    Socket
+    (fun read (params &mut this (buf (&mut (Vec u8)))) (-> (Result int string)) (block (call Ok 0)))
+    (fun write
+      (params &mut this (data (& (Slice u8))))
+      (-> (Result int string))
+      (block (call Ok (call (. data len))))))
+  (impl (for Drop) File (fun drop (params mut this) (block (call (. this close)))))
+  (impl
+    (for (Add Money Money) (Sub Money Money))
+    Money
+    (fun add
+      (params &this (rhs Money))
+      (-> Money)
+      (block (struct Money (cents (+ (. this cents) (. rhs cents))))))
+    (fun sub
+      (params &this (rhs Money))
+      (-> Money)
+      (block (struct Money (cents (- (. this cents) (. rhs cents)))))))
+  (impl
+    (generics T)
+    (for (Iterator T))
+    (Counter T)
+    (fun next (params &mut this) (-> (Option T)) (block nil)))
+  (impl
+    (for Default)
+    Config
+    (fun default (params) (-> Self) (block (struct Config (host "localhost") (port 8080)))))
+  (type R
+    (fields (v int))
+    (fun a (params this) (-> int) (block (. this v)))
+    (fun b (params &this) (-> int) (block (. this v)))
+    (fun c (params &mut this) (block (+= (. this v) 1)))
+    (fun d (params mut this) (-> R) (block (; (= (. this v) 0)) this))
+    (fun e (params &this (x int) (mut y int) (z (&mut int)) (...rest (& Stringer))) (block))))

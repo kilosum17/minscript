@@ -1,0 +1,42 @@
+(file parser_async
+  (import "std.runtime")
+  (import "std.time")
+  (fun fetch_record async
+    (params (id i32))
+    (-> string)
+    (block (let raw (await (call database_query id))) (call (. raw to_upper))))
+  (fun process_all async
+    (params (ids (Vec i32)))
+    (-> (Vec string))
+    (block
+      (let promises (call (. ids map) (closure (call fetch_record it))))
+      (await (call (. Promise all) promises))))
+  (fun main async
+    (params)
+    (block
+      (let p1 (call fetch_record 42))
+      (let p2 (call fetch_record 99))
+      (let r1 (await p1))
+      (let r2 (await p2))
+      (call
+        (.
+          (call
+            (. (call fetch_record 7) then)
+            (closure (call (. log println) (template "got " it ""))))
+          catch)
+        (closure (call (. log println) (template "failed: " (. it message) ""))))
+      (call (. (call fetch_record 8) ignore))
+      (var counter 0)
+      (for
+        (< counter 50000)
+        (block
+          (+= counter 1)
+          (if (== (% counter 10000) 0) (block (await (call (. runtime yield)))))))
+      (await (call (. time sleep) 10))
+      (let name (call (. (paren (await (call fetch_name))) trim)))
+      (let user (? (await (call get_user))))
+      (let len (call (?. (await (call get_list)) len)))
+      (let all (await (call (. Promise all) (vec (call fetch_record 1) (call fetch_record 2)))))))
+  (fun not_async_main
+    (params)
+    (block (call (. (call fetch_record 1) then) (closure (call (. log println) it))))))

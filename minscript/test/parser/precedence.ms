@@ -42,7 +42,7 @@ async fun main() {
 
     // await and postfix `?`
     let w1 = await f()?                 // (? (await (f)))
-    let w2 = await g()?.name            // (?. (? (await (g))) name)
+    let w2 = await g()?.name            // (?. (await (g)) name)
     let w3 = (await h()).trim()
     let w4 = await client.receive()     // (await (call (. client receive)))
     let w5 = !await check()             // (! (await (check)))

@@ -1,0 +1,144 @@
+(file parser_tasks
+  (import "std.time")
+  (type Job (fields (id u64) (url string) (reply (Option (Resolver (Result string string))))))
+  (fun topics_hang async
+    (params)
+    (block
+      (:= room (call (generic (. Topic new) string)))
+      (let big (call (generic (. Topic with) string) (_ (buffer 256) (replay 10))))
+      (var sub (call (. room subscribe)))
+      (:= reached (call (. room publish) "hello"))
+      (call (. log println) (template "delivered to " reached ""))
+      (for-await msg sub
+        (block
+          (call (. log println) msg)
+          (:= lost (call (. sub missed)))
+          (if (> lost 0) (block (call (. log warn) (template "missed " lost ""))))))
+      (let quick (?? (call (. sub try_next)) "nothing"))
+      (call (. room close))))
+  (fun topics async
+    (params)
+    (block
+      (:= room (call (generic (. Topic new) string)))
+      (let big (call (generic (. Topic with) string) (_ (buffer 256) (replay 10))))
+      (let reader (call print_all (call (. room subscribe))))
+      (:= reached (call (. room publish) "hello"))
+      (call (. room publish) "world")
+      (call (. log println) (template "delivered to " reached ""))
+      (call (. room close))
+      (:= count (await reader))
+      (call (. log println) (template "reader got " count " messages"))))
+  (fun print_all async
+    (params (mut sub (Sub string)))
+    (-> int)
+    (block
+      (var count 0)
+      (for-await msg sub
+        (block
+          (call (. log println) msg)
+          (:= lost (call (. sub missed)))
+          (if (> lost 0) (block (call (. log warn) (template "missed " lost ""))))
+          (+= count 1)))
+      (:= quick (?? (call (. sub try_next)) "nothing"))
+      (call (. log println) quick)
+      count))
+  (fun queues async
+    (params)
+    (block
+      (:= jobs (call (generic (. Queue new) Job)))
+      (let bounded (call (generic (. Queue with) Job) (_ (capacity 16))))
+      (for-in i (.. 0 4) (block (call (. (call worker i (call (. jobs subscribe))) ignore))))
+      (or
+        (await (call (. jobs publish) (struct Job (id 1) (url "a"))))
+        e
+        =>
+        (call (. log warn) "queue closed"))
+      (if
+        (let (Err e) (call (. jobs try_publish) (struct Job (id 2) (url "b"))))
+        (block
+          (match e
+            (=> (Full job) (call (. log warn) (template "full, dropping " (. job id) "")))
+            (=> (Closed job) (call (. log warn) (template "closed, dropping " (. job id) ""))))))
+      (let res (await (call (. jobs publish_timeout) (struct Job (id 3) (url "c")) 500)))
+      (if (! res) (block (call (. log warn) "timed out waiting for space")))
+      (call (. log println) (template "pending: " (call (. jobs len)) ""))))
+  (fun worker async
+    (params (n int) (mut sub (Sub Job)))
+    (block
+      (for-await job sub
+        (block
+          (:= body (await (call fetch (. job url))))
+          (if (let (Some reply) (. job reply)) (block (call (. reply resolve) body)))))))
+  (fun request async
+    (params (jobs (Queue Job)))
+    (-> (Result string string))
+    (block
+      (let (t answer resolver) (call (generic (. Promise new) (Result string string))))
+      (or
+        (await (call (. jobs publish) (struct Job (id 9) (url "x") (reply resolver))))
+        (call Err "queue closed"))
+      (await answer)))
+  (fun signals async
+    (params)
+    (block
+      (:= online (call Signal 0))
+      (let theme (call Signal "dark"))
+      (call (. online set) 5)
+      (call (. online update) (closure (params n) (+= n 1)))
+      (let now (call (. online update) (closure (params n) (; (+= n 1)) n)))
+      (:= current (call (. online get)))
+      (let doubled (call (. online read) (closure (* it 2))))
+      (var watch (call (. online watch)))
+      (for-await n watch
+        (block (call (. log println) (template "" n " online")) (if (== n 0) (block (break)))))))
+  (fun shared_handles async
+    (params)
+    (block
+      (:= jobs (call (generic (. Queue new) Job)))
+      (let done (call Signal 0))
+      (for-in i
+        (.. 0 3)
+        (block (call (. (call counting_worker (call (. jobs subscribe)) done) ignore))))
+      (call (. (call producer jobs) ignore))
+      (or
+        (await (call (. jobs publish) (struct Job (id 100) (url "last"))))
+        e
+        =>
+        (call (. log warn) "closed"))
+      (call (. log println) (template "done so far: " (call (. done get)) ""))))
+  (fun counting_worker async
+    (params (mut sub (Sub Job)) (done (Signal int)))
+    (block
+      (for-await job sub
+        (block
+          (await (call fetch (. job url)))
+          (call (. done update) (closure (params n) (+= n 1)))))))
+  (fun producer async
+    (params (jobs (Queue Job)))
+    (block
+      (for-in i
+        (.. 0 10)
+        (block
+          (or
+            (await (call (. jobs publish) (struct Job (id (as i u64)) (url (template "u" i "")))))
+            (break))))))
+  (fun lifecycle async
+    (params)
+    (block
+      (let (t ready resolver) (call (generic (. Promise new) void)))
+      (:= server (call serve resolver))
+      (await ready)
+      (:= slow (call fetch "http://slow"))
+      (let res (await (call (. slow timeout) 1000)))
+      (match res
+        (=> (Ok body) (call (. log println) body))
+        (=> (Err _) (call (. log warn) "too slow")))
+      (await (call (. time after) 50))
+      (call (. server cancel))
+      (call (. log println) (template "server done: " (call (. server is_done)) ""))))
+  (fun serve async
+    (params (ready (Resolver void)))
+    (block (call (. ready resolve)) (for (block (await (call (. time after) 1000))))))
+  (fun poll async
+    (params)
+    (block (for (await (call has_more)) (block (await (call process_next)))))))

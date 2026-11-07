@@ -1,6 +1,6 @@
 # MinScript
 
-MinScript is a language that aims for TypeScript-style concision, Rust-style ownership (with no lifetime annotations) and Go-style simplicity. This folder is the spec-first restart. The deterministic, hand-written TypeScript lexer is done (`src/lexer.ts`), and the Pratt parser comes next.
+MinScript is a language that aims for TypeScript-style concision, Rust-style ownership (with no lifetime annotations) and Go-style simplicity. This folder is the spec-first restart. The deterministic, hand-written TypeScript lexer (`src/lexer.ts`) and the recursive-descent + Pratt parser (`src/parser.ts`) are done. Name resolution comes next.
 
 ## Boundaries
 
@@ -12,9 +12,10 @@ MinScript is a language that aims for TypeScript-style concision, Rust-style own
 - `docs/spec-v1.rs`, `spec-v2.rs`, `merge_1.rs`, `notes_1.md`, `docs/history/samples/`: superseded and old-syntax material. Keep it for history, and don't update it.
 - `src/`: the compiler in TypeScript, run directly by Node ≥ 23.6 (type stripping). There are no runtime dependencies, and the only dev dependencies are `typescript` and `@types/node`.
   - Write erasable TS only: no `enum`, `namespace` or parameter properties. Import with `.ts` extensions.
-  - `token.ts`, `diagnostic.ts`, `lexer.ts`, `dump.ts` (token dump / snapshot format), `cli.ts`. Unit tests sit next to the code as `*.test.ts` (node:test).
-  - Commands: `npm test`, `npm run test:update` (rewrites `.tokens` snapshots, so review the diff), `npm run typecheck`, `npm run lex -- file.ms`.
-  - Keep spec §1 and §11 in sync with the lexer. A new lexer diagnostic code goes in `LEXER_CODES` too.
+  - `token.ts`, `diagnostic.ts`, `lexer.ts`, `dump.ts` (token dump / `.tokens` format), `ast.ts`, `parser.ts`, `sexpr.ts` (AST dump / `.ast` format), `cli.ts`. Unit tests sit next to the code as `*.test.ts` (node:test).
+  - Commands: `npm test`, `npm run test:update` (rewrites `.tokens` / `.ast` snapshots, so review the diff), `npm run typecheck`, `npm run lex -- file.ms`, `npm run parse -- file.ms`.
+  - Keep spec §1, §5.4, §11 and §12 in sync with the lexer and parser. A new lexer diagnostic code goes in `LEXER_CODES` too.
+  - Parser errors: use `report()` when the intended form is clear (then keep parsing), and `fail()` otherwise (it reports and syncs to the next statement, item, member or arm). Each mistake must produce exactly one diagnostic, and every `errors/` file must match its `//~` annotations exactly.
 - `test/`: corpus. See `test/README.md`. `test/corpus.test.ts` runs it.
   - `lexer/`, `parser/`: one feature per file. Expected-output snapshots (`.tokens` / `.ast`) come later, once the lexer and parser can generate them.
   - `errors/`: one case per function, with `//~ CODE` on the line where the diagnostic is expected.

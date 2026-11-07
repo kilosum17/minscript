@@ -1,0 +1,80 @@
+(file parser_select
+  (import "std.time")
+  (fun basic async
+    (params (jobs (Queue Job)) (events (Topic Event)) (config (Signal Config)))
+    (block
+      (var job_sub (call (. jobs subscribe)))
+      (var event_sub (call (. events subscribe)))
+      (:== cfg_watch (call (. config watch)))
+      (for
+        (block
+          (select
+            (=> (Some job) = (call (. job_sub next)) (call process job))
+            (=>
+              (Some ev)
+              =
+              (call (. event_sub next))
+              (call (. log println) (template "event: " ev "")))
+            (=> cfg = (call (. cfg_watch next)) (call reload cfg))
+            (=> (call (. time after) 5000) (call (. log println) "idle for 5s")))))))
+  (fun block_arms async
+    (params (sub (Sub Msg)))
+    (block
+      (var s sub)
+      (select
+        (=> (Some msg) = (call (. s next)) (block (call (. log println) msg) (call handle msg)))
+        (=> (call (. time after) 100) (block (call (. log println) "timeout"))))))
+  (fun with_else async
+    (params (q (Queue Job)))
+    (block
+      (var sub (call (. q subscribe)))
+      (select
+        (=> (Some job) = (call (. sub next)) (call process job))
+        (else (call (. log println) "nothing ready")))))
+  (fun as_expression async
+    (params (sub (Sub int)))
+    (-> string)
+    (block
+      (var s sub)
+      (:= label
+        (select
+          (=> (Some n) = (call (. s next)) (template "got " n ""))
+          (=> (call (. time after) 10) "timed out")))
+      label))
+  (fun one_line async
+    (params (a (Sub int)) (b (Sub int)))
+    (block
+      (var x a)
+      (var y b)
+      (select
+        (=> (Some n) = (call (. x next)) (call (. log println) n))
+        (=> (Some m) = (call (. y next)) (call (. log println) m)))))
+  (fun loops_and_control async
+    (params (sub (Sub Cmd)) (stop (Signal bool)))
+    (block
+      (var s sub)
+      (var stop_watch (call (. stop watch)))
+      (for outer:
+        (block
+          (select
+            (=>
+              (Some cmd)
+              =
+              (call (. s next))
+              (match cmd (=> Quit (break outer)) (=> Skip (continue)) (=> (Run x) (call run x))))
+            (=> _ = (call (. stop_watch next)) (break)))))))
+  (fun task_promises async
+    (params)
+    (block
+      (:= fetch (call fetch_user 1))
+      (let result
+        (select
+          (=> user = fetch (call Some user))
+          (=> (call (. time after) 2000) (block (call (. fetch cancel)) None))))))
+  (fun nested_patterns async
+    (params (sub (Sub (Result Order string))))
+    (block
+      (var s sub)
+      (select
+        (=> (Some (Ok order)) = (call (. s next)) (call ship order))
+        (=> (call (. time after) 1000) (block))))))

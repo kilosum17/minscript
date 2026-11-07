@@ -65,6 +65,7 @@ Pipeline:
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
 | Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
 | Lexer (implemented) | — | — | template tokens for `${…}`; `"…"` interpolations stay on one line; lexer balances delimiters (§1.1, §1.5) |
+| Parser (implemented) | — | — | struct literals need a PascalCase name; `break x` is a label only if declared; one diagnostic per mistake (§4.2, §5.3, §5.4, §11) |
 | Waiting on several things | — | — | **`select { … }`**, random among ready arms; `for await`; `time.after`; `.cancel()` |
 
 ---
@@ -358,7 +359,14 @@ fun c() -> int { 5; }      // E_INVALID_BLOCK_VALUE
 
 ### 4.2 Bare `{` is always a block [D]
 
-There is no bare literal. A struct literal `Name {…}` is not allowed directly in an `if`/`for`/`match` header; wrap it in parentheses.
+There is no bare literal. `{ "a": 1 }` and `{ host: x }` are reported as `E_BARE_BRACE_LITERAL`, with a fix-it to `m{}`, `r{}` or `_{}`.
+
+**Struct literals:** `Path {` starts a struct literal only when:
+- the path's last segment is PascalCase (`User {`, `models.User {`, `Payment.Card {`, `Box.[i32]{`);
+- the `{` is on the same line; and
+- the literal is not directly in an `if` / `for` / `match` header.
+
+Otherwise the `{` begins a block. In a header, `if x == P { a: 1 } { … }` is `E_STRUCT_LITERAL_IN_HEADER`; wrap the literal in parentheses: `if x == (P { a: 1 }) { … }`.
 
 ### 4.3 Literals [D]
 
@@ -374,6 +382,7 @@ User { id: 1, name }               // named struct literal
 ```
 
 - Elements are separated by commas or newlines, and trailing commas are allowed.
+- Record and struct-literal keys are names, or (records only) strings: `r{ "content-type": "json" }`. A keyword followed by `:` is also accepted as a key (`r{ type: "user" }`). Any other key is `E_INVALID_RECORD_KEY`.
 - `...expr` spreads into every literal kind, and into call arguments that bind a variadic parameter (`log.println(prefix, ...args)`).
 - `_{}` without an expected type is `E_CANNOT_INFER_STRUCT_TYPE`; it doubles as the named-arguments form: `serve(_{ host, port })`.
 - Empty literals need a type from somewhere: an annotation, the surrounding context, or `as` (`[] as Vec[int]`, §3.3).
@@ -441,6 +450,7 @@ let adult = match {               // subject-less: the first true arm wins
 ```
 
 - `if` without `else` is `void`. `match` must be exhaustive.
+- **Labels:** in `break x` / `continue x`, `x` is a label only if an enclosing loop declares it (`x: for …`). Otherwise `break x` breaks with the value `x`. Labels are lexical, so this is decided by the parser.
 - Arms are separated by commas or newlines.
 - Ranges: `a..b`, `a..=b`, `..b`, `a..`.
 
@@ -586,6 +596,8 @@ How the parser classifies the header:
    - the previous token cannot end an expression (binary operator, `,`, `.`, `?.`, `(`, `[`, `{`, `=`, `:=`, `:==`, `=>`, `->`, `:`, `as`, `or`, `??`, `await`, `mut`, `&`, `!`, `#{`, `#[`, `.[`), or
    - the next token is `.`, `?.`, `&&`, `||`, `??`, `or`, `as`, `else`, `)`, `]`, `}` or `=>`.
 3. A newline **does** end the statement when the next line starts with `(`, `[`, `{`, `-`, `+`, `*`, `&`, `!` or `.[`.
+   - Any other binary operator at the start of a line (`/`, `==`, `<`, `|`, …) also ends the statement. The next line then has no left operand, which is `E_UNEXPECTED_TOKEN`: put the operator at the end of the previous line.
+   - `.[` at the start of a line is `E_GENERIC_ARGS_NEWLINE` (it is still parsed as generic arguments, for recovery).
 4. Postfix `(`, `[` and `.[` need `nl_before == false`. `.` and `?.` may cross a newline.
 5. Newlines are ignored inside `(…)` and `[…]`, but they matter again inside a nested `{…}`.
 6. `return`, `break` and `continue` followed by a terminator take no value.
@@ -619,10 +631,11 @@ How the parser classifies the header:
 
 ```text
 Type         := Intersection
+              | Intersection ('|' Intersection)+  // literal unions: only on the right of `type X =`
 Intersection := Postfix ('&' Postfix)*         // bounds, `inter X = A & B`
 Postfix      := Primary '?'?
 Primary      := Path [ '[' TypeArgs ']' ]      // glued '['
-              | '&' ['mut'] Type               // borrow
+              | '&' ['mut'] Postfix            // borrow: `&T?` is `&(T?)`, `&A & B` is `(&A) & B`
               | '*' ['mut'] Type               // raw pointer
               | 't(' [Types] ')'               // tuple
               | 'r{' [Fields] '}'              // structural record
@@ -633,6 +646,8 @@ Primary      := Path [ '[' TypeArgs ']' ]      // glued '['
 ```
 
 - A `&` at the start of a type is a borrow; between two types it is an intersection.
+- After `as`, the type is a `Postfix` (no `&` intersection), so `flags as u8 & MASK` is a bitwise and: `(flags as u8) & MASK`.
+- `(A, B)` without `->` is `E_BARE_TUPLE` (fix-it `t(A, B)`). `(T)` is grouping.
 - `&(T) -> U` is a **borrowed (non-escaping) function**; `(T) -> U` is an **owned (escaping) function**.
 - When a `Path` names an interface, it denotes a dynamically dispatched value (§9.7).
 - **`void`** is the unit type, and its only value is `t()`.
@@ -1294,6 +1309,10 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `ResolverDropped` | a `Resolver` is dropped without resolving its promise (§9.6) |
 | `Deadlock` | every task is waiting and nothing can wake any of them (§9.10) |
 
+**Recovery:** each mistake produces exactly one diagnostic.
+- Common mistakes are recognized and parsed as the intended form, then parsing continues: `Vec<int>`, `f<T>(x)`, `f::<T>(x)` (one `E_ANGLE_GENERICS`); `(a) => a` and `fun(x) {}` (closures); `while` / `loop` (parsed as `for`); `let x := 1`; `mut self`; `type X = | A | B` (parsed as a union).
+- Any other error skips to the next statement, item, member or arm.
+
 **Lexer and parser diagnostics** (exercised by `test/errors/`). The lexer reports `E_UNTERMINATED_STRING`, `E_UNTERMINATED_COMMENT`, `E_INVALID_ESCAPE`, `E_INVALID_NUMBER`, `E_INVALID_CHAR`, `E_UNKNOWN_CHARACTER`, `E_UNMATCHED_DELIMITER` and `E_TAGGED_RECORD_REMOVED`; the parser reports the rest:
 
 | Code | Meaning |
@@ -1396,7 +1415,7 @@ sep           = "," | NEWLINE ;
 
 ## 13. Parser test corpus (minimum set)
 
-The corpus lives in [`test/`](../test/README.md): `lexer/`, `parser/`, `errors/` (with inline `//~` diagnostics) and `programs/`. The cases below are the minimum set and are all covered there.
+The corpus lives in [`test/`](../test/README.md): `lexer/` (with `.tokens` snapshots), `parser/` (with `.ast` S-expression snapshots), `errors/` (with inline `//~` diagnostics, all checked) and `programs/`. The cases below are the minimum set and are all covered there. The parser is `src/parser.ts`; the AST is `src/ast.ts`.
 
 ```rust
 t.0.1    1..10   1..=10   ..5    1.to_str()
