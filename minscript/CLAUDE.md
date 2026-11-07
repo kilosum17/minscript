@@ -1,6 +1,6 @@
 # MinScript
 
-MinScript is a language that aims for TypeScript-style concision, Rust-style ownership (with no lifetime annotations) and Go-style simplicity. This folder is the spec-first restart. A deterministic, hand-written TypeScript lexer and Pratt parser come next.
+MinScript is a language that aims for TypeScript-style concision, Rust-style ownership (with no lifetime annotations) and Go-style simplicity. This folder is the spec-first restart. The deterministic, hand-written TypeScript lexer is done (`src/lexer.ts`), and the Pratt parser comes next.
 
 ## Boundaries
 
@@ -10,7 +10,12 @@ MinScript is a language that aims for TypeScript-style concision, Rust-style own
 
 - `docs/spec.md`: **the source of truth** (v0.2 unified spec). Change the spec before or alongside any syntax change, and keep §0.1 (change log), §11 (diagnostics), §12 (EBNF), §13 (corpus) and §18 (open questions) in sync.
 - `docs/spec-v1.rs`, `spec-v2.rs`, `merge_1.rs`, `notes_1.md`, `docs/history/samples/`: superseded and old-syntax material. Keep it for history, and don't update it.
-- `test/`: corpus. See `test/README.md`.
+- `src/`: the compiler in TypeScript, run directly by Node ≥ 23.6 (type stripping). There are no runtime dependencies, and the only dev dependencies are `typescript` and `@types/node`.
+  - Write erasable TS only: no `enum`, `namespace` or parameter properties. Import with `.ts` extensions.
+  - `token.ts`, `diagnostic.ts`, `lexer.ts`, `dump.ts` (token dump / snapshot format), `cli.ts`. Unit tests sit next to the code as `*.test.ts` (node:test).
+  - Commands: `npm test`, `npm run test:update` (rewrites `.tokens` snapshots, so review the diff), `npm run typecheck`, `npm run lex -- file.ms`.
+  - Keep spec §1 and §11 in sync with the lexer. A new lexer diagnostic code goes in `LEXER_CODES` too.
+- `test/`: corpus. See `test/README.md`. `test/corpus.test.ts` runs it.
   - `lexer/`, `parser/`: one feature per file. Expected-output snapshots (`.tokens` / `.ast`) come later, once the lexer and parser can generate them.
   - `errors/`: one case per function, with `//~ CODE` on the line where the diagnostic is expected.
   - `programs/`: realistic programs that must parse with zero diagnostics.

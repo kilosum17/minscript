@@ -1,0 +1,240 @@
+1:1        package
+1:9     ws Ident "lexer_operators"
+3:1     nl fun
+3:5     ws Ident "main"
+3:9        ( → 3:10
+3:10       )
+3:12    ws { → 54:1
+4:5     nl var
+4:9     ws Ident "x"
+4:11    ws =
+4:13    ws Int 1
+7:5     nl Ident "x"
+7:7     ws =
+7:9     ws Ident "a"
+7:11    ws +
+7:13    ws Ident "b"
+7:15    ws -
+7:17    ws Ident "c"
+7:19    ws *
+7:21    ws Ident "d"
+7:23    ws /
+7:25    ws Ident "e"
+7:27    ws %
+7:29    ws Ident "f"
+10:5    nl Ident "x"
+10:7    ws =
+10:9    ws Ident "a"
+10:11   ws &
+10:13   ws Ident "b"
+10:15   ws |
+10:17   ws Ident "c"
+10:19   ws ^
+10:21   ws Ident "d"
+10:23   ws <<
+10:26   ws Int 1
+10:28   ws >>
+10:31   ws Int 2
+11:5    nl Ident "x"
+11:7    ws =
+11:9    ws Ident "a"
+11:10      >>
+11:12      Ident "b"
+12:5    nl let
+12:9    ws Ident "shifted"
+12:17   ws =
+12:19   ws Ident "Vec"
+12:22      [ → 12:31
+12:23      Ident "Vec"
+12:26      [ → 12:30
+12:27      Ident "int"
+12:30      ]
+12:31      ]
+15:5    nl let
+15:9    ws Ident "c1"
+15:12   ws =
+15:14   ws Ident "a"
+15:16   ws ==
+15:19   ws Ident "b"
+16:5    nl let
+16:9    ws Ident "c2"
+16:12   ws =
+16:14   ws Ident "a"
+16:16   ws !=
+16:19   ws Ident "b"
+17:5    nl let
+17:9    ws Ident "c3"
+17:12   ws =
+17:14   ws Ident "a"
+17:15      <
+17:16      Ident "b"
+18:5    nl let
+18:9    ws Ident "c4"
+18:12   ws =
+18:14   ws Ident "a"
+18:16   ws <=
+18:19   ws Ident "b"
+19:5    nl let
+19:9    ws Ident "c5"
+19:12   ws =
+19:14   ws Ident "a"
+19:15      >
+19:16      Ident "b"
+20:5    nl let
+20:9    ws Ident "c6"
+20:12   ws =
+20:14   ws Ident "a"
+20:16   ws >=
+20:19   ws Ident "b"
+21:5    nl let
+21:9    ws Ident "l1"
+21:12   ws =
+21:14   ws !
+21:15      Ident "a"
+21:17   ws &&
+21:20   ws Ident "b"
+21:22   ws ||
+21:25   ws Ident "c"
+24:5    nl Ident "x"
+24:7    ws =
+24:9    ws Int 1
+25:5    nl Ident "x"
+25:7    ws +=
+25:10   ws Int 1
+26:5    nl Ident "x"
+26:7    ws -=
+26:10   ws Int 1
+27:5    nl Ident "x"
+27:7    ws *=
+27:10   ws Int 2
+28:5    nl Ident "x"
+28:7    ws /=
+28:10   ws Int 2
+29:5    nl Ident "x"
+29:7    ws %=
+29:10   ws Int 3
+30:5    nl Ident "x"
+30:7    ws &=
+30:10   ws Int 1
+31:5    nl Ident "x"
+31:7    ws |=
+31:10   ws Int 2
+32:5    nl Ident "x"
+32:7    ws ^=
+32:10   ws Int 3
+33:5    nl Ident "x"
+33:7    ws <<=
+33:11   ws Int 1
+34:5    nl Ident "x"
+34:7    ws >>=
+34:11   ws Int 1
+35:5    nl Ident "opt"
+35:9    ws ??=
+35:13   ws Int 5
+38:5    nl Ident "y"
+38:7    ws :=
+38:10   ws Int 1
+39:5    nl Ident "z"
+39:7    ws :==
+39:11   ws Int 2
+42:5    nl let
+42:9    ws Ident "r1"
+42:12   ws =
+42:14   ws Int 0
+42:15      ..
+42:17      Int 10
+43:5    nl let
+43:9    ws Ident "r2"
+43:12   ws =
+43:14   ws Int 0
+43:15      ..=
+43:18      Int 10
+44:5    nl let
+44:9    ws Ident "r3"
+44:12   ws =
+44:14   ws r{ → 44:31
+44:17   ws ...
+44:20      Ident "base"
+44:24      ,
+44:26   ws Ident "a"
+44:27      :
+44:29   ws Int 1
+44:31   ws }
+47:5    nl let
+47:9    ws Ident "o1"
+47:12   ws =
+47:14   ws Ident "user"
+47:18      ?.
+47:20      Ident "name"
+48:5    nl let
+48:9    ws Ident "o2"
+48:12   ws =
+48:14   ws Ident "get"
+48:17      ( → 48:18
+48:18      )
+48:19      ?
+49:5    nl let
+49:9    ws Ident "o3"
+49:12   ws =
+49:14   ws Ident "a"
+49:16   ws ??
+49:19   ws Ident "b"
+50:5    nl let
+50:9    ws Ident "o4"
+50:12   ws =
+50:14   ws Ident "a"
+50:15      ?.
+50:17      Ident "b"
+50:19   ws ??
+50:22   ws Ident "c"
+50:23      ?.
+50:25      Ident "d"
+50:27   ws ??
+50:30   ws Ident "e"
+53:5    nl let
+53:9    ws Ident "f"
+53:11   ws =
+53:13   ws #{ → 53:35
+53:16   ws Ident "a"
+53:17      :
+53:19   ws Ident "int"
+53:23   ws ->
+53:26   ws Ident "int"
+53:30   ws =>
+53:33   ws Ident "a"
+53:35   ws }
+54:1    nl }
+56:1    nl fun
+56:5    ws Ident "arrow"
+56:10      ( → 56:11
+56:11      )
+56:13   ws ->
+56:16   ws Ident "int"
+56:20   ws { → 56:24
+56:22   ws Int 1
+56:24   ws }
+57:1    nl EOF
+
+-- trivia --
+6:5     line "// arithmetic"
+9:5     line "// bitwise (generics never use < >, so maximal munch is always right)"
+11:41   line "// SHR, no splitting needed anywhere"
+12:41   line "// RBRACKET RBRACKET (not an operator)"
+14:5    line "// comparison and logic"
+17:41   line "// LT: always comparison"
+23:5    line "// assignment family"
+35:41   line "// NULLISH_ASSIGN"
+37:5    line "// bindings"
+38:41   line "// COLON_EQ"
+39:41   line "// COLON_EQ_EQ"
+41:5    line "// ranges and spread"
+42:41   line "// DOTDOT"
+43:41   line "// DOTDOTEQ"
+44:41   line "// ELLIPSIS"
+46:5    line "// option family"
+47:41   line "// QUESTION_DOT"
+48:41   line "// QUESTION"
+49:41   line "// NULLISH"
+52:5    line "// arrows"
+53:41   line "// ARROW, FAT_ARROW"
+56:41   line "// ARROW in a declaration"

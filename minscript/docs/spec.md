@@ -64,6 +64,7 @@ Pipeline:
 | Variant construction | qualified (`Msg.Text(…)`) | qualified | **inferred from the expected type**: `send(Text("hi"))` |
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
 | Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
+| Lexer (implemented) | — | — | template tokens for `${…}`; `"…"` interpolations stay on one line; lexer balances delimiters (§1.1, §1.5) |
 | Waiting on several things | — | — | **`select { … }`**, random among ready arms; `for await`; `time.after`; `.cancel()` |
 
 ---
@@ -72,20 +73,32 @@ Pipeline:
 
 ### 1.1 Source [D]
 
-- UTF-8. CRLF is normalized to LF. A BOM is stripped.
-- Identifiers are ASCII.
+- UTF-8. CRLF counts as one newline, and becomes LF inside string values. A BOM is skipped.
+- Identifiers are ASCII. Any other character outside strings and comments is `E_UNKNOWN_CHARACTER`.
 
 ```ts
 type Token = {
-    kind: TokenKind
-    span: Span          // byte offsets + line/col
+    kind: TokenKind     // keywords, punctuators and sigils use their own text ("let", "??=", "r{");
+                        // otherwise Ident, _, Int, Float, String, RawString, Char,
+                        // TemplateHead, TemplateMiddle, TemplateTail, EOF
+    span: Span          // byte offsets into the original file + 1-based line/col (col counts code points)
     ws_before: boolean  // whitespace or comment directly before
-    nl_before: boolean  // a newline since the previous token
+    nl_before: boolean  // a newline since the previous token (a newline inside a block comment counts)
     match?: number      // openers: index of the matching closer
+    value?: string | bigint | number   // Ident name, Int (bigint), Float, cooked string/char text
+    multiline?: boolean // String / Template*: written with """
 }
 ```
 
-Comments are trivia, kept in a side list for the formatter and LSP.
+- Comments are trivia, kept in a side list for the formatter and LSP.
+- Newlines are not tokens. The parser applies §5.4 using `nl_before`.
+- Reserved keywords (§1.4) lex as keywords, so the parser can report `E_RESERVED_KEYWORD` with a hint.
+- **Delimiters are balanced by the lexer.**
+  - Every opener (including sigils) records its matching closer in `match`.
+  - A closer that doesn't match the innermost opener is reported once (`E_UNMATCHED_DELIMITER`).
+  - If it closes an outer opener, the inner ones are reported as unclosed. Otherwise it is lexed **as the expected closer**. A stray closer with nothing open is dropped.
+  - Openers still unclosed at EOF are each reported.
+- The implementation is `src/lexer.ts`.
 
 ### 1.2 Comments [D]
 
@@ -119,6 +132,8 @@ Reserved:     while loop yield macro where dyn
 
 **Integers:** `123`, `1_000`, `0xFF`, `0b1010`, `0o17`.
 - No suffixes.
+- Radix prefixes are lowercase (`0x`, `0o`, `0b`). `_` may only sit between digits (`1_000`, not `1_` or `0x_F`).
+- Identifier characters glued to a number make it invalid: `0b102`, `12px`, `1e` are each one `E_INVALID_NUMBER` token.
 - The default type is `int`.
 - Out-of-range values are a compile error.
 
@@ -128,17 +143,33 @@ Reserved:     while loop yield macro where dyn
 
 **Number lexing:**
 1. After a digit run, `.` belongs to the number only when a digit follows: `1..10` lexes as `1` `..` `10`, and `1.to_str()` as `1` `.` `to_str`.
-2. When the previous token is a member `.`, only digits are lexed: `t.0.1` lexes as `t` `.` `0` `.` `1`.
+2. When the previous token is a member `.` (or `?.`), only digits are lexed: `t.0.1` lexes as `t` `.` `0` `.` `1`.
+3. A `.` followed by a digit, after a token that can't end an expression, is the invalid float `.5` (`E_INVALID_NUMBER`, with a fix-it `0.5`). After a value, it is member access: `t.5`.
 
 **Booleans and absence:** `true`, `false`, `nil`. `nil` is a keyword alias of `None`.
 
 **Characters:** `'a'`, `'\n'`, `'\u{1F600}'`. Type `char` is a Unicode scalar value.
+- `''`, `'ab'` and an unclosed `'a` are `E_INVALID_CHAR`, each lexed as one token.
+- The removed tagged-record form `'1{` is `E_TAGGED_RECORD_REMOVED`, lexed as `r{` for recovery.
 
 **Strings:**
 - `"…"` is single-line.
 - Escapes: `\n \r \t \0 \\ \" \' \$ \xNN \u{…}`.
+  - `\xNN` is ASCII only (00–7F).
+  - `\u{…}` takes 1–6 hex digits and must be a Unicode scalar value.
+  - Anything else is `E_INVALID_ESCAPE`, and the character is kept.
 - Interpolation is `${expr}`. The lexer keeps a mode stack.
-- `"""…"""` is multi-line. The first newline is dropped, and the common indentation (measured from the closing line) is stripped.
+  - `"a${x}b${y}c"` lexes as `TemplateHead("a") x TemplateMiddle("b") y TemplateTail("c")`.
+  - Braces, strings and closures nest freely inside `${…}`.
+  - Template tokens are always balanced: an unterminated template gets a zero-width `TemplateTail`.
+  - A `$` not followed by `{` is literal; so is `\${`.
+- `"…"` strings end on the line they start, **interpolations included**. A newline inside `"…${…` is `E_UNTERMINATED_STRING`. Use `"""` for multi-line text.
+- `"""…"""` is multi-line, and interpolations inside it may span lines.
+  - If only whitespace follows the opening `"""` on its line, that first newline is dropped.
+  - If the closing `"""` is on a line of its own, that line's whitespace is the indentation stripped from every line, and the line itself is dropped. If the closing `"""` follows text, nothing is stripped.
+  - A line indented less than the closing line loses only the whitespace it shares with it.
+  - Indentation is measured on the source text. Escapes such as `\t` or `\n` are never stripped and never count as line breaks.
+  - A lone `"` or `""` inside is literal. The first `"""` closes the string.
 - Raw strings: `r"C:\path"`. No escapes or interpolation, may span lines, cannot contain `"`.
 
 ### 1.6 Glued sigil tokens [D]
@@ -1263,7 +1294,7 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `ResolverDropped` | a `Resolver` is dropped without resolving its promise (§9.6) |
 | `Deadlock` | every task is waiting and nothing can wake any of them (§9.10) |
 
-**Lexer and parser diagnostics** (exercised by `test/errors/`):
+**Lexer and parser diagnostics** (exercised by `test/errors/`). The lexer reports `E_UNTERMINATED_STRING`, `E_UNTERMINATED_COMMENT`, `E_INVALID_ESCAPE`, `E_INVALID_NUMBER`, `E_INVALID_CHAR`, `E_UNKNOWN_CHARACTER`, `E_UNMATCHED_DELIMITER` and `E_TAGGED_RECORD_REMOVED`; the parser reports the rest:
 
 | Code | Meaning |
 |---|---|
@@ -1272,7 +1303,8 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_UNTERMINATED_COMMENT` | `/*` not closed before EOF |
 | `E_INVALID_ESCAPE` | unknown `\x` escape |
 | `E_INVALID_NUMBER` | `.5`, `0x`, `0b102` |
-| `E_INVALID_CHAR` | `'ab'`, `''` |
+| `E_INVALID_CHAR` | `'ab'`, `''`, unclosed `'a` |
+| `E_UNKNOWN_CHARACTER` | a character that starts no token: `#` alone, `` ` ``, `$` outside a string, non-ASCII outside strings and comments |
 | `E_INVALID_RECORD_KEY` | record key that isn't an identifier or quoted identifier |
 | `E_TOP_LEVEL_STATEMENT` | statement outside a function |
 | `E_IMPORT_AFTER_ITEM` | `import` after the first item |

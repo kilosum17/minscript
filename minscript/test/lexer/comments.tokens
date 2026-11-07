@@ -1,0 +1,67 @@
+1:1        package
+1:9     ws Ident "lexer_comments"
+5:1     nl fun
+5:5     ws Ident "documented"
+5:15       ( → 5:16
+5:16       )
+5:18    ws { → 5:19
+5:19       }
+17:1    nl fun
+17:5    ws Ident "main"
+17:9       ( → 17:10
+17:10      )
+17:12   ws { → 27:1
+18:5    nl let
+18:9    ws Ident "a"
+18:11   ws =
+18:13   ws Int 1
+18:34   ws +
+18:36   ws Int 2
+19:5    nl let
+19:9    ws Ident "b"
+19:11   ws =
+19:13   ws Int 1
+19:23   ws +
+19:24      Int 2
+20:5    nl let
+20:9    ws Ident "url"
+20:13   ws =
+20:15   ws String "http://not-a-comment.com"
+21:5    nl let
+21:9    ws Ident "path"
+21:14   ws =
+21:16   ws String "/* not a comment */"
+22:5    nl let
+22:9    ws Ident "div"
+22:13   ws =
+22:15   ws Int 10
+22:18   ws /
+22:20   ws Int 2
+22:22   ws /
+22:24   ws Int 1
+24:5    nl let
+24:9    ws Ident "c"
+24:11   ws =
+24:13   ws Int 3
+25:5    nl let
+25:9    ws Ident "d"
+25:11   ws =
+26:9    nl Int 4
+27:1    nl }
+28:1    nl EOF
+
+-- trivia --
+3:1     doc "/// Doc comment attached to `documented`."
+4:1     doc "/// Second doc line."
+7:1     line "// line comment at top level"
+9:1     block "/* block comment */"
+11:1    block "/* block comment\n   spanning lines\n   with a nested /* inner /* deeper */ still inner */ comment\n   still inside the outer comment\n*/"
+18:15   block "/* inline block */"
+18:44   line "// trivia between tokens: ws_before = true on `+`"
+19:14   block "/*glued*/"
+19:45   line "// comment counts as whitespace: ws_before = true on `+`"
+20:45   line "// `//` inside a string is not a comment"
+22:45   line "// single `/` is division"
+23:5    line "// let disabled = 1"
+24:15   line "// trailing comment; the newline still terminates the statement"
+25:15   line "// comment after a continuation token: statement continues"

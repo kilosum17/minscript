@@ -1,0 +1,20 @@
+{
+  "name": "minscript",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "MinScript compiler front end (lexer first; parser next)",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "node --test src/*.test.ts test/*.test.ts",
+    "test:update": "UPDATE_SNAPSHOTS=1 node --test src/*.test.ts test/*.test.ts",
+    "typecheck": "tsc",
+    "lex": "node src/cli.ts lex"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

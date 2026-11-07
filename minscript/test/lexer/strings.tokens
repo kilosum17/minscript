@@ -1,0 +1,184 @@
+1:1        package
+1:9     ws Ident "lexer_strings"
+3:1     nl fun
+3:5     ws Ident "main"
+3:9        ( → 3:10
+3:10       )
+3:12    ws { → 39:1
+4:5     nl let
+4:9     ws Ident "empty"
+4:15    ws =
+4:17    ws String ""
+5:5     nl let
+5:9     ws Ident "plain"
+5:15    ws =
+5:17    ws String "hello"
+6:5     nl let
+6:9     ws Ident "escapes"
+6:17    ws =
+6:19    ws String "dq \" bs \\ nl \n tab \t cr \r nul \u0000 dollar $ sq ' hex A uni 😀"
+9:5     nl let
+9:9     ws Ident "interp"
+9:16    ws =
+9:18    ws TemplateHead "Hello "
+9:27       Ident "user"
+9:31       .
+9:32       Ident "name"
+9:36       TemplateMiddle ", id="
+9:44       Ident "user"
+9:48       .
+9:49       Ident "id"
+9:51       TemplateTail ""
+10:5    nl let
+10:9    ws Ident "interp_expr"
+10:21   ws =
+10:23   ws TemplateHead "sum="
+10:30      Ident "a"
+10:32   ws +
+10:34   ws Ident "b"
+10:36   ws *
+10:38   ws Int 2
+10:39      TemplateTail ""
+11:5    nl let
+11:9    ws Ident "interp_call"
+11:21   ws =
+11:23   ws TemplateHead "v="
+11:28      Ident "format"
+11:34      ( → 11:53
+11:35      Ident "compute"
+11:42      ( → 11:47
+11:43      Int 1
+11:44      ,
+11:46   ws Int 2
+11:47      )
+11:48      ,
+11:50   ws String "x"
+11:53      )
+11:54      TemplateTail ""
+12:5    nl let
+12:9    ws Ident "interp_nested"
+12:23   ws =
+12:25   ws TemplateHead "outer "
+12:35   ws TemplateHead "inner "
+12:44      Ident "deep"
+12:48      TemplateTail " end"
+12:55   ws TemplateTail " done"
+13:5    nl let
+13:9    ws Ident "interp_braces"
+13:23   ws =
+13:25   ws TemplateHead "rec="
+13:33   ws r{ → 13:41
+13:36   ws Ident "a"
+13:37      :
+13:39   ws Int 1
+13:41   ws }
+13:42      .
+13:43      Ident "a"
+13:45   ws TemplateMiddle " len="
+13:54   ws m{ → 13:64
+13:57   ws String "k"
+13:60      :
+13:62   ws Int 1
+13:64   ws }
+13:65      .
+13:66      Ident "len"
+13:69      ( → 13:70
+13:70      )
+13:72   ws TemplateTail ""
+14:5    nl let
+14:9    ws Ident "interp_closure"
+14:24   ws =
+14:26   ws TemplateHead "n="
+14:32   ws Ident "items"
+14:37      .
+14:38      Ident "map"
+14:41      ( → 14:53
+14:42      #{ → 14:52
+14:45   ws Ident "it"
+14:48   ws *
+14:50   ws Int 2
+14:52   ws }
+14:53      )
+14:54      .
+14:55      Ident "len"
+14:58      ( → 14:59
+14:59      )
+14:61   ws TemplateTail ""
+15:5    nl let
+15:9    ws Ident "adjacent"
+15:18   ws =
+15:20   ws TemplateHead ""
+15:23      Ident "a"
+15:24      TemplateMiddle ""
+15:27      Ident "b"
+15:28      TemplateMiddle ""
+15:31      Ident "c"
+15:32      TemplateTail ""
+16:5    nl let
+16:9    ws Ident "escaped_dollar"
+16:24   ws =
+16:26   ws String "price: ${amount}"
+17:5    nl let
+17:9    ws Ident "lone_dollar"
+17:21   ws =
+17:23   ws TemplateHead "costs $5 and "
+17:39      Ident "x"
+17:40      TemplateTail ""
+20:5    nl let
+20:9    ws Ident "multi"
+20:15   ws =
+20:17   ws TemplateHead "first line\nsecond: " """
+22:19      Ident "user"
+22:23      .
+22:24      Ident "name"
+22:28      TemplateTail "\n  indented two more" """
+25:5    nl let
+25:9    ws Ident "multi_one_line"
+25:24   ws =
+25:26   ws String "single line \"quotes\" allowed" """
+28:5    nl let
+28:9    ws Ident "raw"
+28:13   ws =
+28:15   ws RawString "C:\\users\\name\\file.txt"
+29:5    nl let
+29:9    ws Ident "raw_multi"
+29:19   ws =
+29:21   ws RawString "line one\nline two \\n ${not_interpolated}"
+33:5    nl let
+33:9    ws Ident "ch"
+33:12   ws =
+33:14   ws Char "a"
+34:5    nl let
+34:9    ws Ident "ch_nl"
+34:15   ws =
+34:17   ws Char "\n"
+35:5    nl let
+35:9    ws Ident "ch_quote"
+35:18   ws =
+35:20   ws Char "'"
+36:5    nl let
+36:9    ws Ident "ch_bs"
+36:15   ws =
+36:17   ws Char "\\"
+37:5    nl let
+37:9    ws Ident "ch_uni"
+37:16   ws =
+37:18   ws Char "😀"
+38:5    nl let
+38:9    ws Ident "ch_digit"
+38:18   ws =
+38:20   ws Char "1"
+39:1    nl }
+40:1    nl EOF
+
+-- trivia --
+8:5     line "// interpolation: the lexer keeps a mode stack (string ↔ interpolation, with brace depth)"
+11:66   line "// string nested inside ${}"
+12:66   line "// interpolation nested twice"
+13:77   line "// braces inside ${} don't close it"
+16:48   line "// literal text, not interpolation"
+17:48   line "// `$` not followed by `{` is literal"
+19:5    line "// multi-line: first newline dropped, common indentation (from the closing line) stripped"
+27:5    line "// raw: no escapes, no interpolation, may span lines"
+32:5    line "// characters"
+38:33   line "// char, not a tag (tagged records were removed)"
