@@ -23,7 +23,7 @@ impl[T] Box[T] {
     pub fun get(&this) -> &T { &this.value }
 }
 
-impl[T: Stringer] Vec[T] {
+impl[T: Stringer] Box[T] {
     pub fun join_all(&this) -> string { this.map(#{ it.to_str() }).join(", ") }
 }
 

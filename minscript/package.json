@@ -12,7 +12,8 @@
     "test:update": "UPDATE_SNAPSHOTS=1 node --test src/*.test.ts test/*.test.ts",
     "typecheck": "tsc",
     "lex": "node src/cli.ts lex",
-    "parse": "node src/cli.ts parse"
+    "parse": "node src/cli.ts parse",
+    "resolve": "node src/cli.ts resolve"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

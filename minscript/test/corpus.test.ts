@@ -1,8 +1,10 @@
-// Runs the lexer and parser over the `.ms` corpus (see test/README.md):
+// Runs the lexer, parser and resolver over the `.ms` corpus (see test/README.md):
 // - test/lexer/*.ms:   zero diagnostics, and the token dump must match the `.tokens` snapshot;
 // - test/parser/*.ms:  zero diagnostics, and the AST dump must match the `.ast` snapshot;
-// - test/programs:     zero diagnostics;
-// - test/errors:       the diagnostics must match the `//~` annotations exactly (code and line).
+// - test/programs:     zero diagnostics from the lexer, parser and resolver;
+// - test/errors:       the diagnostics must match the `//~` annotations exactly (code and line);
+// - test/resolve/*.ms: parse cleanly, resolver diagnostics match the annotations, and the
+//                      resolution dump matches the `.refs` snapshot.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -15,6 +17,8 @@ import { LEXER_CODES } from "../src/diagnostic.ts"
 import { dumpTokens } from "../src/dump.ts"
 import { lex } from "../src/lexer.ts"
 import { parse } from "../src/parser.ts"
+import { resolvePackage } from "../src/resolve.ts"
+import { dumpResolution } from "../src/resolve_dump.ts"
 import { printFile } from "../src/sexpr.ts"
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -66,10 +70,27 @@ describe("parser snapshots (test/parser)", () => {
     }
 })
 
-describe("programs parse cleanly (test/programs)", () => {
+describe("programs parse and resolve cleanly (test/programs)", () => {
     for (const file of msFiles(join(root, "programs"))) {
         test(rel(file), () => {
-            assert.deepEqual(diagnosticList(readFileSync(file)), [])
+            const src = readFileSync(file)
+            assert.deepEqual(diagnosticList(src), [])
+            const res = resolvePackage([parse(src).file])
+            assert.deepEqual(res.diagnostics.map((d) => `${d.span.line}:${d.span.col} ${d.code} ${d.message}`), [])
+        })
+    }
+})
+
+describe("resolver (test/resolve)", () => {
+    for (const file of msFiles(join(root, "resolve"))) {
+        test(rel(file), () => {
+            const text = readFileSync(file, "utf8")
+            const parsed = parse(text)
+            assert.deepEqual(parsed.diagnostics.map((d) => `${d.span.line}:${d.span.col} ${d.code} ${d.message}`), [], "must parse cleanly")
+            const res = resolvePackage([parsed.file])
+            const actual = res.diagnostics.map((d) => `${d.span.line} ${d.code}`).sort()
+            assert.deepEqual(actual, annotations(text).sort())
+            snapshot(file, ".refs", dumpResolution(res))
         })
     }
 })

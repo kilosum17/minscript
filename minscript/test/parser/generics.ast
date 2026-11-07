@@ -15,7 +15,7 @@
   (impl (generics T) (Box T) (fun get pub (params &this) (-> (& T)) (block (& (. this value)))))
   (impl
     (generics (T Stringer))
-    (Vec T)
+    (Box T)
     (fun join_all pub
       (params &this)
       (-> string)

@@ -65,6 +65,7 @@ Pipeline:
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
 | Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
 | Lexer (implemented) | — | — | template tokens for `${…}`; `"…"` interpolations stay on one line; lexer balances delimiters (§1.1, §1.5) |
+| Name resolution (implemented) | — | — | redeclaration only in inner scopes; uppercase names and members deferred to the type checker (§8.7) |
 | Parser (implemented) | — | — | struct literals need a PascalCase name; `break x` is a label only if declared; one diagnostic per mistake (§4.2, §5.3, §5.4, §11) |
 | Waiting on several things | — | — | **`select { … }`**, random among ready arms; `for await`; `time.after`; `.cancel()` |
 
@@ -727,7 +728,7 @@ type Config = TypeOf(default_config)
 
 `impl` blocks remain valid, for:
 - splitting methods across files of the same package;
-- generic or conditional impls (`impl[T: Stringer] Vec[T] { … }`);
+- generic or conditional impls (`impl[T: Stringer] Stack[T] { … }`, for a `Stack` declared in the same package);
 - implementing an interface separately (`impl Reader for File { … }`).
 
 Inline methods and `impl` blocks for the same type may coexist. A duplicate method name is `E_DUPLICATE_METHOD`.
@@ -878,6 +879,48 @@ let fd = unsafe { open(path.as_ptr(), 0, 0) }
 ```
 
 `@attr` is reserved (`E_ATTRIBUTES_RESERVED`).
+
+### 8.7 Name resolution [D]
+
+Name resolution binds every name to its declaration, without types. It is implemented in `src/resolve.ts` and leaves the AST unchanged: its results are side tables keyed by AST node.
+
+**Scopes**, innermost first:
+1. closure / block / `match` arm / `if let` branch / loop body / `or` right-hand side;
+2. the function: generic parameters, the receiver `this`, the parameters **and the top level of the body share one scope**;
+3. the file's imports;
+4. the package: the items of every file in the package;
+5. the prelude (§10.1).
+
+**Rules:**
+- **Order:** top-level items are order-independent within a package. Inside a function, a name is visible only after its declaration. The value of `let x = …` is resolved before `x` is bound, so `let a = a + 1` reads the outer `a`.
+- **Shadowing:** a name may be redeclared only in an **inner** scope. Redeclaring it in the same scope is `E_DUPLICATE_BINDING`. That includes a parameter redeclared at the top level of the body, a name bound twice in one pattern, and two parameters with the same name.
+- **Items:** two items with the same name in one package are `E_DUPLICATE_DECLARATION`, as is an import that binds a name already used by an item (rename it with `as`). Local items shadow prelude names, so a local `type Box[T]` is allowed.
+- **Imports:**
+  - `"std.json"` binds `json` (a package).
+  - `"std.io.println"` binds the item `println`.
+  - `"pkg.{a, b}"` binds `a` and `b`, and `as` renames.
+  - A glob import (`"pkg.*"`) makes the file *open*: until packages are loaded, unknown names in that file are deferred, not reported.
+- **Patterns:** lowercase names bind. Uppercase or qualified names are constructors. In an or-pattern, every alternative must bind the same names (`E_INCONSISTENT_OR_BINDINGS`). `Union.Variant` for a union of this package must name a real variant (`E_UNKNOWN_VARIANT`).
+- **Implicit parameters:**
+  - `it` / `it1` (the same symbol) … `itN` belong to the innermost header-less closure or unnamed `or`.
+  - Elsewhere they are `E_IT_OUTSIDE_CLOSURE`.
+  - They can't be declared (`E_RESERVED_IDENT`).
+- **`this` and `Self`:** `this` exists only in methods with a receiver (`E_THIS_OUTSIDE_METHOD`). `Self` exists only inside `type`, `union`, `inter` and `impl` bodies (`E_SELF_OUTSIDE_TYPE`).
+- **Captures:**
+  - Each closure records the outer locals it uses: parameters, locals, `this`, and `it` from an outer provider. That includes uses inside nested closures.
+  - A capture list may name only locals (`E_INVALID_CAPTURE`); globals and functions are never captured.
+- **Types:** in type position, a name must be a type (`E_UNDECLARED_TYPE`, `E_NOT_A_TYPE`).
+- **Sigils:** a sigil whose letter is a visible variable, parameter, function or import is `E_SIGIL_SHADOWS_BINDING` (§1.6).
+- **Impls:**
+  - The orphan rule (§8.4) is checked here (`E_ORPHAN_IMPL`), as is `E_METHODS_ON_STRUCTURAL`.
+  - Duplicate members are reported across inline methods, fields and every `impl` of the type: `E_DUPLICATE_FIELD`, `E_DUPLICATE_METHOD`, and `E_AMBIGUOUS_IMPL_METHOD` when two implemented interfaces define the same method.
+
+**Deferred to the type checker** (they need types):
+- member names: `x.name`, `Shape.Line`, `json.parse`;
+- **bare uppercase names that aren't declared** (`Text`, `Cash`): variants inferred from the expected type (§7.6), or from the scrutinee in patterns (§6);
+- everything in an open file.
+
+The type checker reports these as unknown if it can't resolve them either.
 
 ---
 
@@ -1179,7 +1222,7 @@ for await n in online.watch() { log.println("${n} online") }   // long-running: 
 
 ### 10.1 Prelude
 
-- **Types:** `Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Resolver`, `Ref`, `Topic`, `Queue`, `Signal`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`, `Panic`, `PanicKind`.
+- **Types:** `Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Resolver`, `Ref`, `Topic`, `Queue`, `Signal`, `Sub`, `Watcher`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`, `Panic`, `PanicKind`, `Ordering` (`Less` / `Equal` / `Greater`).
 - **Functions:** `assert`, `panic`.
 - **`log`**: `log.println`, `log.print`, `log.warn`, `log.error`.
 - **The core interfaces** in §10.2.
@@ -1282,6 +1325,20 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_ORPHAN_IMPL` | `impl X for T` where neither `X` nor `T` is local |
 | `E_IMPORT_CYCLE` | packages import each other, directly or indirectly (§8.1) |
 | `E_HANDLE_IMPL` | `impl Handle for T` outside std / `extern` (§9.1) |
+| `E_UNDECLARED_NAME` | a name that isn't declared in any enclosing scope (§8.7) |
+| `E_UNDECLARED_TYPE` | a type name that isn't declared |
+| `E_UNDECLARED_ASSIGNMENT` | assignment to a name that isn't declared: use `let` / `var` / `:=` / `:==` |
+| `E_NOT_A_TYPE` | a value (function, variable) used where a type is expected |
+| `E_DUPLICATE_DECLARATION` | two items, or an item and an import, with the same name in one package |
+| `E_DUPLICATE_BINDING` | a name declared twice in the same scope (or pattern, or parameter list) |
+| `E_DUPLICATE_FIELD` | a field or variant declared (or given in a literal) twice |
+| `E_AMBIGUOUS_IMPL_METHOD` | two interfaces implemented by a type define the same method |
+| `E_INCONSISTENT_OR_BINDINGS` | or-pattern alternatives bind different names |
+| `E_UNKNOWN_VARIANT` | `Union.X` in a pattern, where the local union has no variant `X` |
+| `E_IT_OUTSIDE_CLOSURE` | `it` / `itN` outside a header-less closure or unnamed `or` |
+| `E_RESERVED_IDENT` | declaring `it` / `itN` |
+| `E_THIS_OUTSIDE_METHOD` | `this` in a function without a receiver |
+| `E_SELF_OUTSIDE_TYPE` | `Self` outside a type, union, interface or impl |
 | `E_INVALID_CAST` | `as T` that is neither a valid type annotation nor a numeric/pointer cast |
 | `E_SELECT_ARM_NOT_PROMISE` | `select` arm expression is not a `Promise[T]` |
 | `E_AWAIT_OUTSIDE_ASYNC` | `await` / `for await` / `select` outside an `async fun` or `main` |
@@ -1688,6 +1745,8 @@ section[T](name: string) -> Result[T, json.Error]
 | 1 | **Borrowing two parts of one value at once** (a socket's read and write halves, two fields of `&mut this`). Today std splits into owned halves (`conn.split()`). Should the checker allow disjoint field borrows, Rust-style? | undecided: the spec is silent; std uses owned splits for now |
 | 2 | Parameter names in function types: `(id: int) -> bool` as well as `(int) -> bool` (documentation only) | not yet |
 | 3 | A named function-type form (`Fun[...]`) | skipped; use `(T) -> U` / `&(T) -> U` |
+| 4 | **Name clash:** `Sub[T]` is the subscription type (§9.10), but §10.2 also names the `-` operator interface `Sub[R, O]` (after `Add`). One of them needs another name: e.g. the operator interfaces `Plus` / `Minus` / `Times` / `Over` / `Mod`, or Rust-like `Add` / `Subtract` / …, or the subscription back to `Subscription[T]` | the stub uses `Sub` for subscriptions; the operator interface is unnamed for now |
+| 5 | Mutability of bindings: should assigning to a `let` binding (`let x = 1; x = 2`) be a resolver error? `y = 0` where `y: &mut i32` writes through the borrow, so the check needs types | left to the type checker |
 
 **Resolved in this revision** (formerly open questions):
 - **Handles clone implicitly**: `Ref`, `Topic`, `Queue`, `Signal` and std handles have no `.clone()` at call sites (§9.1). `Subscription` is renamed `Sub[T]`.

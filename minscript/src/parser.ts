@@ -960,12 +960,15 @@ class Parser {
             if (tok.kind === "or") {
                 this.advance()
                 let name: string | null = null
+                let nameSpan: Span | null = null
                 if (this.at("Ident") && this.peek().kind === "=>") {
-                    name = this.advance().value as string
+                    const nameTok = this.advance()
+                    name = nameTok.value as string
+                    nameSpan = nameTok.span
                     this.advance()
                 }
                 const rhs = this.parseExpr(BP_OR_RHS)
-                left = { kind: "Or", span: this.sp(start), expr: left, name, rhs }
+                left = { kind: "Or", span: this.sp(start), expr: left, name, nameSpan, rhs }
                 continue
             }
 

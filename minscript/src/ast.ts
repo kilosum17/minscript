@@ -159,7 +159,7 @@ export type Expr =
     | N<"Assign", { op: string, target: Expr, value: Expr }>
     | N<"Range", { op: ".." | "..=", start: Expr | null, end: Expr | null }>
     | N<"As", { expr: Expr, type: Type }>
-    | N<"Or", { expr: Expr, name: string | null, rhs: Expr }>
+    | N<"Or", { expr: Expr, name: string | null, nameSpan: Span | null, rhs: Expr }>
     | N<"Member", { object: Expr, name: string | number }>             // number: tuple index `t.0`
     | N<"OptMember", { object: Expr, name: string | number }>          // `x?.name`
     | N<"Call", { callee: Expr, args: (Expr | Spread)[] }>
