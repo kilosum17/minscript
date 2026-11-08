@@ -109,6 +109,7 @@ function expr(e: H.Expr, n: Names): Sx {
         case "call": return [e.fn, ...e.args.map((a) => expr(a, n))]
         case "dyncall": return ["dyn", expr(e.recv, n), e.method, ...e.args.map((a) => expr(a, n))]
         case "callvalue": return ["callv", expr(e.callee, n), ...e.args.map((a) => expr(a, n))]
+        case "copy": return ["copy", expr(e.expr, n)]
         case "wstatic": return [`wstatic:${e.witness && "param" in e.witness ? e.witness.param.name : "?"}.${e.method}`, ...e.args.map((a) => expr(a, n))]
         case "extern": return e.args === null ? `extern:${e.path}` : [`extern:${e.path}`, ...e.args.map((a) => expr(a, n))]
         case "struct": return ["struct", e.type, ...e.fields.map((f): Sx => [f.name, expr(f.value, n)])]

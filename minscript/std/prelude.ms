@@ -383,12 +383,151 @@ pub type Set[T] = {
     pub fun iter(&this) -> Iterator[&T] { _builtin() }
 }
 
+// ---- integers: explicit overflow behaviour (spec §9.5: `+`, `-`, `*` always panic on overflow) ---------
+// `wrapping_*` wraps around (two's complement), `saturating_*` stops at the type's bounds, and
+// `checked_*` is `None` on overflow.
+
+impl int {
+    pub fun wrapping_add(this, o: int) -> int { _builtin() }
+    pub fun saturating_add(this, o: int) -> int { _builtin() }
+    pub fun checked_add(this, o: int) -> int? { _builtin() }
+    pub fun wrapping_sub(this, o: int) -> int { _builtin() }
+    pub fun saturating_sub(this, o: int) -> int { _builtin() }
+    pub fun checked_sub(this, o: int) -> int? { _builtin() }
+    pub fun wrapping_mul(this, o: int) -> int { _builtin() }
+    pub fun saturating_mul(this, o: int) -> int { _builtin() }
+    pub fun checked_mul(this, o: int) -> int? { _builtin() }
+}
+
+impl isize {
+    pub fun wrapping_add(this, o: isize) -> isize { _builtin() }
+    pub fun saturating_add(this, o: isize) -> isize { _builtin() }
+    pub fun checked_add(this, o: isize) -> isize? { _builtin() }
+    pub fun wrapping_sub(this, o: isize) -> isize { _builtin() }
+    pub fun saturating_sub(this, o: isize) -> isize { _builtin() }
+    pub fun checked_sub(this, o: isize) -> isize? { _builtin() }
+    pub fun wrapping_mul(this, o: isize) -> isize { _builtin() }
+    pub fun saturating_mul(this, o: isize) -> isize { _builtin() }
+    pub fun checked_mul(this, o: isize) -> isize? { _builtin() }
+}
+
+impl usize {
+    pub fun wrapping_add(this, o: usize) -> usize { _builtin() }
+    pub fun saturating_add(this, o: usize) -> usize { _builtin() }
+    pub fun checked_add(this, o: usize) -> usize? { _builtin() }
+    pub fun wrapping_sub(this, o: usize) -> usize { _builtin() }
+    pub fun saturating_sub(this, o: usize) -> usize { _builtin() }
+    pub fun checked_sub(this, o: usize) -> usize? { _builtin() }
+    pub fun wrapping_mul(this, o: usize) -> usize { _builtin() }
+    pub fun saturating_mul(this, o: usize) -> usize { _builtin() }
+    pub fun checked_mul(this, o: usize) -> usize? { _builtin() }
+}
+
+impl i8 {
+    pub fun wrapping_add(this, o: i8) -> i8 { _builtin() }
+    pub fun saturating_add(this, o: i8) -> i8 { _builtin() }
+    pub fun checked_add(this, o: i8) -> i8? { _builtin() }
+    pub fun wrapping_sub(this, o: i8) -> i8 { _builtin() }
+    pub fun saturating_sub(this, o: i8) -> i8 { _builtin() }
+    pub fun checked_sub(this, o: i8) -> i8? { _builtin() }
+    pub fun wrapping_mul(this, o: i8) -> i8 { _builtin() }
+    pub fun saturating_mul(this, o: i8) -> i8 { _builtin() }
+    pub fun checked_mul(this, o: i8) -> i8? { _builtin() }
+}
+
+impl i16 {
+    pub fun wrapping_add(this, o: i16) -> i16 { _builtin() }
+    pub fun saturating_add(this, o: i16) -> i16 { _builtin() }
+    pub fun checked_add(this, o: i16) -> i16? { _builtin() }
+    pub fun wrapping_sub(this, o: i16) -> i16 { _builtin() }
+    pub fun saturating_sub(this, o: i16) -> i16 { _builtin() }
+    pub fun checked_sub(this, o: i16) -> i16? { _builtin() }
+    pub fun wrapping_mul(this, o: i16) -> i16 { _builtin() }
+    pub fun saturating_mul(this, o: i16) -> i16 { _builtin() }
+    pub fun checked_mul(this, o: i16) -> i16? { _builtin() }
+}
+
+impl i32 {
+    pub fun wrapping_add(this, o: i32) -> i32 { _builtin() }
+    pub fun saturating_add(this, o: i32) -> i32 { _builtin() }
+    pub fun checked_add(this, o: i32) -> i32? { _builtin() }
+    pub fun wrapping_sub(this, o: i32) -> i32 { _builtin() }
+    pub fun saturating_sub(this, o: i32) -> i32 { _builtin() }
+    pub fun checked_sub(this, o: i32) -> i32? { _builtin() }
+    pub fun wrapping_mul(this, o: i32) -> i32 { _builtin() }
+    pub fun saturating_mul(this, o: i32) -> i32 { _builtin() }
+    pub fun checked_mul(this, o: i32) -> i32? { _builtin() }
+}
+
+impl i64 {
+    pub fun wrapping_add(this, o: i64) -> i64 { _builtin() }
+    pub fun saturating_add(this, o: i64) -> i64 { _builtin() }
+    pub fun checked_add(this, o: i64) -> i64? { _builtin() }
+    pub fun wrapping_sub(this, o: i64) -> i64 { _builtin() }
+    pub fun saturating_sub(this, o: i64) -> i64 { _builtin() }
+    pub fun checked_sub(this, o: i64) -> i64? { _builtin() }
+    pub fun wrapping_mul(this, o: i64) -> i64 { _builtin() }
+    pub fun saturating_mul(this, o: i64) -> i64 { _builtin() }
+    pub fun checked_mul(this, o: i64) -> i64? { _builtin() }
+}
+
+impl u8 {
+    pub fun wrapping_add(this, o: u8) -> u8 { _builtin() }
+    pub fun saturating_add(this, o: u8) -> u8 { _builtin() }
+    pub fun checked_add(this, o: u8) -> u8? { _builtin() }
+    pub fun wrapping_sub(this, o: u8) -> u8 { _builtin() }
+    pub fun saturating_sub(this, o: u8) -> u8 { _builtin() }
+    pub fun checked_sub(this, o: u8) -> u8? { _builtin() }
+    pub fun wrapping_mul(this, o: u8) -> u8 { _builtin() }
+    pub fun saturating_mul(this, o: u8) -> u8 { _builtin() }
+    pub fun checked_mul(this, o: u8) -> u8? { _builtin() }
+}
+
+impl u16 {
+    pub fun wrapping_add(this, o: u16) -> u16 { _builtin() }
+    pub fun saturating_add(this, o: u16) -> u16 { _builtin() }
+    pub fun checked_add(this, o: u16) -> u16? { _builtin() }
+    pub fun wrapping_sub(this, o: u16) -> u16 { _builtin() }
+    pub fun saturating_sub(this, o: u16) -> u16 { _builtin() }
+    pub fun checked_sub(this, o: u16) -> u16? { _builtin() }
+    pub fun wrapping_mul(this, o: u16) -> u16 { _builtin() }
+    pub fun saturating_mul(this, o: u16) -> u16 { _builtin() }
+    pub fun checked_mul(this, o: u16) -> u16? { _builtin() }
+}
+
+impl u32 {
+    pub fun wrapping_add(this, o: u32) -> u32 { _builtin() }
+    pub fun saturating_add(this, o: u32) -> u32 { _builtin() }
+    pub fun checked_add(this, o: u32) -> u32? { _builtin() }
+    pub fun wrapping_sub(this, o: u32) -> u32 { _builtin() }
+    pub fun saturating_sub(this, o: u32) -> u32 { _builtin() }
+    pub fun checked_sub(this, o: u32) -> u32? { _builtin() }
+    pub fun wrapping_mul(this, o: u32) -> u32 { _builtin() }
+    pub fun saturating_mul(this, o: u32) -> u32 { _builtin() }
+    pub fun checked_mul(this, o: u32) -> u32? { _builtin() }
+}
+
+impl u64 {
+    pub fun wrapping_add(this, o: u64) -> u64 { _builtin() }
+    pub fun saturating_add(this, o: u64) -> u64 { _builtin() }
+    pub fun checked_add(this, o: u64) -> u64? { _builtin() }
+    pub fun wrapping_sub(this, o: u64) -> u64 { _builtin() }
+    pub fun saturating_sub(this, o: u64) -> u64 { _builtin() }
+    pub fun checked_sub(this, o: u64) -> u64? { _builtin() }
+    pub fun wrapping_mul(this, o: u64) -> u64 { _builtin() }
+    pub fun saturating_mul(this, o: u64) -> u64 { _builtin() }
+    pub fun checked_mul(this, o: u64) -> u64? { _builtin() }
+}
 // ---- strings (implemented once on &str, spec §10.3) -------------------------------------------
 
 impl string {
-    // core: offsets (UTF-16 units on JS for now, spec §14.2), Unicode tables, float parsing
+    // core: offsets (UTF-8 bytes), Unicode tables, float parsing
+    /// The length in bytes (UTF-8).
     pub fun len(&this) -> int { _builtin() }
+    /// The bytes from `start` to `end` (clamped to the string); an offset inside a character panics.
     pub fun substring(&this, start: int, end: int) -> &str { _builtin() }
+    /// The byte at offset `i` (panics out of bounds).
+    pub fun byte_at(&this, i: int) -> u8 { _builtin() }
     /// The offset of the first `needle` at or after `from`.
     pub fun find(&this, needle: &str, from: int) -> int? { _builtin() }
     pub fun to_lower(&this) -> string { _builtin() }
@@ -410,10 +549,10 @@ impl string {
     pub fun trim(&this) -> &str {
         var start = 0
         var end = this.len()
-        for start < end && is_space(this.substring(start, start + 1)) {
+        for start < end && is_space(this.byte_at(start)) {
             start += 1
         }
-        for end > start && is_space(this.substring(end - 1, end)) {
+        for end > start && is_space(this.byte_at(end - 1)) {
             end -= 1
         }
         this.substring(start, end)
@@ -430,10 +569,11 @@ impl string {
     pub fun split(&this, sep: &str) -> Vec[&str] {
         var parts = [] as Vec[&str]
         if sep.is_empty() {
-            var i = 0
-            for i < this.len() {
-                parts.push(this.substring(i, i + 1))
-                i += 1
+            var at = 0
+            for c in this.chars() {
+                let n = c.to_str().len()
+                parts.push(this.substring(at, at + n))
+                at += n
             }
             return parts
         }
@@ -463,15 +603,18 @@ impl string {
         }
         var n = 0
         for i < s.len() {
-            let digit = "0123456789".find(s.substring(i, i + 1), 0) or return Err("not an integer: \"${this}\"")
-            n = n * 10 + digit
+            let b = s.byte_at(i) as int
+            if b < 48 || b > 57 {
+                return Err("not an integer: \"${this}\"")
+            }
+            n = n * 10 + (b - 48)          // overflow panics (spec §9.5)
             i += 1
         }
         Ok(if negative { -n } else { n })
     }
 }
 
-fun is_space(c: &str) -> bool { c == " " || c == "\t" || c == "\n" || c == "\r" }
+fun is_space(b: u8) -> bool { b == 32 || b == 9 || b == 10 || b == 13 }
 
 // ---- async ------------------------------------------------------------------------------------
 

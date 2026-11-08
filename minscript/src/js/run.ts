@@ -42,9 +42,9 @@ export type RunResult = { exitCode: number, panic: string | null, value?: unknow
 export async function runJs(js: string, onOutput?: (line: string) => void): Promise<RunResult> {
     if (onOutput) setOutput(onOutput)
     const print = onOutput ?? ((l: string) => console.error(l))
-    const describe = (e: unknown) => (e instanceof Panic ? e.message : e instanceof Error ? `${e.name}: ${e.message}` : String(e))
+    const describe = (e: unknown) => (e instanceof Panic ? `${e.message}${e.file ? ` (at ${e.file}:${e.line})` : ""}` : e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     // a panic in a task nobody awaits: the task is dropped, the program goes on (spec §9.8)
-    const onRejection = (e: unknown) => print(`panic in task: ${describe(e)}`)
+    const onRejection = (e: unknown) => { if (!(e instanceof Panic && e.kind === "Cancelled")) print(`panic in task: ${describe(e)}`) }
     process.on("unhandledRejection", onRejection)
     try {
         const mod = await loadJs(js)
@@ -66,7 +66,7 @@ export async function runJs(js: string, onOutput?: (line: string) => void): Prom
     } finally {
         process.off("unhandledRejection", onRejection)
         process.removeAllListeners("beforeExit")
-        closeResources()             // servers and sockets the program left open (tasks can't be cancelled on JS yet)
+        closeResources()             // servers and sockets the program left open
         if (onOutput) resetOutput()
     }
 }

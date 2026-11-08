@@ -306,7 +306,7 @@ export function preludeFuns(): H.Fun[] {
     if (preludeFunsCache !== null) return preludeFunsCache
     const p = loadPrelude()
     const checked = checkPackage([p.file], p.res, p)
-    preludeFunsCache = lowerPackage([p.file], p.res, checked, p, "std").funs.filter((f) => !f.builtin)
+    preludeFunsCache = lowerPackage([p.file], p.res, checked, p, "std", [], new Map([[p.file, "std/prelude.ms"]])).funs.filter((f) => !f.builtin)
     return preludeFunsCache
 }
 
@@ -317,13 +317,22 @@ export function lowerProgram(program: Program): H.Program {
     for (const pkg of program.packages) {
         if (!pkg.res || !pkg.checked) continue
         const deps = [...loader.reachable(pkg)].filter((d) => d.res).map((d) => ({ files: d.files.map((f) => f.parsed.file), res: d.res!, name: d.name }))
-        const p = lowerPackage(pkg.files.map((f) => f.parsed.file), pkg.res, pkg.checked, loadPrelude(), pkg.name, deps)
+        const names = new Map(pkg.files.map((f) => [f.parsed.file, displayPath(f.path)]))
+        const p = lowerPackage(pkg.files.map((f) => f.parsed.file), pkg.res, pkg.checked, loadPrelude(), pkg.name, deps, names)
         out.types.push(...p.types)
         out.funs.push(...p.funs)
         out.globals.push(...p.globals)
     }
     computeWitnesses(out)
     return out
+}
+
+/** How a file is named in panic locations: std files as `std/…`, others relative to the current folder. */
+function displayPath(path: string): string {
+    const std = relative(STD_DIR, path)
+    if (!std.startsWith("..")) return `std/${std}`
+    const rel = relative(process.cwd(), path)
+    return rel.startsWith("..") ? path : rel
 }
 
 export function existsFile(path: string): boolean {

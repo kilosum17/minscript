@@ -50,6 +50,7 @@ export type Fun = {
     body: Block | null            // null: extern
     extern: string | null         // the ABI of an extern function
     builtin?: boolean             // a std function whose body is `_builtin()`: provided by the back end's runtime
+    file?: string                 // the source file, for panic locations (`src/main.ms`; std files as `std/…`)
     generics?: Sym[]              // every generic parameter in scope: the type's or impl's, then its own
     witnesses?: Sym[]             // the generics it needs at run time (hidden parameters, after the others); set by `computeWitnesses`
     span: Span
@@ -74,6 +75,7 @@ export type Expr =
     | E<"global", { name: string }>
     | E<"fn", { name: string }>                                          // a function (or variant constructor) as a value
     | E<"call", { fn: string, args: Expr[], shapes?: (Shape | null)[], witnessArgs?: [Sym, Shape | null][] }>   // shapes: a builtin's type arguments; witnessArgs: the callee's generics as instantiated here
+    | E<"copy", { expr: Expr }>                                          // a copy of a `Copy` record / tuple read from a place (value semantics)
     | E<"wstatic", { witness: Shape | null, method: string, args: Expr[] }>   // `T.default()`: a static of a generic parameter, through its witness                          // a resolved function; methods take the receiver first
     | E<"dyncall", { recv: Expr, method: string, args: Expr[] }>       // dispatch on the receiver: interfaces, bounds, auto methods, unknown types
     | E<"callvalue", { callee: Expr, args: Expr[] }>                   // calling a closure or function value
@@ -95,7 +97,7 @@ export type Expr =
     | E<"or", { left: Expr, right: Expr }>
     | E<"truthy", { expr: Expr, of: "option" | "result" }>               // Some(_) / Ok(_) → true
     | E<"concat", { parts: Expr[] }>                                   // string concatenation
-    | E<"tostr", { expr: Expr }>
+    | E<"tostr", { expr: Expr, shape?: Shape }>                         // shape: where the value's floats are (`Vec[f64]` prints `[1.0]`)
     | E<"widen", { expr: Expr }>                                       // int → i64 / u64
     | E<"cast", { expr: Expr, to: Ty }>                                // numeric / pointer `as` cast
     | E<"assign", { target: Expr, op: string, value: Expr }>

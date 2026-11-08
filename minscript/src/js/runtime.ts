@@ -27,10 +27,43 @@ export function resetOutput(): void { output = (line) => { console.log(line) }; 
 
 export class Panic extends Error {
     readonly kind: string
+    /** Where it happened in MinScript: the innermost frame outside std (spec §9.8), or "" */
+    readonly file: string
+    readonly line: number
     constructor(kind: string, message: string) {
         super(message)
         this.kind = kind
+        const at = locate(this.stack ?? "")
+        this.file = at?.file ?? ""
+        this.line = at?.line ?? 0
     }
+}
+
+// ---- source locations: generated modules register `//@N` markers (src/js/emit.ts) ---------------
+
+Error.stackTraceLimit = Math.max(Error.stackTraceLimit, 64)
+const sourceMaps = new Map<string, { locs: string[], marks: number[] }>()
+
+export function sourceMap(url: string, locs: string[], marks: number[]): void {
+    sourceMaps.set(url, { locs, marks })
+}
+
+function locate(stack: string): { file: string, line: number } | null {
+    let fallback: { file: string, line: number } | null = null
+    for (const m of stack.matchAll(/(file:\/\/[^\s)]+?):(\d+):\d+/g)) {
+        const map = sourceMaps.get(m[1]!)
+        if (!map) continue
+        const jsLine = Number(m[2])
+        let idx = -1
+        for (let i = 0; i < map.marks.length && map.marks[i]! <= jsLine; i += 2) idx = map.marks[i + 1]!
+        if (idx < 0) continue
+        const loc = map.locs[idx]!
+        const colon = loc.lastIndexOf(":")
+        const at = { file: loc.slice(0, colon), line: Number(loc.slice(colon + 1)) }
+        if (!at.file.startsWith("std/")) return at
+        fallback ??= at
+    }
+    return fallback
 }
 
 export function panic(message: string, kind = "User"): never {
@@ -41,7 +74,8 @@ export function panic(message: string, kind = "User"): never {
 export function panicValue(e: unknown): Any {
     const kind = e instanceof Panic ? e.kind : "User"
     const message = e instanceof Error ? e.message : String(e)
-    return { $t: "std.Panic", message, file: "", line: 0, trace: e instanceof Error ? e.stack ?? "" : "", kind: { $t: "std.PanicKind", $v: kind, $f: [] } }
+    const file = e instanceof Panic ? e.file : "", line = e instanceof Panic ? e.line : 0
+    return { $t: "std.Panic", message, file, line, trace: e instanceof Error ? e.stack ?? "" : "", kind: { $t: "std.PanicKind", $v: kind, $f: [] } }
 }
 
 // ---- values -----------------------------------------------------------------------------------
@@ -107,7 +141,7 @@ export function hashKey(v: Any): Any {
 
 export function clone(v: Any): Any {
     if (v === null || typeof v !== "object") return v
-    if (Array.isArray(v)) return v.map(clone)
+    if (Array.isArray(v)) return isTuple(v) ? tup(v.map(clone)) : v.map(clone)
     if (v instanceof MsMap) { const m = new MsMap(); for (const [k, x] of v.entries()) m.set(clone(k), clone(x)); return m }
     if (v instanceof MsSet) { const s = new MsSet(); for (const k of v.values()) s.add(clone(k)); return s }
     if (v instanceof Ref || v instanceof Topic || v instanceof Queue || v instanceof Signal || v instanceof Promise) return v   // handles
@@ -122,6 +156,11 @@ function quote(v: Any, float = false): string {
     return typeof v === "string" ? JSON.stringify(v) : toStr(v)
 }
 
+/** Tuples are arrays marked as tuples (so they print as `t(…)`, not `[…]`). */
+const TUPLE = Symbol("tuple")
+export function tup(a: Any[]): Any[] { (a as Any)[TUPLE] = true; return a }
+const isTuple = (v: Any) => Array.isArray(v) && (v as Any)[TUPLE] === true
+
 export function toStr(v: Any): string {
     if (v === undefined) return "t()"
     if (v === null) return "nil"
@@ -135,6 +174,7 @@ export function toStr(v: Any): string {
         const user = types.get(v.$t)?.methods["to_str"]
         if (user) return String(user(v))
     }
+    if (isTuple(v)) return `t(${v.map((x: Any) => quote(x)).join(", ")})`
     if (Array.isArray(v)) return `[${v.map((x: Any) => quote(x)).join(", ")}]`
     if (v instanceof MsMap) return `m{ ${[...v.entries()].map(([k, x]) => `${quote(k)}: ${quote(x)}`).join(", ")} }`
     if (v instanceof MsSet) return `s{ ${[...v.values()].map((x: Any) => quote(x)).join(", ")} }`
@@ -156,11 +196,81 @@ export function toStr(v: Any): string {
 }
 
 /** to_str of a float: `2.0`, not `2` (the type is known where this is emitted). */
+/** `to_str` with the static type's shape, so floats inside collections print as floats (`[1.0]`). */
+export function toStrS(v: Any, s: Shape | null): string {
+    if (s === null) return toStr(v)
+    const q = (x: Any, inner: Shape | null) => (typeof x === "string" ? JSON.stringify(x) : toStrS(x, inner))
+    if ("f" in s) return typeof v === "number" ? toStrF(v) : toStr(v)
+    if ("vec" in s && Array.isArray(v) && !isTuple(v)) return `[${v.map((x: Any) => q(x, s.vec)).join(", ")}]`
+    if ("opt" in s && v && v.$v !== undefined) return v.$v === "Some" ? `Some(${q(v.$f[0], s.opt)})` : toStr(v)
+    if ("map" in s && v instanceof MsMap) return `m{ ${[...v.entries()].map(([k, x]) => `${quote(k)}: ${q(x, s.map)}`).join(", ")} }`
+    return toStr(v)
+}
+
 export function toStrF(v: number): string {
     return Number.isInteger(v) && Number.isFinite(v) ? v.toFixed(1) : String(v)
 }
 
 // ---- numbers ----------------------------------------------------------------------------------
+
+// ---- integers (spec §9.5: overflow always panics) ---------------------------------------------------
+// On JS, `int` / `isize` are i32 and `usize` is u32 (number); i64 / u64 are BigInt. Every arithmetic
+// result goes through its type's check; products of two 32-bit values may lose precision past 2^53,
+// but they are then far outside the range, so the check still catches them.
+
+const overflow = (kind: string, x: Any): never => panic(`arithmetic overflow: ${String(x)} doesn't fit in ${kind}`, "Overflow")
+export const ck_i8 = (x: number): number => (x > 127 || x < -128 ? overflow("i8", x) : x)
+export const ck_i16 = (x: number): number => (x > 32767 || x < -32768 ? overflow("i16", x) : x)
+export const ck_i32 = (x: number): number => (x > 2147483647 || x < -2147483648 ? overflow("i32", x) : x)
+export const ck_u8 = (x: number): number => (x > 255 || x < 0 ? overflow("u8", x) : x)
+export const ck_u16 = (x: number): number => (x > 65535 || x < 0 ? overflow("u16", x) : x)
+export const ck_u32 = (x: number): number => (x > 4294967295 || x < 0 ? overflow("u32", x) : x)
+export const ck_i64 = (x: bigint): bigint => (x > 9223372036854775807n || x < -9223372036854775808n ? overflow("i64", x) : x)
+export const ck_u64 = (x: bigint): bigint => (x > 18446744073709551615n || x < 0n ? overflow("u64", x) : x)
+
+const BITS: Record<string, number> = { i8: 8, i16: 16, i32: 32, u8: 8, u16: 16, u32: 32, i64: 64, u64: 64 }
+
+/** An integer wrapped to a type's width (two's complement): `as` casts, `~`, `<<`. */
+export function wrap(x: number | bigint, kind: string): number | bigint {
+    const bits = BITS[kind]!
+    const signed = kind.startsWith("i")
+    if (bits === 64) {
+        const b = typeof x === "bigint" ? x : BigInt(x)
+        return signed ? BigInt.asIntN(64, b) : BigInt.asUintN(64, b)
+    }
+    const n = typeof x === "bigint" ? Number(BigInt.asIntN(32, x)) : x
+    if (bits === 32) return signed ? n | 0 : n >>> 0
+    const shift = 32 - bits
+    return signed ? (n << shift) >> shift : n & ((1 << bits) - 1)
+}
+
+/** `x as T` to an integer type: from an integer, wrapping; from a float, saturating (NaN → 0). */
+export function toInt(x: number | bigint, kind: string, fromFloat: boolean): number | bigint {
+    if (!fromFloat) return wrap(x, kind)
+    const f = x as number
+    const bits = BITS[kind]!
+    const signed = kind.startsWith("i")
+    if (Number.isNaN(f)) return bits === 64 ? 0n : 0
+    if (bits === 64) {
+        const min = signed ? -(2n ** 63n) : 0n, max = signed ? 2n ** 63n - 1n : 2n ** 64n - 1n
+        if (!Number.isFinite(f)) return f > 0 ? max : min
+        const b = BigInt(Math.trunc(f))
+        return b < min ? min : b > max ? max : b
+    }
+    const min = signed ? -(2 ** (bits - 1)) : 0, max = signed ? 2 ** (bits - 1) - 1 : 2 ** bits - 1
+    const t = Math.trunc(f)
+    return t < min ? min : t > max ? max : t
+}
+
+/** `a << n` / `a >> n`: the amount must be below the width (else Overflow); `<<` wraps. */
+export function shift(a: number | bigint, n: number | bigint, op: "<<" | ">>", kind: string): number | bigint {
+    const bits = BITS[kind]!
+    const amount = Number(n)
+    if (amount < 0 || amount >= bits) panic(`shift by ${amount}: ${kind} has ${bits} bits`, "Overflow")
+    if (typeof a === "bigint") return op === "<<" ? wrap(a << BigInt(amount), kind) : a >> BigInt(amount)
+    if (op === ">>") return kind.startsWith("u") ? a >>> amount : a >> amount
+    return wrap(a << amount, kind)
+}
 
 export function idiv(a: number, b: number): number {
     if (b === 0) panic("division by zero", "Overflow")
@@ -496,6 +606,53 @@ export class Watcher {
  * `select` (spec §4.9): waits for the first of several Promises. When several are ready, one is
  * chosen at random; the losers are cancelled (a value they already took is given back).
  */
+// ---- tasks and cancellation (spec §9.6) ------------------------------------------------------------
+// Every async function runs as a task. `cancel()` marks it: it stops at its next `await` (or at once,
+// if it is waiting), with a `Cancelled` panic that `recover` can catch; cancellation is sticky. A std
+// wait it was blocked on is cancelled too (giving back a value it took); a task it was awaiting isn't
+// (it may have other owners).
+
+type Task = { cancelled: boolean, wake: (() => void) | null, cancel: () => void }
+
+const cancelledPanic = () => new Panic("Cancelled", "the task was cancelled")
+
+export function task(body: (t: Task) => Promise<Any>): Cancellable {
+    let p: Cancellable & { $task?: Task }
+    const t: Task = {
+        cancelled: false, wake: null,
+        cancel: () => {
+            if (t.cancelled) return
+            t.cancelled = true
+            // a cancelled task nobody awaits ends silently (awaiting it still gives `Cancelled`)
+            p.catch(() => {})
+            t.wake?.()
+        },
+    }
+    p = body(t) as Cancellable & { $task?: Task }
+    p.$cancel = t.cancel
+    p.$task = t
+    return p
+}
+
+/** `await x` inside a task. */
+export function aw(t: Task | undefined, x: Any): Any {
+    if (t === undefined) return x
+    if (t.cancelled) throw cancelledPanic()
+    if (!(x instanceof Promise)) return x
+    const inner = x as Cancellable & { $task?: Task }
+    return new Promise((resolve, reject) => {
+        t.wake = () => {
+            t.wake = null
+            if (inner.$cancel && !inner.$task) inner.$cancel()
+            reject(cancelledPanic())
+        }
+        inner.then(
+            (v) => { if (t.wake) { t.wake = null; resolve(v) } },
+            (e) => { if (t.wake) { t.wake = null; reject(e) } },
+        )
+    })
+}
+
 export class Selector {
     private readonly ps: Cancellable[]
     private readonly enabled: boolean[]
@@ -506,7 +663,13 @@ export class Selector {
         this.hasElse = hasElse
     }
     disable(i: number): void { this.enabled[i] = false }
-    async next(): Promise<[number, Any]> {
+    /** The next arm; cancelling the wait (the task was cancelled) cancels every arm. */
+    next(): Cancellable {
+        const p = this.nextArm() as Cancellable
+        p.$cancel = () => this.cancelAll(-1)
+        return p
+    }
+    private async nextArm(): Promise<[number, Any]> {
         const live = this.ps.map((p, i) => i).filter((i) => this.enabled[i])
         if (live.length === 0) {
             if (this.hasElse) return [-1, undefined]
@@ -617,7 +780,7 @@ const stdTable: Record<string, Any> = {
     "Map.get": (m: MsMap, k: Any) => (m.has(k) ? Some(m.get(k)) : None), "Map.has": (m: MsMap, k: Any) => m.has(k),
     "Map.insert": (m: MsMap, k: Any, v: Any) => m.set(k, v), "Map.remove": (m: MsMap, k: Any) => m.delete(k),
     "Map.clear": (m: MsMap) => { m.inner.clear() },
-    "Map.iter": (m: MsMap) => new Iter(m.entries()),
+    "Map.iter": (m: MsMap) => new Iter([...m.entries()].map(tup)),
     "Set.new": () => new MsSet(), "Set.len": (s: MsSet) => s.size,
     "Set.has": (s: MsSet, v: Any) => s.has(v), "Set.insert": (s: MsSet, v: Any) => s.add(v), "Set.remove": (s: MsSet, v: Any) => s.delete(v),
     "Set.iter": (s: MsSet) => new Iter(s.values()),
@@ -627,22 +790,33 @@ const stdTable: Record<string, Any> = {
     "Range.rev": (r: Range) => new Iter([...rangeValues(r)].reverse()),
 
     // strings: the core (offsets, Unicode tables, float parsing); the rest is MinScript (std/prelude.ms).
-    // Lengths and offsets are UTF-16 units on JS for now.
-    "string.len": (s: string) => s.length, "string.substring": (s: string, a: number, b: number) => s.substring(a, b),
-    "string.find": (s: string, needle: string, from: number) => { const i = s.indexOf(needle, from); return i < 0 ? None : Some(i) },
+    // Lengths and offsets are UTF-8 bytes (spec §10.3), like on every back end.
+    "string.len": (s: string) => utf8(s).bytes,
+    "string.substring": (s: string, a: number, b: number) => utf8Slice(s, a, b),
+    "string.find": (s: string, needle: string, from: number) => {
+        const u = utf8(s)
+        const start = from <= 0 ? 0 : from >= u.bytes ? s.length : unitAt(s, u, from, "find")
+        const i = s.indexOf(needle, start)
+        return i < 0 ? None : Some(u.ascii ? i : u.byteOf![i]!)
+    },
+    "string.byte_at": (s: string, i: number) => {
+        const u = utf8(s)
+        if (i < 0 || i >= u.bytes) panic(`byte ${i} out of bounds (length ${u.bytes})`, "OutOfBounds")
+        return u.ascii ? s.charCodeAt(i) : u.raw![i]!
+    },
     "string.to_lower": (s: string) => s.toLowerCase(), "string.to_upper": (s: string) => s.toUpperCase(),
     "string.to_float": (s: string) => { const n = Number(s); return s.trim() !== "" && Number.isFinite(n) ? Ok(n) : Err(`not a number: ${JSON.stringify(s)}`) },
     "string.bytes": (s: string) => [...new TextEncoder().encode(s)], "string.chars": (s: string) => [...s],
     "string.to_str": (s: string) => s,
 
     // Promise
-    "Promise.new": () => { let r!: (v: Any) => void; const p = new Promise((res) => { r = res }); return [p, { $t: "std.Resolver", resolve: r }] },
+    "Promise.new": () => { let r!: (v: Any) => void; const p = new Promise((res) => { r = res }); return tup([p, { $t: "std.Resolver", resolve: r }]) },
     "Promise.all": (ps: Promise<Any>[]) => Promise.all(ps),
     "Promise.then": (p: Promise<Any>, f: Function) => p.then((v) => { f(v); return v }),
     "Promise.catch": (p: Promise<Any>, f: Function) => p.catch((e) => { f(panicValue(e)) }),
     "Promise.ignore": (p: Promise<Any>) => { p.catch((e) => output(`error: task failed: ${e instanceof Error ? e.message : String(e)}`)) },
     "Promise.timeout": (p: Promise<Any>, ms: number) => Promise.race([p.then(Ok), after(ms).then(() => Err({ $t: "std.Timeout" }))]),
-    "Promise.cancel": (p: Cancellable) => { p.$cancel?.() },       // tasks can't be cancelled on JS yet (spec §14.2)
+    "Promise.cancel": (p: Cancellable) => { p.$cancel?.() },       // a task stops at its next await (spec §9.6)
     "Promise.is_done": (p: Promise<Any>) => { track(p); return settled.get(p)?.done ?? false },
     "Resolver.resolve": (r: Any, v: Any) => { r.resolve(v) },
 
@@ -985,10 +1159,83 @@ Object.assign(stdTable, {
     "net.ws.Server.accept": (s: Any) => s.accepted.take(),
     "net.ws.Server.close": (s: Any) => { s.close() },
     "net.ws.Server.port": (s: Any) => s.port(),
-    "net.ws.Connection.split": (c: Any) => [{ $t: `${WS}.Reader`, conn: c.conn }, { $t: `${WS}.Writer`, conn: c.conn }],
+    "net.ws.Connection.split": (c: Any) => tup([{ $t: `${WS}.Reader`, conn: c.conn }, { $t: `${WS}.Writer`, conn: c.conn }]),
     "net.ws.Reader.receive": (r: Any) => r.conn.inbox.take(),
     "net.ws.Writer.send": (w: Any, msg: Any) => w.conn.send(msg),
 })
+
+// ---- UTF-8 offsets of JS strings --------------------------------------------------------------------
+// MinScript strings are measured in UTF-8 bytes; JS strings in UTF-16 units. An all-ASCII string is
+// the same in both (the fast path); for others, the tables of the last few strings are cached, so a
+// loop over one string doesn't rebuild them.
+
+type Utf8 = { ascii: boolean, bytes: number, raw?: Uint8Array, unitOf?: Int32Array, byteOf?: Int32Array }
+const utf8Cache = new Map<string, Utf8>()
+
+function utf8(s: string): Utf8 {
+    const hit = utf8Cache.get(s)
+    if (hit) return hit
+    let u: Utf8
+    if (/^[\x00-\x7f]*$/.test(s)) {
+        u = { ascii: true, bytes: s.length }
+    } else {
+        const raw = new TextEncoder().encode(s)
+        const unitOf = new Int32Array(raw.length + 1).fill(-1)     // byte offset → UTF-16 index (-1 inside a char)
+        const byteOf = new Int32Array(s.length + 1)                // UTF-16 index → byte offset
+        let b = 0
+        for (let i = 0; i < s.length; i++) {
+            unitOf[b] = i
+            byteOf[i] = b
+            const c = s.codePointAt(i)!
+            b += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4
+            if (c >= 0x10000) { i++; byteOf[i] = b }
+        }
+        unitOf[raw.length] = s.length
+        byteOf[s.length] = raw.length
+        u = { ascii: false, bytes: raw.length, raw, unitOf, byteOf }
+    }
+    if (utf8Cache.size >= 16) utf8Cache.delete(utf8Cache.keys().next().value!)
+    utf8Cache.set(s, u)
+    return u
+}
+
+function unitAt(s: string, u: Utf8, byte: number, what: string): number {
+    if (u.ascii) return byte
+    const i = u.unitOf![byte]
+    if (i === undefined || i < 0) panic(`${what}: byte ${byte} is inside a character of ${quote(s)}`, "OutOfBounds")
+    return i
+}
+
+/** `s.substring(a, b)` in bytes: clamped to the string; an offset inside a character panics. */
+function utf8Slice(s: string, a: number, b: number): string {
+    const u = utf8(s)
+    const lo = Math.max(0, Math.min(a, u.bytes)), hi = Math.max(lo, Math.min(b, u.bytes))
+    if (u.ascii) return s.substring(lo, hi)
+    return s.substring(unitAt(s, u, lo, "substring"), unitAt(s, u, hi, "substring"))
+}
+
+// ---- integers: wrapping_*, saturating_*, checked_* (std/prelude.ms) ---------------------------------
+
+const RANGES: Record<string, [bigint, bigint]> = {
+    i8: [-128n, 127n], i16: [-32768n, 32767n], i32: [-2147483648n, 2147483647n], u8: [0n, 255n], u16: [0n, 65535n], u32: [0n, 4294967295n],
+    i64: [-(2n ** 63n), 2n ** 63n - 1n], u64: [0n, 2n ** 64n - 1n],
+}
+const JS_KIND: Record<string, string> = { int: "i32", isize: "i32", usize: "u32" }
+for (const name of ["int", "isize", "usize", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"]) {
+    const kind = JS_KIND[name] ?? name
+    const big = kind === "i64" || kind === "u64"
+    const [min, max] = RANGES[kind]!
+    const back = (x: bigint): Any => (big ? x : Number(x))
+    const exact = (a: Any, b: Any, op: string): bigint => {
+        const x = BigInt(a), y = BigInt(b)
+        return op === "add" ? x + y : op === "sub" ? x - y : x * y
+    }
+    for (const op of ["add", "sub", "mul"]) {
+        stdTable[`${name}.wrapping_${op}`] = (a: Any, b: Any) => back(BigInt(wrap(exact(a, b, op), kind) as bigint | number))
+        stdTable[`${name}.saturating_${op}`] = (a: Any, b: Any) => { const r = exact(a, b, op); return back(r < min ? min : r > max ? max : r) }
+        stdTable[`${name}.checked_${op}`] = (a: Any, b: Any) => { const r = exact(a, b, op); return r < min || r > max ? None : Some(back(r)) }
+    }
+}
 
 // ---- std.net.http ------------------------------------------------------------------------------------
 // The server is node:http; the client is the global fetch. Bodies are text for now.

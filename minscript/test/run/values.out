@@ -1,0 +1,6 @@
+copies: r{ x: 1, y: 9 } r{ x: 50, y: 2 } r{ x: 1, y: 2 }
+mut parameter: 101 r{ x: 1, y: 9 }
+tuples: t(1, 2) t(7, 2)
+from a Vec: [r{ x: 1, y: 1 }] r{ x: 5, y: 1 }
+floats: [1.0, 2.5] Some(2.0) [[3.0]] [1.0, 2.5]
+unwrap panics at the caller: true line 32

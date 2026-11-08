@@ -10,6 +10,7 @@
 
 import type * as H from "../hir.ts"
 import type { Sym } from "../resolve.ts"
+import type { Span } from "../token.ts"
 import * as T from "../types.ts"
 import type { Ty } from "../types.ts"
 
@@ -52,6 +53,11 @@ class Emitter {
     private readonly globals = new Set<string>()
     /** the type witnesses of the function being emitted */
     private witnesses = new Set<Sym>()
+    // source locations (panic locations): the current function's file, and every `file:line` marked
+    private file: string | undefined
+    private lastLoc = ""
+    private readonly locs: string[] = []
+    private readonly locIndex = new Map<string, number>()
 
     constructor(p: H.Program) {
         this.program = p
@@ -81,7 +87,11 @@ class Emitter {
         }
         const hasMain = this.userFuns.has(entry)
         lines.push("", `export async function $main() { ${hasMain ? `return await ${this.fnName(entry)}()` : ""} }`, "")
-        return lines.join("\n")
+        // where each statement starts, for panic locations: [JS line, location index] pairs
+        const text = lines.join("\n")
+        const marks: number[] = []
+        text.split("\n").forEach((l, i) => { const m = /^\s*\/\/@(\d+)$/.exec(l); if (m) marks.push(i + 1, Number(m[1])) })
+        return `${text}\n$rt.sourceMap(import.meta.url, ${JSON.stringify(this.locs)}, ${JSON.stringify(marks)})\n`
     }
 
     private typeDef(t: H.TypeDef): string {
@@ -122,6 +132,8 @@ class Emitter {
 
     private fun(f: H.Fun): string[] {
         this.resetFn()
+        this.file = f.file
+        this.lastLoc = ""
         const params: string[] = []
         const prologue: string[] = []
         const cells: string[] = []
@@ -141,11 +153,13 @@ class Emitter {
         this.witnesses = new Set(f.witnesses ?? [])
         for (const w of f.witnesses ?? []) params.push(witnessVar(w))
         const async = f.async || f.name === "main"
-        const head = `${async ? "async " : ""}function ${this.fnName(f.name)}(${params.join(", ")})`
+        const head = `function ${this.fnName(f.name)}(${params.join(", ")})`
         if (f.body === null) return [`${head} { $rt.panic(${JSON.stringify(`extern function \`${f.name}\` is not available on the JS back end`)}) }`]
         this.out = []
         this.blockInto(f.body, RETURN)
         const body = cells.length > 0 ? [...prologue, "try {", ...indent(this.out), `} finally { ${cells.join("; ")} }`] : this.out
+        // an async function is a task: its awaits check whether it was cancelled (spec §9.6)
+        if (async) return [`${head} {`, `    return $rt.task(async ($task) => {`, ...indent(indent(body)), "    })", "}"]
         return [`${head} {`, ...indent(body), "}"]
     }
 
@@ -237,8 +251,20 @@ class Emitter {
 
     // ---- blocks and statements ----------------------------------------------------------------
 
+    /** A `//@N` marker before a statement: the runtime maps JS lines back to MinScript (panic locations). */
+    private mark(span: Span | undefined): void {
+        if (!span || !this.file) return
+        const loc = `${this.file}:${span.line}`
+        if (loc === this.lastLoc) return
+        this.lastLoc = loc
+        let i = this.locIndex.get(loc)
+        if (i === undefined) { i = this.locs.length; this.locs.push(loc); this.locIndex.set(loc, i) }
+        this.emit(`//@${i}`)
+    }
+
     private blockInto(b: H.Block, target: Target): void {
         for (const s of b.stmts) {
+            this.mark(s.k === "let" ? s.value.span : s.expr.span)
             if (s.k === "let") {
                 const code = this.expr(s.value)
                 this.emit(`let ${this.local(s.local.sym)} = ${code};`)
@@ -246,7 +272,7 @@ class Emitter {
                 this.into(s.expr, DISCARD)
             }
         }
-        if (b.value !== null) this.into(b.value, target)
+        if (b.value !== null) { this.mark(b.value.span); this.into(b.value, target) }
         else if (target.kind === "return") { /* falls off: returns undefined (unit) */ }
     }
 
@@ -384,7 +410,7 @@ class Emitter {
         const label = `S${++this.labels}`
         const i = this.tmp("$i"), x = this.tmp("$x")
         const body = this.capture(() => {
-            this.emit(`const [${i}, ${x}] = await ${sel}.next();`)
+            this.emit(`const [${i}, ${x}] = await $rt.aw($task, ${sel}.next());`)
             e.arms.forEach((arm, n) => {
                 const binds: string[] = []
                 const test = this.test(arm.pattern, x, binds, T.UNKNOWN)
@@ -494,6 +520,7 @@ class Emitter {
                 const cellParams = ft.k === "fn" ? ft.params.map(needsCell) : []
                 return this.callWithCells(`(${callee})`, args, e.args, cellParams)
             }
+            case "copy": return `$rt.clone(${this.expr(e.expr)})`
             case "wstatic": {
                 const args = this.exprs(e.args)
                 return `$rt.wstatic(${this.witnessCode(e.witness)}, ${JSON.stringify(e.method)}, [${args.join(", ")}])`
@@ -516,7 +543,7 @@ class Emitter {
                 const codes = this.exprs(e.fields.map((f) => f.value))
                 return `({ ${e.fields.map((f, i) => `${JSON.stringify(f.name)}: ${codes[i]}`).join(", ")} })`
             }
-            case "tuple": return `[${this.exprs(e.elems).join(", ")}]`
+            case "tuple": return `$rt.tup([${this.exprs(e.elems).join(", ")}])`
             case "vec": case "array": return `[${this.elems(e.elems).join(", ")}]`
             case "set": return `$rt.setOf([${this.elems(e.elems).join(", ")}])`
             case "map": {
@@ -545,9 +572,9 @@ class Emitter {
             case "unary": {
                 const x = this.expr(e.expr)
                 switch (e.op) {
-                    case "neg": return `(-${x})`
+                    case "neg": { const k = intKind(e.ty); return k ? `$rt.ck_${k}(-${x})` : `(-${x})` }
                     case "not": return `(!${x})`
-                    case "bitnot": return `(~${x})`
+                    case "bitnot": { const k = intKind(e.ty); return k && k !== "i32" && k !== "i64" ? `$rt.wrap(~${x}, "${k}")` : `(~${x})` }
                     case "deref": return `$rt.panic("raw pointers are not available on the JS back end")`
                 }
             }
@@ -572,11 +599,12 @@ class Emitter {
             }
             case "tostr": {
                 const x = this.expr(e.expr)
+                if (e.shape) return `$rt.toStrS(${x}, ${this.witnessCode(e.shape)})`
                 return T.isFloat(T.strip(e.expr.ty)) ? `$rt.toStrF(${x})` : `$rt.toStr(${x})`
             }
             case "widen": return `BigInt(${this.expr(e.expr)})`
             case "cast": return this.cast(e)
-            case "await": return `(await ${this.expr(e.expr)})`
+            case "await": return `(await $rt.aw($task, ${this.expr(e.expr)}))`
             case "closure": return this.closure(e)
             case "unsupported": return `$rt.panic(${JSON.stringify(`not supported on the JS back end: ${e.what}`)})`
             case "assign": {
@@ -642,6 +670,8 @@ class Emitter {
         const [l, r] = this.exprs([e.left, e.right])
         const lt = T.strip(e.left.ty), rt = T.strip(e.right.ty)
         const big = isBig(lt) || isBig(rt)
+        const k = intKind(e.ty)
+        if (k !== null && ARITH.has(e.op)) return intOp(e.op, l!, r!, k)
         switch (e.op) {
             case "/":
                 if (big) return `$rt.bdiv(${l}, ${r})`
@@ -666,8 +696,12 @@ class Emitter {
         const isChar = (t: Ty) => t.k === "prim" && t.name === "char"
         if (isChar(from) && T.isInt(to)) return isBig(to) ? `BigInt(${x}.codePointAt(0))` : `${x}.codePointAt(0)`
         if (T.isInt(from) && isChar(to)) return `String.fromCodePoint(Number(${x}))`
-        if (isBig(to)) return isBig(from) ? x : `BigInt(Math.trunc(${x}))`
-        if (T.isInt(to)) return isBig(from) ? `Number(${x})` : T.isFloat(from) ? `Math.trunc(${x})` : x
+        const k = intKind(to)
+        // integer targets: wrapping from integers, saturating from floats (spec §3.3)
+        if (k !== null && (T.isInt(from) || T.isFloat(from))) {
+            if (intKind(from) === k) return x
+            return `$rt.toInt(${x}, "${k}", ${T.isFloat(from)})`
+        }
         if (T.isFloat(to)) return isBig(from) ? `Number(${x})` : x
         return x
     }
@@ -678,6 +712,8 @@ class Emitter {
         const ty = T.strip(t.ty)
         const combine = (cur: string, v: string) => {
             const bin = op.slice(0, -1)
+            const k = intKind(ty)
+            if (k !== null && ARITH.has(bin)) return intOp(bin, cur, v, k)
             if (bin === "/") return isBig(ty) ? `$rt.bdiv(${cur}, ${v})` : T.isInt(ty) ? `$rt.idiv(${cur}, ${v})` : `(${cur} / ${v})`
             if (bin === "%") return isBig(ty) ? `$rt.brem(${cur}, ${v})` : T.isInt(ty) ? `$rt.irem(${cur}, ${v})` : `(${cur} % ${v})`
             return `(${cur} ${bin} ${v})`
@@ -693,10 +729,18 @@ class Emitter {
             this.emit(`$rt.panic("raw pointers are not available on the JS back end");`)
             return
         }
-        const place = t.k === "field" ? `${this.expr(t.object)}${/^\d+$/.test(t.name) ? `[${t.name}]` : `.${t.name}`}` : this.expr(t)
+        let place: string
+        if (t.k === "field") {
+            // the object once: `f().x += 1` mustn't call `f` twice
+            let obj = this.expr(t.object)
+            if (op !== "=" && !/^[\w$.]+$/.test(obj)) { const tmp = this.tmp(); this.emit(`const ${tmp} = ${obj};`); obj = tmp }
+            place = `${obj}${/^\d+$/.test(t.name) ? `[${t.name}]` : `.${t.name}`}`
+        } else {
+            place = this.expr(t)
+        }
         const v = this.expr(e.value)
         if (op === "=" ) { this.emit(`${place} = ${v};`); return }
-        if (op === "/=" || op === "%=") { this.emit(`${place} = ${combine(place, v)};`); return }
+        if (op === "/=" || op === "%=" || intKind(ty) !== null) { this.emit(`${place} = ${combine(place, v)};`); return }
         this.emit(`${place} ${op} ${v};`)
     }
 
@@ -726,6 +770,33 @@ class Emitter {
         } finally {
             this.loops = savedLoops
         }
+    }
+}
+
+/** Arithmetic operators whose integer results are checked or wrapped (spec §9.5). */
+const ARITH: ReadonlySet<string> = new Set(["+", "-", "*", "/", "%", "<<", ">>", "&", "|", "^"])
+
+/** The runtime integer kind of a type: `int` / `isize` are i32 and `usize` is u32 on JS. */
+function intKind(t: Ty): string | null {
+    const s = T.strip(t)
+    if (s.k !== "prim") return null
+    switch (s.name) {
+        case "int": case "isize": case "i32": return "i32"
+        case "usize": case "u32": return "u32"
+        case "i8": case "i16": case "u8": case "u16": case "i64": case "u64": return s.name
+        default: return null
+    }
+}
+
+/** An integer operation with its check: overflow panics; bit operations wrap to the width. */
+function intOp(op: string, l: string, r: string, k: string): string {
+    const big = k === "i64" || k === "u64"
+    switch (op) {
+        case "+": case "-": case "*": return `$rt.ck_${k}(${l} ${op} ${r})`
+        case "/": return `$rt.ck_${k}(${big ? "$rt.bdiv" : "$rt.idiv"}(${l}, ${r}))`
+        case "%": return `${big ? "$rt.brem" : "$rt.irem"}(${l}, ${r})`
+        case "<<": case ">>": return `$rt.shift(${l}, ${r}, "${op}", "${k}")`
+        default: return k === "u32" ? `((${l} ${op} ${r}) >>> 0)` : `(${l} ${op} ${r})`   // & | ^: in range for in-range operands
     }
 }
 

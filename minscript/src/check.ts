@@ -1430,6 +1430,9 @@ class Checker {
         const t = this.toTy(e.type)
         const v = this.checkExpr(e.expr, t)
         if (this.tryAssign(v, t)) return t                       // a type annotation (spec §3.3)
+        // an untyped literal that isn't the target type: its default type, then a cast (`3.9 as int`)
+        const lit = T.prune(v)
+        if (lit.k === "var" && lit.lit !== null) this.tryAssign(lit, lit.lit === "float" ? T.F64 : T.INT)
         const vs = T.strip(v), ts = T.strip(t)
         const castable = (a: Ty) => T.isNumeric(a) || a.k === "ptr" || (a.k === "prim" && a.name === "char")
         if (castable(vs) && castable(ts)) return t                // a cast

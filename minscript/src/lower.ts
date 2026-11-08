@@ -20,8 +20,11 @@ export type LowerDep = { files: A.File[], res: Resolution, name: string }
  * `packageName`: the package being lowered ("main" keeps plain names; others prefix theirs).
  * `deps`: the packages it can reach, so calls into them get their qualified names.
  */
-export function lowerPackage(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude = loadPrelude(), packageName = "main", deps: LowerDep[] = []): H.Program {
-    return new Lowerer(files, res, checked, prelude, packageName, deps).run()
+/** `fileNames`: each file's name for panic locations (spec §9.8). */
+export function lowerPackage(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude = loadPrelude(), packageName = "main", deps: LowerDep[] = [], fileNames?: Map<A.File, string>): H.Program {
+    const l = new Lowerer(files, res, checked, prelude, packageName, deps)
+    l.fileNames = fileNames ?? new Map()
+    return l.run()
 }
 
 /** The qualified prefix of a package's items: none for `main`, `std.` for the prelude, else `<package>.`. */
@@ -36,6 +39,8 @@ type FnCtx = { ret: Ty, retNode: A.Type | null }
 const BIG_INTS: ReadonlySet<string> = new Set(["i64", "u64"])
 
 class Lowerer {
+    fileNames = new Map<A.File, string>()
+    private currentFile: string | undefined
     private readonly files: A.File[]
     private readonly refs: Map<A.Node, Sym>
     private readonly decls: Map<A.Node, Sym>
@@ -87,7 +92,10 @@ class Lowerer {
     run(): H.Program {
         const program: H.Program = { types: [], funs: [], globals: [] }
         const interfaces = this.collectInterfaces()
-        for (const file of this.files) for (const item of file.items) this.lowerItem(item, program, interfaces)
+        for (const file of this.files) {
+            this.currentFile = this.fileNames.get(file)
+            for (const item of file.items) this.lowerItem(item, program, interfaces)
+        }
         return program
     }
 
@@ -202,17 +210,21 @@ class Lowerer {
     }
 
     /** Coerces a value to the type it flows into: the only coercion with a runtime effect on JS is int → i64 / u64. */
-    private coerce(e: H.Expr, to: Ty | undefined): H.Expr {
+    private coerce(e: H.Expr, to: Ty | undefined, store = true): H.Expr {
         if (to === undefined) return e
         const target = T.strip(to)
         const from = T.strip(e.ty)
+        // a Copy record / tuple read from a place and stored elsewhere is a copy (not for `&T`)
+        if (store && PLACES.has(e.k) && isCopyAggregate(from) && T.prune(to).k !== "ref") {
+            return { k: "copy", ty: e.ty, span: e.span, expr: e }
+        }
         if (this.isBig(target) && T.isInt(from) && !this.isBig(from)) {
             if (e.k === "lit" && typeof e.value === "bigint") return { ...e, ty: target }
             return { k: "widen", ty: target, span: e.span, expr: e }
         }
         // a float given as an interface (`&Stringer`): convert it while its type is known (`2.0`, not `2`)
-        if (T.isFloat(from) && target.k === "named" && target.sym.decl?.kind === "InterDecl" && target.sym.name === "Stringer") {
-            return { k: "tostr", ty: T.STRING, span: e.span, expr: e }
+        if (this.floatShape(from) && target.k === "named" && target.sym.decl?.kind === "InterDecl" && target.sym.name === "Stringer") {
+            return this.toStr(e)
         }
         if (from.k === "record" && target.k === "named") {
             const decl = target.sym.decl
@@ -341,6 +353,7 @@ class Lowerer {
         return {
             name: this.funName(f), params, self, ret, async: f.async, body, extern: null, span: f.span,
             ...(isBuiltinBody(f) ? { builtin: true } : {}), ...(generics.length > 0 ? { generics } : {}),
+            ...(this.currentFile ? { file: this.currentFile } : {}),
         }
     }
 
@@ -636,7 +649,16 @@ class Lowerer {
 
     private toStr(e: H.Expr): H.Expr {
         if (T.isStringy(T.strip(e.ty))) return e
-        return { k: "tostr", ty: T.STRING, span: e.span, expr: e }
+        const shape = this.floatShape(e.ty)
+        return { k: "tostr", ty: T.STRING, span: e.span, expr: e, ...(shape && !("f" in shape) ? { shape } : {}) }
+    }
+
+    /** The shape of a type with floats in it (a float, or floats in Vec / Option / Map), else null. */
+    private floatShape(t: Ty): H.Shape | null {
+        const shape = this.tyShape(t)
+        const hasFloat = (s: H.Shape | null): boolean =>
+            s !== null && ("f" in s || ("vec" in s && hasFloat(s.vec)) || ("opt" in s && hasFloat(s.opt)) || ("map" in s && hasFloat(s.map)))
+        return hasFloat(shape) ? shape : null
     }
 
     private elem(x: A.Expr | A.Spread, ty: Ty | undefined): H.Expr | H.Spread {
@@ -806,8 +828,8 @@ class Lowerer {
         if (e.op === "+" && T.isStringy(ls) && T.isStringy(rs)) return { k: "concat", ty: T.STRING, span, parts: [left, right] }
         // mixed widths: widen the narrower side (spec §9.5)
         if (T.isNumeric(ls) && T.isNumeric(rs)) {
-            left = this.coerce(left, right.ty)
-            right = this.coerce(right, left.ty)
+            left = this.coerce(left, right.ty, false)
+            right = this.coerce(right, left.ty, false)
         }
         // operator interfaces on user types: `a + b` → `T.plus(a, b)`
         const method = { "+": "plus", "-": "minus", "*": "times", "/": "divide", "%": "remainder" }[e.op]
@@ -1212,6 +1234,19 @@ function isBuiltinBody(f: A.FunDecl): boolean {
 
 function isFloatType(t: A.Type): boolean {
     return t.kind === "TName" && t.path.length === 1 && (t.path[0] === "f64" || t.path[0] === "f32")
+}
+
+const PLACES: ReadonlySet<string> = new Set(["local", "field", "index", "global"])
+
+/** A record or tuple made only of Copy values (numbers, bools, chars, literals, nested such): its
+ *  fields can be assigned, so storing it elsewhere must copy it. */
+function isCopyAggregate(t: Ty, depth = 0): boolean {
+    const s = T.strip(t)
+    if (depth > 0 && (s.k === "prim" && s.name !== "string" && s.name !== "str" || s.k === "lit" || s.k === "union")) return true
+    if (depth > 8) return false
+    if (s.k === "record") return s.fields.length > 0 && s.fields.every((f) => isCopyAggregate(f.ty, depth + 1))
+    if (s.k === "tuple") return s.elems.every((x) => isCopyAggregate(x, depth + 1))
+    return false
 }
 
 function isOptionType(t: A.Type): boolean {

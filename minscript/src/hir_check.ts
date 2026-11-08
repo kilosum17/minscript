@@ -71,6 +71,7 @@ class Validator {
             case "callvalue": go(e.callee); e.args.forEach(go); return
             case "extern": e.args?.forEach(go); return
             case "wstatic": e.args.forEach(go); return
+            case "copy": go(e.expr); return
             case "struct": case "record": e.fields.forEach((f) => go(f.value)); return
             case "variant": e.fields.forEach(go); return
             case "tuple": e.elems.forEach(go); return

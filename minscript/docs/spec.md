@@ -1338,7 +1338,7 @@ The ownership pass (`src/ownership.ts`) runs after type checking, one function a
 
 The prelude is written in MinScript: [`std/prelude.ms`](../std/prelude.ms) declares every type, method and interface below. It must itself parse, resolve, type-check and ownership-check cleanly, and its private items (`is_space`) aren't visible to other packages.
 
-- **The core** is the set of functions whose body is `_builtin()` (an intrinsic of type `never`), implemented by each back end: panics, storage and hashing (`Vec.len` / `push` / `pop` / `insert` / `remove` / `truncate` / `swap` / `sort_by` / `iter`, `Map` and `Set` access), `Range`, iterators and their adapters, the string primitives (`len`, `substring`, `find`, `to_lower` / `to_upper`, `to_float`, `bytes`, `chars`), `Option.or` / `Result.or` (§18 #8), and everything concurrent (`Promise`, `Ref`, `Topic`, `Queue`, `Signal`, …, `Log`).
+- **The core** is the set of functions whose body is `_builtin()` (an intrinsic of type `never`), implemented by each back end: panics, storage and hashing (`Vec.len` / `push` / `pop` / `insert` / `remove` / `truncate` / `swap` / `sort_by` / `iter`, `Map` and `Set` access), `Range`, iterators and their adapters, the string primitives (`len`, `substring`, `find`, `byte_at` in UTF-8 bytes, `to_lower` / `to_upper`, `to_float`, `bytes`, `chars`), the integers' `wrapping_*` / `saturating_*` / `checked_*`, `Option.or` / `Result.or` (§18 #8), and everything concurrent (`Promise`, `Ref`, `Topic`, `Queue`, `Signal`, …, `Log`).
 - **Everything else is MinScript** on top of the core: `Option` and `Result` methods, `assert`, the `Vec` lookups, changes and pipelines, `Map.keys` / `values`, and the string helpers (`trim` removes ASCII spaces, tabs and line breaks; `split`, `lines`, `replace`, `to_int`, …). These are compiled with every program; their tests are MinScript too (`test/prelude/prelude_test.ms`, run by `ms test`).
 - Methods that need something of the items are declared only where the items have it: `impl[T: PartialOrd[T]] Vec[T] { max, min, sort }`, `impl[T: Stringer] Vec[T] { join }`, `impl[T: Plus[T, T] & Default] Vec[T] { sum }`.
 
@@ -1381,7 +1381,7 @@ inter Iterable[T] = {
 
 **Naming:**
 - `to_str()` converts anything to an owned `string`.
-- `len()`, `has()`, `get() -> T?`.
+- `len()`, `has()`, `get() -> T?`. A string's `len()` and offsets (`substring`, `find`, `byte_at`) are in UTF-8 bytes; `chars()` gives the characters.
 - `at(i)` allows negative indices. `x[i]` panics when out of bounds.
 
 **String processing returns views and doesn't fail:**
@@ -1730,7 +1730,7 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 | MinScript | JS |
 |---|---|
 | `i64`, `u64` | `BigInt` |
-| every other integer (including `int`), floats | `number` (integer `/` and `%` truncate and panic on zero) |
+| every other integer, floats | `number`; `int` and `isize` are i32, `usize` is u32 (§7.2); integer results are checked (below) |
 | `string`, `char` | string |
 | struct | `{ $t: "User", id, name }`; the tag drives `to_str`, `==` and dynamic dispatch |
 | variant (`Option` / `Result` included) | `{ $t: "Shape", $v: "Square", $f: [payload…] }`; `None` is shared |
@@ -1757,16 +1757,17 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 - A panic in a task nobody awaits prints `panic in task: …`, and the program goes on.
 - If `main` is still waiting when Node's event loop has nothing left (no timers, no I/O), it is a `Deadlock` panic.
 
+**Semantics kept exactly** (each has a `test/run` case):
+- **Integers** (§9.5): `+`, `-`, `*`, `/` (including `MIN / -1`), unary `-` and the compound assignments check their result against the type's range and panic with `Overflow`; division by zero panics. `&`, `|`, `^`, `!` and `<<` wrap to the type's width, and a shift by the width or more panics. `as` between integers wraps; from a float it saturates (`NaN` → 0). The explicit forms are `wrapping_*`, `saturating_*` and `checked_*` (`add`, `sub`, `mul`) on every integer type.
+- **Strings** (§10.3): `len()`, `substring`, `find` and `byte_at` count UTF-8 bytes, as on every back end. An all-ASCII string takes a fast path (bytes and UTF-16 units are the same); otherwise the offset tables of the last strings used are cached. A `substring` offset inside a character panics (`OutOfBounds`).
+- **Tasks** (§9.6): every `async fun` runs as a task. `cancel()` makes it stop at its next `await`, or at once if it is waiting, with a `Cancelled` panic that `recover` can catch; cancellation is sticky. A std wait it was blocked on is cancelled too (giving back a value it took); a task it was awaiting isn't. A task that loses a `select` is cancelled. A cancelled task nobody awaits ends silently.
+- **Copies:** a `Copy` record or tuple read from a place (variable, field, element) and stored elsewhere (a binding, an assignment, an owned argument, a literal, a return) is copied, so it is never shared. Tuples are marked arrays, and print as `t(…)`.
+- **Printing:** floats print as `2.0` wherever the static type says they are floats, including inside `Vec`, `Option` and `Map`.
+- **Panic locations** (§9.8): `p.file` / `p.line` (and the message of an uncaught panic) give the innermost MinScript line outside std, like Rust's `#[track_caller]`: `opt.unwrap()` reports the line that called `unwrap`. The generated module maps its lines back to MinScript (`$rt.sourceMap`).
+
 **Not yet on JS (to solve later):**
-- overflow checks: §9.5 says overflow always panics, but JS arithmetic doesn't, and `number` integers lose precision past 2^53;
-- the exact wrapping of `i8`…`u32`, and `as` truncation of non-BigInt integers;
-- string `len()` / indices count UTF-16 units, not bytes;
-- cooperative `cancel()` of tasks (§9.6): it only cancels std waits;
-- `ResolverDropped`;
-- a panic's `file` / `line`;
+- `ResolverDropped`: JS has no deterministic destructors (a waiter for a dropped resolver ends as `Deadlock` if nothing else can wake it);
 - raw pointers and `extern` functions;
-- copies of `Copy` aggregates share the JS object (harmless unless one is mutated);
-- floats nested in collections print without `.0`;
 - `std.net.ws`: no TLS (`wss://`), no subprotocols or extensions, and the server doesn't enforce frame size limits;
 - `std.net.http`: text bodies only (no bytes, no streaming), no server TLS, and an unanswered request stays open until the client gives up;
 - type witnesses (§14.1) are passed only by direct calls: a generic function that needs one, called through an interface value, a closure or a method value, panics if it uses the witness;
