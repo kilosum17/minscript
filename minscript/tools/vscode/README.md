@@ -1,0 +1,46 @@
+# MinScript for VS Code
+
+Syntax highlighting, plus live errors, hover, go-to-definition, find-references and an outline from
+the MinScript compiler (the language server in [`../lsp`](../lsp)).
+
+## Install (from this repository)
+
+The extension starts the language server with your system Node (≥ 23.6), which runs the compiler's
+TypeScript directly, so no build step is needed.
+
+```bash
+cd tools/vscode && npm install                    # the LSP client library
+cd ../.. && npm install                           # the compiler + language server dependencies
+ln -s "$PWD/tools/vscode" ~/.vscode/extensions/minscript-dev
+```
+
+Then run **Developer: Reload Window** in VS Code and open any `.ms` file. Remove the symlink to uninstall.
+
+To work on the extension itself instead, open `tools/vscode` in VS Code and press **F5**: a new window
+starts with the extension loaded, on the `test/` corpus.
+
+## Settings
+
+| Setting | Default | |
+|---|---|---|
+| `minscript.node` | `node` | the Node executable (≥ 23.6) that runs the server |
+| `minscript.serverPath` | (next to the extension) | path to `tools/lsp/server.ts` |
+| `minscript.trace.server` | `off` | log LSP messages (Output → MinScript) |
+
+**MinScript: Restart Language Server** restarts the server, e.g. after pulling compiler changes.
+
+## What the server does
+
+- **Packages:** every `.ms` file in a folder that declares the same `package` is analysed together, so names resolve across files. Open editors override the files on disk.
+- **Diagnostics:** every compiler pass reports as you type. While the file has a syntax error, only syntax and name errors are shown; type and ownership errors would mostly be noise then.
+- **Hover:** the inferred type of a binding, a function's signature with its `///` doc comment, a field's type. Items from the prelude are marked *prelude*.
+- **Go to definition / find references:** locals, functions, types, fields, methods and variants, across the files of the package and into `std/prelude.ms`.
+- **Outline:** types with their fields and methods, unions with their variants, functions, impls.
+
+Not yet: completion, rename, formatting, semantic highlighting, and navigation across packages.
+
+## Development
+
+- `syntaxes/build-grammar.py` generates `syntaxes/minscript.tmLanguage.json` (`npm run grammar`). Edit the script, not the JSON. Keep it in sync with spec §1.
+- `npm test` here tokenizes MinScript with the TextMate engine VS Code uses (`test/grammar.test.mjs`).
+- The language server's tests run with the compiler's: `npm test` at the repository root (`tools/lsp/*.test.ts`).
