@@ -146,3 +146,41 @@ fun later_arms_guided(n: int) -> int {
         Line(k) => k
     }
 }
+
+/// Branches join to the wider type when one side widens losslessly (spec §9.5).
+fun widening_join(c: bool) -> i64 {
+    let narrow: i32 = 1
+    let wide: i64 = 2
+    let either = if c { narrow } else { wide }
+    either
+}
+
+/// Vec, Map, Set and Option have an empty default (spec §9.7).
+fun empty_of[T: Default]() -> T { T.default() }
+
+fun defaults() {
+    let names = empty_of.[Vec[string]]()
+    let ages = empty_of.[Map[string, int]]()
+    let maybe = empty_of.[int?]()
+}
+
+/// The auto-generated `eq` takes a value of the same type; a function with a result fits where
+/// `-> void` is expected.
+fun auto_eq_and_void(p: Shape2) {
+    let same = p.eq(Shape2.Dot)
+    let apply = #{ f: (int) -> void => f(1) }
+    apply(bump)
+}
+
+fun bump(x: int) -> int { x + 1 }
+
+/// An infinite `for` is `void` when a `break` (not one of a nested loop or closure) can leave it, and
+/// `never` otherwise.
+fun loop_values(n: int) {
+    let stopped = for {
+        if n > 3 { break }
+    }
+    let spins = for {
+        for { break }
+    }
+}

@@ -12,7 +12,8 @@
 //   expected type, spec §7.6), and anything in a file with a glob import.
 //
 // Stage 0 links symbols and scopes as objects; here they are arenas (`symbols`, `scopes`) and
-// indices. The prelude's symbols are copied into each resolution's arena.
+// indices. A program has one arena: a package's resolution starts with the prelude's symbols and
+// scopes (same indices) and appends its own (from `first_own`).
 //
 // Not ported yet: imports of packages the loader found (stage 0's `LoadedImport`), which come with
 // the loader. Without them, every import stays opaque, as with stage 0's `ms resolve`.
@@ -89,6 +90,8 @@ pub type Resolution = {
     pub diagnostics: Vec[Diagnostic]
     /// the package scope: its names are the package's items
     pub pkg_scope: int
+    /// the index of this package's first symbol (the ones before belong to the prelude)
+    pub first_own: int
 }
 
 /// Options for `resolve_package`.
@@ -257,8 +260,15 @@ type Resolver = {
     members: Map[int, Vec[MemberSource]] = m{}
     is_std: bool
     pkg_name: string
+    first_own: int = 0
 
     fun init(&mut this, prelude: &Resolution?) {
+        // one arena per program: the prelude's symbols and scopes keep their indices
+        if let Some(p) = prelude {
+            this.symbols = p.symbols.clone()
+            this.scopes = p.scopes.clone()
+        }
+        this.first_own = this.symbols.len()
         this.prelude = this.new_scope("prelude", None)
         this.pkg = this.new_scope("package", Some(this.prelude))
         for name in builtin_types().iter() {
@@ -270,13 +280,12 @@ type Resolver = {
                 if src.is_pub == Some(false) {
                     continue                   // the prelude's private helpers (`is_space`)
                 }
-                let copy = this.copy_symbol(src.clone())
-                this.scopes[this.prelude].names[name.clone()] = copy
+                this.scopes[this.prelude].names[name.clone()] = idx
                 if src.kind == "union" && exported_variants(name) {
                     for v in src.variants.iter() {
                         let vs = this.define(this.prelude, v.name, "variant", Some(v.id), Some(v.span), false)
                         this.symbols[vs].std = true
-                        this.symbols[vs].owner = Some(copy)
+                        this.symbols[vs].owner = Some(idx)
                     }
                 }
             }
@@ -297,16 +306,6 @@ type Resolver = {
                 this.symbols[sym].detail = Some("std.log")
             }
         }
-    }
-
-    /// A symbol of another resolution (the prelude), as a symbol of this one.
-    fun copy_symbol(&mut this, src: Sym) -> int {
-        var copy = src
-        copy.id = this.symbols.len()
-        copy.scope = this.prelude
-        copy.owner = None
-        this.symbols.push(copy)
-        this.symbols.len() - 1
     }
 
     fun run(mut this, files: &Vec[File]) -> Resolution {
@@ -352,7 +351,7 @@ type Resolver = {
         }
         Resolution {
             symbols: this.symbols, scopes: this.scopes, refs: this.refs, decls: this.decls, captures: this.captures,
-            deferred: this.deferred, open: this.open, diagnostics: this.diagnostics, pkg_scope: this.pkg,
+            deferred: this.deferred, open: this.open, diagnostics: this.diagnostics, pkg_scope: this.pkg, first_own: this.first_own,
         }
     }
 

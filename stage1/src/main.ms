@@ -3,29 +3,32 @@
 //   lex <file.ms>…                          the token dump
 //   parse <file.ms>…                        the AST dump
 //   resolve --prelude <prelude.ms> <file.ms>…   the resolution dump (each file is its own package)
+//   types --prelude <prelude.ms> <file.ms>…     the checker dump (each file is its own package)
 package main
 
 import "app.lexer"
 import "app.parser"
 import "app.ast"
 import "app.resolve"
+import "app.check"
 import "std.env"
 import "std.fs"
 import "std.io"
 
 async fun main() {
     var args = env.args()
-    if args.is_empty() || !(args[0] == "lex" || args[0] == "parse" || args[0] == "resolve") {
-        io.eprintln("usage: ms run stage1 -- lex|parse <file.ms>…  |  resolve --prelude <prelude.ms> <file.ms>…")
+    if args.is_empty() || !(args[0] == "lex" || args[0] == "parse" || args[0] == "resolve" || args[0] == "types") {
+        io.eprintln("usage: ms run stage1 -- lex|parse <file.ms>…  |  resolve|types --prelude <prelude.ms> <file.ms>…")
         return
     }
     let command = args[0].clone()
     var files = args.skip(1)
     var prelude: resolve.Resolution? = None
+    var prelude_file: ast.File? = None
     var first_id = 0
-    if command == "resolve" {
+    if command == "resolve" || command == "types" {
         if files.len() < 2 || files[0] != "--prelude" {
-            io.eprintln("resolve needs `--prelude <path to std/prelude.ms>`")
+            io.eprintln("${command} needs `--prelude <path to std/prelude.ms>`")
             return
         }
         let bytes = await fs.read_file(files[1]) or e => {
@@ -35,6 +38,7 @@ async fun main() {
         let parsed = parser.parse(bytes)
         prelude = Some(resolve.resolve_package([parsed.file], None, resolve.ResolveOptions { std: true, package_name: "std" }))
         first_id = parsed.next_id
+        prelude_file = Some(parsed.file)
         files = files.skip(2)
     }
     for file in files.iter() {
@@ -53,12 +57,23 @@ async fun main() {
             let res = parser.parse(bytes)
             io.print(ast.print_file(res.file))
             report(file, res.diagnostics)
-        } else {
+        } else if command == "resolve" {
             let parsed = parser.parse_from(bytes, first_id)
             let res = resolve.resolve_package([parsed.file], prelude, resolve.ResolveOptions {})
             io.print(resolve.dump_resolution(res))
             var all = parsed.diagnostics.clone()
             all.extend(res.diagnostics.clone())
+            report(file, all)
+        } else {
+            let parsed = parser.parse_from(bytes, first_id)
+            let res = resolve.resolve_package([parsed.file], prelude, resolve.ResolveOptions {})
+            let Some(pf) = &prelude_file else { return }
+            let Some(pr) = &prelude else { return }
+            let checked = check.check_package([parsed.file], res, pf, pr)
+            io.print(check.dump_types(res, checked))
+            var all = parsed.diagnostics.clone()
+            all.extend(res.diagnostics.clone())
+            all.extend(checked.diagnostics.clone())
             report(file, all)
         }
     }

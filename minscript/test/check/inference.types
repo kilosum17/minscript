@@ -93,3 +93,18 @@
 139:9   s: Shape2
 143:9   t2: Shape2
 146:14  k: int
+151:19  c: bool
+152:9   narrow: i32
+153:9   wide: i64
+154:9   either: i64
+162:9   names: Vec[string]
+163:9   ages: Map[string, int]
+164:9   maybe: int?
+169:22  p: Shape2
+170:9   same: bool
+171:9   apply: ((int) -> void) -> void
+171:20  f: (int) -> void
+175:10  x: int
+179:17  n: int
+180:9   stopped: void
+183:9   spins: never

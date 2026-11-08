@@ -20,6 +20,7 @@ import { loadProgram } from "./loader.ts"
 import { lowerPackage } from "./lower.ts"
 import { resolvePackage } from "./resolve.ts"
 import { dumpResolution } from "./resolve_dump.ts"
+import { dumpTypes } from "./check_dump.ts"
 import { printFile } from "./sexpr.ts"
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version as string
@@ -39,7 +40,7 @@ programs and projects
   config [<path>]           print the evaluated mod.ms as JSON
 
 compiler internals (each file on its own)
-  lex | parse | resolve | hir <file.ms>…
+  lex | parse | resolve | types | hir <file.ms>…
 
   help                      this message
   version                   the toolchain version
@@ -53,7 +54,7 @@ async function exit(code: number): Promise<never> {
     process.exit(code)
 }
 
-const COMMANDS = new Set(["run", "js", "config", "check", "test", "fmt", "lex", "parse", "resolve", "hir", "help", "version"])
+const COMMANDS = new Set(["run", "js", "config", "check", "test", "fmt", "lex", "parse", "resolve", "types", "hir", "help", "version"])
 const [command, ...rest] = process.argv.slice(2)
 
 if (command === undefined || command === "help" || command === "--help" || command === "-h") {
@@ -146,6 +147,12 @@ for (const file of rest) {
         const res = resolvePackage([parsed.file])
         process.stdout.write(dumpResolution(res))
         diagnostics = [...parsed.diagnostics, ...res.diagnostics]
+    } else if (command === "types") {
+        const parsed = parse(src)
+        const res = resolvePackage([parsed.file])
+        const checked = checkPackage([parsed.file], res)
+        process.stdout.write(dumpTypes(res, checked, [parsed.file]))
+        diagnostics = [...parsed.diagnostics, ...res.diagnostics, ...checked.diagnostics]
     } else {
         // hir
         const parsed = parse(src)
