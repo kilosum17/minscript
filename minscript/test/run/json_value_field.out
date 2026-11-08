@@ -1,0 +1,4 @@
+object: {"a":1}
+object: {"b":2}
+bool: true
+string: "x"

@@ -14,8 +14,9 @@
 // of the package analysed before it, and its checker continues the inference variables, so the last
 // package's arenas hold everything (`syms()`, `vars()`). Node ids are unique across the program.
 //
-// Not ported yet: projects (`mod.ms`, src/project.ts) and their `path:` dependencies; the editor's
-// `read` / `list` overrides; `testDir`.
+// `LoadOptions` are stage 0's: `app_root` and `deps` come from a project (src/project/), `test_dir`
+// and `extra` from `ms test`. Stage 0's `read` / `list` overrides are `extra`: files that exist only in
+// memory (`ms test`'s generated file), read and listed as if they were on disk.
 package loader
 
 import "std.fs"
@@ -90,6 +91,17 @@ impl Program {
     }
 }
 
+pub type LoadOptions = {
+    /// The folder `app.x` imports start from. None: the entry's folder (a project passes its `main`).
+    pub app_root: string? = None
+    /// `path:` dependencies from mod.ms: import root name → folder (`"utils"` → /work/utils).
+    pub deps: Map[string, string] = m{}
+    /// The folder whose `*_test.ms` files are included (`ms test`). Others' tests never are.
+    pub test_dir: string? = None
+    /// Files that exist only in memory: absolute path → text.
+    pub extra: Map[string, string] = m{}
+}
+
 union Located = {
     LPackage { dir: string, name: string, item: string?, items: Vec[string]?, glob: bool }
     LExternal
@@ -97,6 +109,7 @@ union Located = {
 }
 
 type Loader = {
+    opts: LoadOptions
     std_dir: string
     cwd: string
     app_root: string = ""
@@ -114,7 +127,7 @@ type Loader = {
 
 /// Loads and analyses the program at `entry` (a file or a folder). `std_dir` is the std folder
 /// (with `prelude.ms`).
-pub async fun load_program(entry: &str, std_dir: &str) -> Result[Program, string] {
+pub async fun load_program(entry: &str, std_dir: &str, opts: LoadOptions) -> Result[Program, string] {
     let cwd = env.cwd()
     let std = resolve_from(cwd, std_dir)
     let prelude_path = join(std, "prelude.ms")
@@ -123,7 +136,7 @@ pub async fun load_program(entry: &str, std_dir: &str) -> Result[Program, string
     let prelude = resolve_package([parsed.file], None, ResolveOptions { std: true, package_name: "std" })
     // the prelude's own functions are checked (and lowered) too: they start the program's arenas
     let prelude_checked = check_loaded([parsed.file], prelude, parsed.file, prelude, [], [], [])
-    var l = Loader { std_dir: std, cwd: cwd.clone(), next_id: parsed.next_id, prelude_file: parsed.file, prelude, prelude_checked }
+    var l = Loader { opts, std_dir: std, cwd: cwd.clone(), next_id: parsed.next_id, prelude_file: parsed.file, prelude, prelude_checked }
     let path = resolve_from(cwd, entry)
     let main = if await is_dir(path) { await l.load_folder(path) } else { await l.load_file(path) }
     Ok(Program {
@@ -132,7 +145,7 @@ pub async fun load_program(entry: &str, std_dir: &str) -> Result[Program, string
     })
 }
 
-async fun is_dir(path: &str) -> bool {
+pub async fun is_dir(path: &str) -> bool {
     match await fs.stat(path) {
         Ok(s) => s.dir
         Err(_) => false
@@ -149,18 +162,6 @@ async fun is_package_dir(dir: &str) -> bool {
     }
 }
 
-/// A folder's `.ms` files, sorted, without `*_test.ms`.
-async fun source_files(dir: &str) -> Vec[string] {
-    let names = await fs.list_dir(dir) or return []
-    var out = [] as Vec[string]
-    for n in names.iter() {
-        if n.ends_with(".ms") && !n.ends_with("_test.ms") && !out.contains(n) {
-            out.push(n.clone())
-        }
-    }
-    out.sort()
-    out
-}
 
 fun package_name_of(f: &File) -> string {
     let name = f.package_path.join(".")
@@ -170,7 +171,33 @@ fun package_name_of(f: &File) -> string {
 fun dotted(rel: &str) -> string { rel.split("/").join(".") }
 
 impl Loader {
+    /// A folder's `.ms` files (with the in-memory ones), sorted, without `*_test.ms` unless it is the
+    /// folder under test.
+    async fun source_files(&this, dir: &str) -> Vec[string] {
+        var names = await fs.list_dir(dir) or return []
+        for path, _ in this.opts.extra {
+            if dirname(path) == dir {
+                names.push(basename(path))
+            }
+        }
+        let tests = this.opts.test_dir == Some(dir.to_str())
+        var out = [] as Vec[string]
+        for n in names.iter() {
+            if n.ends_with(".ms") && (tests || !n.ends_with("_test.ms")) && !out.contains(n) {
+                out.push(n.clone())
+            }
+        }
+        out.sort()
+        out
+    }
+
     fun qualified_name(&this, dir: &str) -> string {
+        for name, root in this.opts.deps {
+            let rel = relative(root, dir)
+            if !rel.starts_with("..") {
+                return if rel == "" { name.clone() } else { "${name}.${dotted(rel)}" }
+            }
+        }
         let std = relative(this.std_dir, dir)
         if !std.starts_with("..") && std != "" {
             return "std.${dotted(std)}"
@@ -227,34 +254,44 @@ impl Loader {
         let first = parts[0].clone()
         var segs = if first == "build" || first == "ms" { ["std"] as Vec[string] } else { [] as Vec[string] }
         segs.extend(parts)
-        let root = if segs[0] == "std" { this.std_dir.clone() } else if segs[0] == "app" { this.app_root.clone() } else { return LExternal }
+        let dep = this.opts.deps.get(segs[0])
+        let root = match &dep {
+            Some(d) => d.clone()
+            None => if segs[0] == "std" { this.std_dir.clone() } else if segs[0] == "app" { this.app_root.clone() } else { return LExternal }
+        }
         let rest = segs.skip(1)
-        if rest.is_empty() {
+        if rest.is_empty() && dep.is_none() {
             return LError("`${path}` names a root, not a package")
         }
         let dir = join(root, rest.join("/"))
         if await is_package_dir(dir) {
             return LPackage { dir: dir.clone(), name: this.qualified_name(dir), item: None, items, glob }
         }
-        if !glob && items.is_none() && rest.len() >= 2 {
+        if !glob && items.is_none() && rest.len() >= (if dep.is_none() { 2 } else { 1 }) {
             let parent = join(root, rest.take(rest.len() - 1).join("/"))
             if await is_package_dir(parent) {
                 return LPackage { dir: parent.clone(), name: this.qualified_name(parent), item: Some(rest[rest.len() - 1].clone()), items: None, glob: false }
             }
+        }
+        if let Some(d) = &dep {
+            return LError("no package `${clean}` in the dependency `${segs[0]}` (${d})")
         }
         let hint = if segs[0] == "std" { " in std" } else { " (looked for the folder `${rest.join("/")}/` next to the entry file)" }
         LError("no package `${clean}`${hint}")
     }
 
     async fun parse_file(&mut this, path: &str) -> SourceFile? {
-        let bytes = await fs.read_file(path) or return None
+        let bytes = match this.opts.extra.get(path) {
+            Some(text) => utf8.encode(text)
+            None => await fs.read_file(path) or return None
+        }
         let parsed = parse_from(bytes, this.next_id)
         this.next_id = parsed.next_id
         Some(SourceFile { path: path.to_str(), parsed })
     }
 
     async fun load_file(&mut this, entry: &str) -> int {
-        this.app_root = dirname(entry)
+        this.app_root = this.opts.app_root ?? dirname(entry)
         let file = await this.parse_file(entry) ?? SourceFile { path: entry.to_str(), parsed: parse_from(utf8.encode(""), this.next_id) }
         let name = package_name_of(file.parsed.file)
         let main = if name == "main" {
@@ -274,11 +311,10 @@ impl Loader {
 
     /// A folder entry: its `package main` files are the main package.
     async fun load_folder(&mut this, dir: &str) -> int {
-        // as stage 0's `ms run <folder>` without a project: the folder's `src/` if it has one
-        let main_dir = if await is_dir(join(dir, "src")) { join(dir, "src") } else { dir.to_str() }
-        this.app_root = main_dir.clone()
+        let main_dir = dir.to_str()
+        this.app_root = this.opts.app_root ?? main_dir.clone()
         var files = [] as Vec[SourceFile]
-        for f in (await source_files(main_dir)).iter() {
+        for f in (await this.source_files(main_dir)).iter() {
             let Some(sf) = await this.parse_file(join(main_dir, f)) else { continue }
             if package_name_of(sf.parsed.file) == "main" {
                 files.push(sf)
@@ -313,7 +349,7 @@ impl Loader {
         if let Some(e) = entry {
             files.push(e)
         }
-        for f in (await source_files(dir)).iter() {
+        for f in (await this.source_files(dir)).iter() {
             let path = join(dir, f)
             if path == entry_path {
                 continue

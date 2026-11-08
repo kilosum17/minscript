@@ -50,7 +50,10 @@ impl Parser {
                     // the statement is complete (kept); sync past what follows it on the line
                     if junk {
                         let found = describe(this.cur())
-                        this.report("E_UNEXPECTED_TOKEN", "expected a newline or `;` after the statement, found ${found}")
+                        this.report(
+                            "E_UNEXPECTED_TOKEN",
+                            "expected a newline or `;` after the statement, found ${found}",
+                        )
                         this.sync_from(stmt_start, end, this.i, "")
                     }
                 }
@@ -72,7 +75,11 @@ impl Parser {
             let _ = this.advance()
             let _ = this.advance()
             let e = this.parse_for(Some(tok.clone()))?
-            return Ok(ExprStmt(ExprStmtNode { id: this.id(), span: this.sp(tok.span), expr: e, semi: false }))
+            return Ok(
+                ExprStmt(
+                    ExprStmtNode { id: this.id(), span: this.sp(tok.span), expr: e, semi: false },
+                ),
+            )
         }
 
         let e = this.parse_expr(0)?
@@ -80,12 +87,33 @@ impl Parser {
             let op = this.advance()
             var pattern = Pattern { id: this.id(), span: e.span, kind: PWild }
             if let Ident(name) = &e.kind {
-                pattern = Pattern { id: pattern.id, span: e.span, kind: PBind { name: name.clone(), is_mut: false } }
+                pattern = Pattern {
+                    id: pattern.id,
+                    span: e.span,
+                    kind: PBind { name: name.clone(), is_mut: false }
+                }
             } else {
-                this.report_at("E_SHORT_DECL_TARGET", "`${op.kind}` declares a plain name; use `let` for patterns and `=` to assign", op.span)
+                this.report_at(
+                    "E_SHORT_DECL_TARGET",
+                    "`${op.kind}` declares a plain name; use `let` for patterns and `=` to assign",
+                    op.span,
+                )
             }
             let value = this.parse_expr(0)?
-            return Ok(Let(LetStmt { id: this.id(), span: this.sp(tok.span), mutable: op.kind == ":==", short: true, pattern, ty: None, value, else_branch: None }))
+            return Ok(
+                Let(
+                    LetStmt {
+                        id: this.id(),
+                        span: this.sp(tok.span),
+                        mutable: op.kind == ":==",
+                        short: true,
+                        pattern,
+                        ty: None,
+                        value,
+                        else_branch: None
+                    },
+                ),
+            )
         }
         Ok(ExprStmt(ExprStmtNode { id: this.id(), span: this.sp(tok.span), expr: e, semi: false }))
     }
@@ -99,7 +127,10 @@ impl Parser {
             ty = Some(this.parse_type(false, true)?)
         }
         if this.at(":=") || this.at(":==") {
-            this.report("E_SHORT_DECL_TARGET", "write `${start.kind} name = value` or `name ${if mutable { ":==" } else { ":=" }} value`, not both")
+            this.report(
+                "E_SHORT_DECL_TARGET",
+                "write `${start.kind} name = value` or `name ${if mutable { ":==" } else { ":=" }} value`, not both",
+            )
             let _ = this.advance()
         } else {
             let _ = this.expect("=")?
@@ -110,7 +141,20 @@ impl Parser {
             let _ = this.advance()
             else_branch = Some(this.parse_block()?)
         }
-        Ok(Let(LetStmt { id: this.id(), span: this.sp(start.span), mutable, short: false, pattern, ty, value, else_branch }))
+        Ok(
+            Let(
+                LetStmt {
+                    id: this.id(),
+                    span: this.sp(start.span),
+                    mutable,
+                    short: false,
+                    pattern,
+                    ty,
+                    value,
+                    else_branch
+                },
+            ),
+        )
     }
 
     // ---- expressions ----
@@ -152,7 +196,11 @@ impl Parser {
             }
 
             if info.assoc == "none" && is_non_assoc_chain(left, tok.kind) {
-                this.report_at("E_NON_ASSOCIATIVE_OPERATOR", "`${tok.kind}` can't be chained: add parentheses", tok.span)
+                this.report_at(
+                    "E_NON_ASSOCIATIVE_OPERATOR",
+                    "`${tok.kind}` can't be chained: add parentheses",
+                    tok.span,
+                )
             }
 
             if tok.kind == ".." || tok.kind == "..=" {
@@ -161,7 +209,10 @@ impl Parser {
                 if this.can_start_operand() {
                     end = Some(Box(this.parse_expr(BP_RANGE_OPERAND)?))
                 }
-                left = this.mk(start, RangeExpr { op: tok.kind.clone(), start: Some(Box(left)), end })
+                left = this.mk(
+                    start,
+                    RangeExpr { op: tok.kind.clone(), start: Some(Box(left)), end },
+                )
                 continue
             }
 
@@ -170,15 +221,29 @@ impl Parser {
 
             if is_assign_op(tok.kind) {
                 if !is_place(left) {
-                    this.report_at("E_INVALID_ASSIGNMENT_TARGET", "the left side of an assignment must be a variable, field, index or `*pointer`", tok.span)
+                    this.report_at(
+                        "E_INVALID_ASSIGNMENT_TARGET",
+                        "the left side of an assignment must be a variable, field, index or `*pointer`",
+                        tok.span,
+                    )
                 }
-                left = this.mk(start, Assign { op: tok.kind.clone(), target: Box(left), value: Box(right) })
+                left = this.mk(
+                    start,
+                    Assign { op: tok.kind.clone(), target: Box(left), value: Box(right) },
+                )
                 continue
             }
             if tok.kind == "??" && (is_logical(left) || is_logical(right)) {
-                this.report_at("E_MIXED_NULLISH", "`??` can't be mixed with `&&` / `||` without parentheses", tok.span)
+                this.report_at(
+                    "E_MIXED_NULLISH",
+                    "`??` can't be mixed with `&&` / `||` without parentheses",
+                    tok.span,
+                )
             }
-            left = this.mk(start, Binary { op: tok.kind.clone(), left: Box(left), right: Box(right) })
+            left = this.mk(
+                start,
+                Binary { op: tok.kind.clone(), left: Box(left), right: Box(right) },
+            )
         }
         Ok(left)
     }
@@ -211,7 +276,9 @@ impl Parser {
                 let _ = this.advance()
                 let is_mut = this.eat("mut")
                 let e = this.parse_unary()?
-                return Ok(this.mk(start, Unary { op: if is_mut { "&mut" } else { "&" }, expr: Box(e) }))
+                return Ok(
+                    this.mk(start, Unary { op: if is_mut { "&mut" } else { "&" }, expr: Box(e) }),
+                )
             }
             "*" => {
                 let _ = this.advance()
@@ -219,14 +286,23 @@ impl Parser {
                 return Ok(this.mk(start, Unary { op: "*", expr: Box(e) }))
             }
             "~" | "--" | "++" => {
-                let hint = if start_tok.kind == "~" { "bitwise not is `!` on integers" } else { "write `x += 1` / `x -= 1`" }
+                let hint = if start_tok.kind == "~" {
+                    "bitwise not is `!` on integers"
+                } else {
+                    "write `x += 1` / `x -= 1`"
+                }
                 this.report("E_RESERVED_OPERATOR", "`${start_tok.kind}` is reserved: ${hint}")
                 let _ = this.advance()
                 let e = this.parse_unary()?
                 if start_tok.kind == "++" {
                     return Ok(e)
                 }
-                return Ok(this.mk(start, Unary { op: if start_tok.kind == "~" { "!" } else { "-" }, expr: Box(e) }))
+                return Ok(
+                    this.mk(
+                        start,
+                        Unary { op: if start_tok.kind == "~" { "!" } else { "-" }, expr: Box(e) },
+                    ),
+                )
             }
             "await" => {
                 // the operand is a postfix chain up to the first `?` / `?.` (spec §3.1)
@@ -242,7 +318,9 @@ impl Parser {
                 if this.can_start_operand() {
                     end = Some(Box(this.parse_expr(BP_RANGE_OPERAND)?))
                 }
-                return Ok(this.mk(start, RangeExpr { op: start_tok.kind.clone(), start: None, end }))
+                return Ok(
+                    this.mk(start, RangeExpr { op: start_tok.kind.clone(), start: None, end }),
+                )
             }
             _ => {}
         }
@@ -291,7 +369,10 @@ impl Parser {
                 }
                 ".[" => {
                     if tok.nl_before {
-                        this.report("E_GENERIC_ARGS_NEWLINE", "`.[` must be on the same line as the expression it applies to")
+                        this.report(
+                            "E_GENERIC_ARGS_NEWLINE",
+                            "`.[` must be on the same line as the expression it applies to",
+                        )
                     }
                     let args = this.parse_type_args()?
                     e = this.mk(start, GenericApply { target: Box(e), args })
@@ -311,7 +392,10 @@ impl Parser {
                         if !this.looks_like_struct_in_header(tok) {
                             return Ok(e)
                         }
-                        this.report("E_STRUCT_LITERAL_IN_HEADER", "a struct literal can't appear directly in an `if` / `for` / `match` header: wrap it in parentheses")
+                        this.report(
+                            "E_STRUCT_LITERAL_IN_HEADER",
+                            "a struct literal can't appear directly in an `if` / `for` / `match` header: wrap it in parentheses",
+                        )
                     }
                     let fields = this.parse_record_fields("struct")?
                     e = this.mk(start, StructLit { ty: Box(e), fields })
@@ -320,7 +404,10 @@ impl Parser {
                     if tok.nl_before {
                         return Ok(e)
                     }
-                    this.report("E_RESERVED_OPERATOR", "`${tok.kind}` is reserved: write `x ${if tok.kind == "++" { "+=" } else { "-=" }} 1`")
+                    this.report(
+                        "E_RESERVED_OPERATOR",
+                        "`${tok.kind}` is reserved: write `x ${if tok.kind == "++" { "+=" } else { "-=" }} 1`",
+                    )
                     let _ = this.advance()
                 }
                 "<" => {
@@ -359,7 +446,10 @@ impl Parser {
             let _ = this.advance()
             return Ok(t(text_of(tok), true))
         }
-        this.fail("E_UNEXPECTED_TOKEN", "expected a field or method name after `.`, found ${describe(tok)}")
+        this.fail(
+            "E_UNEXPECTED_TOKEN",
+            "expected a field or method name after `.`, found ${describe(tok)}",
+        )
     }
 
     /// In a header, `P { a: 1 } {` (a struct literal followed by the real block) is a misplaced struct literal.
@@ -469,7 +559,11 @@ impl Parser {
                 let _ = this.advance()
                 let name = text_of(tok)
                 if is_implicit_param(name) && !this.closures.is_empty() && this.closures[this.closures.len() - 1] {
-                    this.report_at("E_IT_IN_NAMED_CLOSURE", "`${name}` is only available in closures without a parameter header", tok.span)
+                    this.report_at(
+                        "E_IT_IN_NAMED_CLOSURE",
+                        "`${name}` is only available in closures without a parameter header",
+                        tok.span,
+                    )
                 }
                 Ok(this.mk(start, Ident(name)))
             }
@@ -570,7 +664,10 @@ impl Parser {
                 let k1 = this.peek(1)
                 let k2 = this.peek(2)
                 if (k1.kind == "Ident" || k1.kind == "String") && k2.kind == ":" && this.peek(3).kind != "for" {
-                    this.report("E_BARE_BRACE_LITERAL", "a bare `{` is always a block: write `r{ … }` for a record, `m{ … }` for a map, or `_{ … }` for an inferred struct")
+                    this.report(
+                        "E_BARE_BRACE_LITERAL",
+                        "a bare `{` is always a block: write `r{ … }` for a record, `m{ … }` for a map, or `_{ … }` for an inferred struct",
+                    )
                     let fields = this.parse_record_fields("record")?
                     return Ok(this.mk(start, RecordLit(fields)))
                 }
@@ -581,7 +678,10 @@ impl Parser {
             "match" => this.parse_match()
             "for" => this.parse_for(None)
             "while" | "loop" => {
-                this.report("E_RESERVED_KEYWORD", "`${tok.kind}` is reserved: MinScript loops use `for` (`for cond { }`, `for { }`)")
+                this.report(
+                    "E_RESERVED_KEYWORD",
+                    "`${tok.kind}` is reserved: MinScript loops use `for` (`for cond { }`, `for { }`)",
+                )
                 this.parse_for(None)
             }
             "select" => this.parse_select()
@@ -620,7 +720,10 @@ impl Parser {
             "fun" => this.parse_fun_expression()
             _ => {
                 if is_reserved(tok.kind) {
-                    return this.fail("E_RESERVED_KEYWORD", "`${tok.kind}` is reserved for a future version")
+                    return this.fail(
+                        "E_RESERVED_KEYWORD",
+                        "`${tok.kind}` is reserved for a future version",
+                    )
                 }
                 this.fail("E_UNEXPECTED_TOKEN", "expected an expression, found ${describe(tok)}")
             }
@@ -666,7 +769,10 @@ impl Parser {
                 parts.push(Text(text_of(tok)))
                 break
             }
-            return this.fail("E_UNEXPECTED_TOKEN", "expected `}` to end the interpolation, found ${describe(tok)}")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "expected `}` to end the interpolation, found ${describe(tok)}",
+            )
         }
         Ok(this.mk(start, Template(parts)))
     }
@@ -715,7 +821,11 @@ impl Parser {
 
     /// Recovery for `(a, b) => …` and `(a: T) -> U => …`.
     fun parse_arrow_closure(&mut this, open: Token) -> Result[Expr, Sync] {
-        this.report_at("E_ARROW_CLOSURE", "arrow functions are not supported: write `#{ a, b => … }`", open.span)
+        this.report_at(
+            "E_ARROW_CLOSURE",
+            "arrow functions are not supported: write `#{ a, b => … }`",
+            open.span,
+        )
         this.jump_to(this.closer_index(open) + 1)
         var ret: Type? = None
         if this.eat("->") {
@@ -729,7 +839,11 @@ impl Parser {
     /// Recovery for `fun(x) { … }` used as a value.
     fun parse_fun_expression(&mut this) -> Result[Expr, Sync] {
         let start = this.advance()
-        this.report_at("E_ARROW_CLOSURE", "function expressions are not supported: write `#{ x => … }`", start.span)
+        this.report_at(
+            "E_ARROW_CLOSURE",
+            "function expressions are not supported: write `#{ x => … }`",
+            start.span,
+        )
         if this.at("(") {
             let next = this.closer_index(this.cur()) + 1
             this.jump_to(next)
@@ -814,7 +928,10 @@ impl Parser {
         } else if is_keyword(key_tok.kind) && this.peek(1).kind == ":" {
             key = key_tok.kind.clone()
         } else {
-            this.report("E_INVALID_RECORD_KEY", "a ${what} key must be a name${if what == "record" { " or a string" } else { "" }}, found ${describe(key_tok)}")
+            this.report(
+                "E_INVALID_RECORD_KEY",
+                "a ${what} key must be a name${if what == "record" { " or a string" } else { "" }}, found ${describe(key_tok)}",
+            )
             let _ = this.advance()
             if this.eat(":") {
                 let _ = this.parse_expr(0)?

@@ -42,6 +42,8 @@ type Lowerer = {
     deferred: Set[int]
     vars: Vec[VarState]
     prelude_names: Map[string, int]
+    /// the names of each imported package's scope (`Sym.target`), for `pkg.Type` in field types
+    pkg_names: Map[int, Map[string, int]] = m{}
     package_name: string
     implicit_by_owner: Map[int, Vec[int]] = m{}
     fun_names: Map[int, string] = m{}
@@ -89,13 +91,60 @@ pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult,
     for d in res.deferred.iter() {
         let _ = deferred.insert(d.id)
     }
+    // a dependency's expressions lowered here (an imported struct's field defaults, `= None`) use its
+    // checker's decisions; node ids are unique across the program, so the tables merge
+    var calls = m{} as Map[int, CallInfo]
+    var members = m{} as Map[int, MemberTarget]
+    var variants = m{} as Map[int, VariantRef]
+    var rets = m{} as Map[int, Ty]
+    for i in reach.iter() {
+        let c = &deps[i].checked
+        for id, x in c.calls {
+            calls[id] = x.clone()
+        }
+        for id, x in c.members {
+            members[id] = x.clone()
+        }
+        for id, x in c.variants {
+            variants[id] = x.clone()
+        }
+        for id, x in c.rets {
+            rets[id] = x.clone()
+        }
+    }
+    if reach.is_empty() {
+        calls = checked.calls.clone()
+        members = checked.members.clone()
+        variants = checked.variants.clone()
+        rets = checked.rets.clone()
+    } else {
+        for id, x in checked.calls {
+            calls[id] = x.clone()
+        }
+        for id, x in checked.members {
+            members[id] = x.clone()
+        }
+        for id, x in checked.variants {
+            variants[id] = x.clone()
+        }
+        for id, x in checked.rets {
+            rets[id] = x.clone()
+        }
+    }
     var l = Lowerer {
         syms: res.symbols.clone(), refs, decls, captures: caps, types: checked.types.clone(), sym_types: checked.symbols.clone(),
-        calls: checked.calls.clone(), members: checked.members.clone(), variants: checked.variants.clone(), rets: checked.rets.clone(),
+        calls, members, variants, rets,
         open: res.open.clone(), deferred, vars: checked.vars.clone(), prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(),
         package_name: package_name.to_str(), ret: void_ty(), current_file: None, temp_count: first_temp,
     }
     for s in res.symbols.iter() {
+        if s.kind == "package" {
+            if let Some(scope) = s.target {
+                if !l.pkg_names.has(scope) {
+                    l.pkg_names[scope] = res.scopes[scope].names.clone()
+                }
+            }
+        }
         if s.kind != "implicit" {
             continue
         }
@@ -676,8 +725,28 @@ impl Lowerer {
             TName { .. } => {}
             _ => return None
         }
-        let TName { args, .. } = &t.kind else { return None }
-        let Some(sym) = this.refs.get(t.id) else { return None }
+        let TName { path, args } = &t.kind else { return None }
+        var found = this.refs.get(t.id)
+        // `json.Value`: a type of an imported package (as the checker's `to_ty` finds it)
+        if let Some(first) = found {
+            if path.len() > 1 && this.syms[first].kind == "package" {
+                var k = 1
+                for k < path.len() {
+                    found = match found {
+                        Some(c) => match this.syms[c].target {
+                            Some(scope) => match this.pkg_names.get(scope) {
+                                Some(names) => names.get(path[k])
+                                None => None
+                            }
+                            None => None
+                        }
+                        None => None
+                    }
+                    k += 1
+                }
+            }
+        }
+        let Some(sym) = found else { return None }
         let s = &this.syms[sym]
         let arg = #{ i: int => match args.get(i) {
             Some(x) => this.ast_shape(x)

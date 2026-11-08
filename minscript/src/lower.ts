@@ -13,8 +13,9 @@ import type { Span } from "./token.ts"
 import * as T from "./types.ts"
 import type { Ty } from "./types.ts"
 
-/** A package the lowered one imports (for the names and declarations of its items). */
-export type LowerDep = { files: A.File[], res: Resolution, name: string }
+/** A package the lowered one imports (for the names and declarations of its items). `checked`: its
+ *  checker's decisions, for its expressions lowered here (an imported struct's field defaults). */
+export type LowerDep = { files: A.File[], res: Resolution, name: string, checked?: CheckResult }
 
 /**
  * `packageName`: the package being lowered ("main" keeps plain names; others prefix theirs).
@@ -70,10 +71,13 @@ class Lowerer {
         this.captures = res.captures
         this.types = checked.types
         this.symTypes = checked.symbols
-        this.calls = checked.calls
-        this.members = checked.members
-        this.variants = checked.variants
-        this.rets = checked.rets
+        // a dependency's expressions lowered here (an imported struct's field defaults, `= None`) use its
+        // checker's decisions; node identities are unique, so the tables merge
+        const checks = [...deps.flatMap((d) => (d.checked ? [d.checked] : [])), checked]
+        this.calls = checks.length === 1 ? checked.calls : new Map(checks.flatMap((c) => [...c.calls]))
+        this.members = checks.length === 1 ? checked.members : new Map(checks.flatMap((c) => [...c.members]))
+        this.variants = checks.length === 1 ? checked.variants : new Map(checks.flatMap((c) => [...c.variants]))
+        this.rets = checks.length === 1 ? checked.rets : new Map(checks.flatMap((c) => [...c.rets]))
         this.open = res.open
         this.deferred = new Set(res.deferred)
         for (const sym of res.symbols) {
@@ -261,7 +265,13 @@ class Lowerer {
         if (t.kind === "TOption") return { opt: this.astShape(t.inner) }
         if (t.kind === "TRef") return this.astShape(t.inner)
         if (t.kind !== "TName") return null
-        const sym = this.refs.get(t)
+        let sym = this.refs.get(t)
+        // `json.Value`: a type of an imported package (as the checker's `toTy` finds it)
+        if (sym !== undefined && t.path.length > 1 && sym.kind === "package") {
+            let cur: Sym | undefined = sym
+            for (const seg of t.path.slice(1)) cur = cur?.target?.pkgScope.names.get(seg)
+            sym = cur
+        }
         if (sym === undefined) return null
         const arg = (i: number) => (t.args[i] ? this.astShape(t.args[i]!) : null)
         if (sym.std && (sym.name === "Vec" || sym.name === "Slice" || sym.name === "Array")) return { vec: arg(0) }

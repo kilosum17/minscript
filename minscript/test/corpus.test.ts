@@ -494,6 +494,17 @@ describe("stage 1 (../stage1, the self-hosted compiler)", () => {
             same(r.out, expected.js!, `JavaScript of ${relative(root, entry)}`)
         })
     })
+    test("it evaluates mod.ms and compiles a project (path: deps) like stage 0", { timeout: 120_000 }, async () => {
+        const std = join(root, "..", "std")
+        const dir = join(root, "projects", "basic")
+        const p = await openProject(dir)
+        const config = await stage1Run("config", ["--std", std, dir])
+        assert.equal(config.status, 0, config.stderr)
+        same(config.stdout, configJson(p.config!) + "\n", "ms config")
+        const js = await stage1Run("js", ["--std", std, dir])
+        assert.equal(js.status, 0, js.stderr)
+        same(js.stdout, compileToJs(p.mainDir, programOptions(p)).js!, "JavaScript of test/projects/basic")
+    })
     test("its parser builds the same AST and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
         const list = files()
         const r = await stage1Run("parse", list)

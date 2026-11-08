@@ -316,7 +316,7 @@ export function lowerProgram(program: Program): H.Program {
     const loader = new Loader({})
     for (const pkg of program.packages) {
         if (!pkg.res || !pkg.checked) continue
-        const deps = [...loader.reachable(pkg)].filter((d) => d.res).map((d) => ({ files: d.files.map((f) => f.parsed.file), res: d.res!, name: d.name }))
+        const deps = [...loader.reachable(pkg)].filter((d) => d.res).map((d) => ({ files: d.files.map((f) => f.parsed.file), res: d.res!, name: d.name, checked: d.checked }))
         const names = new Map(pkg.files.map((f) => [f.parsed.file, displayPath(f.path)]))
         const p = lowerPackage(pkg.files.map((f) => f.parsed.file), pkg.res, pkg.checked, loadPrelude(), pkg.name, deps, names)
         out.types.push(...p.types)

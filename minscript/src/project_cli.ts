@@ -107,7 +107,7 @@ async function runScript(p: Project, name: string, args: string[]): Promise<numb
     const script = p.config!.scripts.get(name)!
     switch (script.kind) {
         case "Shell": {
-            const quoted = args.map((a) => `'${a.replace(/'/g, "'\\\\''")}'`).join(" ")
+            const quoted = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ")
             const r = spawnSync(`${script.cmd}${quoted ? ` ${quoted}` : ""}`, { shell: true, stdio: "inherit", cwd: p.root })
             return r.status ?? 1
         }

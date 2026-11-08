@@ -883,18 +883,34 @@ export function setArgs(args: string[]): void { programArgs = args }
 /** `runtime.run_module`: writes the module to a temporary file and runs it with `exec.ts` in a child
  *  process (its own runtime state) sharing this one's stdio; the result is its exit code. */
 async function runModule(js: string, args: string[]): Promise<number> {
-    const [{ spawn }, { mkdtempSync, writeFileSync, rmSync }, { tmpdir }, { join }, { fileURLToPath }] = await Promise.all([
+    return (await runModuleResult(js, args, false)).code
+}
+
+/** `runtime.run_module_result`: as `run_module`, and the child (`exec.ts`) writes what its entry
+ *  function returned to a file; with `capture`, its stdout is collected instead of printed. */
+async function runModuleResult(js: string, args: string[], capture: boolean): Promise<{ $t: string, code: number, value: number, stdout: string }> {
+    const [{ spawn }, { mkdtempSync, writeFileSync, readFileSync, rmSync }, { tmpdir }, { join }, { fileURLToPath }] = await Promise.all([
         import("node:child_process"), import("node:fs"), import("node:os"), import("node:path"), import("node:url"),
     ])
     const dir = mkdtempSync(join(tmpdir(), "minscript-module-"))
     const file = join(dir, "main.mjs")
+    const resultFile = join(dir, "result")
     writeFileSync(file, js)
     const exec = fileURLToPath(new URL("./exec.ts", import.meta.url))
     try {
-        return await new Promise<number>((resolve) => {
+        let stdout = ""
+        const code = await new Promise<number>((resolve) => {
             // the child shares this process's terminal; when output is captured (tests), its lines go to the capture
-            const child = spawn(process.execPath, [exec, file, ...args], { stdio: captured ? ["inherit", "pipe", "pipe"] : "inherit" })
+            const pipeOut = capture || captured
+            const child = spawn(process.execPath, [exec, file, ...args], {
+                stdio: ["inherit", pipeOut ? "pipe" : "inherit", captured ? "pipe" : "inherit"],
+                env: { ...process.env, MS_EXEC_RESULT: resultFile },
+            })
             child.on("close", (code) => resolve(code ?? 1))
+            if (capture) {
+                child.stdout!.setEncoding("utf8")
+                child.stdout!.on("data", (chunk: string) => { stdout += chunk })
+            }
             if (!captured) return
             const relay = (stream: NodeJS.ReadableStream, toErr: boolean) => {
                 let pending = ""
@@ -907,9 +923,12 @@ async function runModule(js: string, args: string[]): Promise<number> {
                 })
                 stream.on("end", () => { if (pending !== "") writeLine(pending, toErr) })
             }
-            relay(child.stdout!, false)
+            if (!capture) relay(child.stdout!, false)
             relay(child.stderr!, true)
         })
+        let value = 0
+        try { value = Number(readFileSync(resultFile, "utf8")) || 0 } catch { /* no result: it didn't finish */ }
+        return { $t: "std.runtime.ModuleResult", code, value, stdout }
     } finally {
         rmSync(dir, { recursive: true, force: true })
     }
@@ -956,6 +975,8 @@ Object.assign(stdTable, {
     "time.now": () => BigInt(Date.now()),
     "runtime.yield": () => new Promise((r) => setTimeout(r, 0)),
     "runtime.run_module": runModule,
+    "runtime.run_module_result": runModuleResult,
+    "runtime.shell": (cmd: string, dir: string) => childProcess.spawnSync(cmd, { shell: true, stdio: "inherit", cwd: dir }).status ?? 1,
     "runtime.exit": (code: number) => { throw new ExitRequest(code) },
 
     // env
@@ -1002,6 +1023,11 @@ Object.assign(stdTable, {
     "build.current_target": () => {
         const os = ({ linux: "Linux", darwin: "MacOs", win32: "Windows", android: "Android" } as Record<string, string>)[process.platform] ?? "Other"
         return { $t: "std.build.Target", os: { $t: "std.build.Os", $v: os, $f: [] }, arch: process.arch, back_end: "js" }
+    },
+    "build.evaluate": (config: () => Any) => {
+        const was = evaluatingConfig
+        evaluatingConfig = true
+        try { return config() } finally { evaluatingConfig = was }
     },
     "build.run": (cmd: string) => {
         if (evaluatingConfig) panic(`E_SCRIPT_IN_EVAL: \`run(${JSON.stringify(cmd)})\` while mod.ms is being evaluated; scripts only run from \`ms run <name>\``, "User")

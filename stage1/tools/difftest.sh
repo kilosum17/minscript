@@ -4,7 +4,8 @@
 # resolution dumps (resolver), the type dumps (checker), the ownership diagnostics and the HIR dumps
 # (lowering), with all their diagnostics (from the resolver on, each file is its own package, as with
 # stage 0's `ms resolve` / `ms types` / `ms ownership` / `ms hir`); then whole programs: `ms check`,
-# `ms js` and `ms run` on every runnable entry, stage 1 itself included. Run from stage1/: `ms run difftest`.
+# `ms js` and `ms run` on every runnable entry, stage 1 itself included; and projects: `ms config`,
+# scripts and `ms test`. Run from stage1/: `ms run difftest`.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 out=$(mktemp -d)
@@ -38,7 +39,7 @@ compare lowering "ms hir" "ms run . -- hir --prelude ../minscript/std/prelude.ms
 
 # Whole programs (the loader, every pass on every package, the JS back end): `ms check`, `ms js` and
 # `ms run` on every runnable entry, stage 1 itself included (stage 1 compiling stage 1).
-entries="$(ls ../minscript/test/run/*.ms ../minscript/test/programs/*.ms ../minscript/test/packages/*/main.ms ../minscript/test/packages/errors/*/main.ms) ../minscript/test/projects/plain ../minscript/test/projects/shared ."
+entries="$(ls ../minscript/test/run/*.ms ../minscript/test/programs/*.ms ../minscript/test/packages/*/main.ms ../minscript/test/packages/errors/*/main.ms) ../minscript/test/projects/basic ../minscript/test/projects/plain ../minscript/test/projects/shared ../minscript/test/projects/script_in_eval ."
 compare_programs() {   # compare_programs <pass> <stage-0 command> <stage-1 command>
     local pass=$1 n=0
     : > "$out/$pass.0.all"; : > "$out/$pass.1.all"
@@ -60,5 +61,43 @@ compare_programs() {   # compare_programs <pass> <stage-0 command> <stage-1 comm
 compare_programs check-programs "ms check" "ms run . -- check --std ../minscript/std"
 compare_programs js-programs "ms js" "ms run . -- js --std ../minscript/std"
 compare_programs run-programs "ms run" "ms run . -- run --std ../minscript/std"
+# Projects and the commands around them (src/project/): `ms config`, scripts, `ms test`, each typed in
+# the folder it is about (scripts and `ms test` look for the project there). Test timings are
+# normalized. Stage 1 finds std through MS_STD, so a script's own `--` arguments reach it untouched.
+stage1=$(pwd)
+export MS_STD="$stage1/../minscript/std"
+commands=(
+    "../minscript/test/projects/basic|config"
+    "../minscript/test/projects/basic|run"
+    "../minscript/test/projects/basic|run hello -- a \"it's\""
+    "../minscript/test/projects/basic|hello -- x"
+    "../minscript/test/projects/basic|run gen"
+    "../minscript/test/projects/basic|run check -- --verbose"
+    "../minscript/test/projects/basic|run nope"
+    "../minscript/test/projects/basic|test"
+    "../minscript/test/projects/basic|check"
+    "../minscript/test/projects/script_in_eval|config"
+    "../minscript/test/projects/plain|config"
+    "../minscript/test/projects/plain|run"
+    "../minscript|test std test/prelude test/projects"
+    "../minscript|test test/testing/failing"
+    "../minscript|test test/testing/failing --run passes --reporter dots"
+    ".|test"
+)
+: > "$out/projects.0.all"; : > "$out/projects.1.all"
+for entry in "${commands[@]}"; do
+    dir=${entry%%|*} cmd=${entry#*|}
+    for s in 0 1; do
+        if [ $s -eq 0 ]; then run="ms $cmd"; else run="ms run $stage1 -- $cmd"; fi
+        { echo "== ($dir) $cmd"; (cd "$dir" && eval "timeout 600 $run" 2>&1 | sed -E 's/\([0-9]+ ms\)/(… ms)/'; echo "exit ${PIPESTATUS[0]}"); } >> "$out/projects.$s.all"
+    done
+done
+if diff -u "$out/projects.0.all" "$out/projects.1.all" > "$out/projects.diff"; then
+    echo "projects: ${#commands[@]} commands, identical ($(wc -l < "$out/projects.0.all") lines)"
+else
+    echo "projects: outputs differ:"
+    head -30 "$out/projects.diff"
+    status=1
+fi
 [ $status -eq 0 ] && rm -r "$out" || echo "(outputs kept in $out)"
 exit $status

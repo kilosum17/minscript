@@ -6,11 +6,14 @@
 //   types --prelude <prelude.ms> <file.ms>…     the checker dump (each file is its own package)
 //   ownership --prelude <prelude.ms> <file.ms>… the ownership diagnostics (each file is its own package)
 //   hir --prelude <prelude.ms> <file.ms>…       the HIR dump (each file is its own package)
-// Whole programs (the entry and every package it imports, loaded from `--std` and the entry's folder):
-//   check --std <std dir> <path>…               type-check and ownership-check, as `ms check`
-//   js --std <std dir> [--runtime <url>] <path>  the generated JavaScript, as `ms js`
-//   run --std <std dir> [--runtime <url>] <path> [-- args…]   compile and run, as `ms run`
-// The runtime the generated module imports is stage 0's (`<std>/../src/js/runtime.ts` by default).
+// Programs and projects (src/project/; `--std <std dir>` names std, default `$MS_STD`; `--runtime <url>`
+// the runtime the generated module imports, default stage 0's `<std>/../src/js/runtime.ts`):
+//   run [<path>] [-- args…]      run a file, a folder or a project; `run` alone lists the scripts
+//   run <script> [-- args…]      a script from mod.ms (also `<script>` as the command)
+//   check [<path>…]              type-check and ownership-check, as `ms check`
+//   test [<path>…] [--run <name>] [--reporter spec|dots]   as `ms test`
+//   js <path>                    the generated JavaScript, as `ms js`
+//   config [<path>]              the evaluated mod.ms as JSON, as `ms config`
 package main
 
 import "app.lexer"
@@ -20,8 +23,7 @@ import "app.resolve"
 import "app.check"
 import "app.ownership"
 import "app.hir"
-import "app.loader"
-import "app.js"
+import "app.project"
 import "std.env"
 import "std.fs"
 import "std.io"
@@ -29,15 +31,16 @@ import "std.runtime"
 
 async fun main() {
     var args = env.args()
-    if !args.is_empty() && (args[0] == "check" || args[0] == "js" || args[0] == "run") {
+    if args.is_empty() {
+        io.eprintln(USAGE)
+        runtime.exit(2)
+    }
+    let per_file = args[0] == "lex" || args[0] == "parse" || args[0] == "resolve" || args[0] == "types" || args[0] == "ownership" || args[0] == "hir"
+    if !per_file {
         let code = await program_command(args[0], args.skip(1))
         if code != 0 {
             runtime.exit(code)
         }
-        return
-    }
-    if args.is_empty() || !(args[0] == "lex" || args[0] == "parse" || args[0] == "resolve" || args[0] == "types" || args[0] == "ownership" || args[0] == "hir") {
-        io.eprintln("usage: ms run stage1 -- lex|parse <file.ms>…  |  resolve|types|ownership|hir --prelude <prelude.ms> <file.ms>…")
         return
     }
     let command = args[0].clone()
@@ -114,87 +117,29 @@ fun report(file: &str, diagnostics: &Vec[lexer.Diagnostic]) {
     }
 }
 
-/// A path as stage 0 shows it: relative to the current folder when it is inside it.
-fun show_path(p: &str) -> string {
-    let r = loader.relative(env.cwd(), p)
-    if r.is_empty() { "." } else if r.starts_with("..") { p.to_str() } else { r }
-}
+let USAGE = "usage: stage1 lex|parse <file.ms>…  |  resolve|types|ownership|hir --prelude <prelude.ms> <file.ms>…  |  run|js|check|config|test|<script> --std <std dir> …"
 
-fun print_diagnostics(ds: &Vec[loader.FileDiagnostic]) {
-    for d in ds.iter() {
-        io.eprintln("${show_path(d.file)}:${d.span.line}:${d.span.col}: error ${d.code}: ${d.message}")
-    }
-}
-
-/// `check`, `js` and `run`: whole programs. Returns the exit code.
+/// The commands on whole programs and projects (`--std <dir>` names std). Returns the exit code.
 async fun program_command(command: &str, argv: Vec[string]) -> int {
-    var std_dir = ""
-    var runtime_url = ""
-    var paths = [] as Vec[string]
-    var program_args = [] as Vec[string]
-    var i = 0
-    for i < argv.len() {
-        if argv[i] == "--" {
-            program_args = argv.skip(i + 1)
-            break
-        }
-        if argv[i] == "--std" && i + 1 < argv.len() {
-            std_dir = argv[i + 1].clone()
-            i += 2
-            continue
-        }
-        if argv[i] == "--runtime" && i + 1 < argv.len() {
-            runtime_url = argv[i + 1].clone()
-            i += 2
-            continue
-        }
-        paths.push(argv[i].clone())
-        i += 1
-    }
-    if std_dir.is_empty() {
-        io.eprintln("${command} needs `--std <path to the std folder>`")
+    let options = project.toolchain_options(argv) or e => {
+        io.eprintln("${command} ${e}")
         return 2
     }
-    if runtime_url.is_empty() {
-        runtime_url = "file://${loader.resolve_from(env.cwd(), "${std_dir}/../src/js/runtime.ts")}"
+    let t(tc, rest) = options
+    if command == "run" || command == "js" || command == "config" {
+        return await project.run_program_command(tc, command, rest)
     }
-    if command == "js" || command == "run" {
-        let Some(path) = paths.get(0) else {
-            io.eprintln("${command} needs a file or folder")
-            return 2
-        }
-        let loaded = await loader.load_program(path, std_dir)
-        let program = loaded or e => {
-            io.eprintln(e)
-            return 1
-        }
-        print_diagnostics(program.diagnostics)
-        if !program.diagnostics.is_empty() {
-            return 1
-        }
-        var lowered = loader.lower_program(program)
-        hir.compute_witnesses(lowered)
-        let code = js.emit_js(lowered, program.syms(), program.vars(), runtime_url, "main")
-        if command == "js" {
-            io.print(code)
-            return 0
-        }
-        return await runtime.run_module(code, program_args)
+    if command == "check" {
+        return await project.check_command(tc, rest)
     }
-    var failed = false
-    for path in (if paths.is_empty() { ["."] as Vec[string] } else { paths }).iter() {
-        let loaded = await loader.load_program(path, std_dir)
-        let program = loaded or e => {
-            io.eprintln(e)
-            return 1
-        }
-        print_diagnostics(program.diagnostics)
-        if !program.diagnostics.is_empty() {
-            failed = true
-            continue
-        }
-        let n = program.order.len()
-        io.println("${path}: ok (${n} package${if n == 1 { "" } else { "s" }}, ${program.file_count()} files)")
+    if command == "test" {
+        return await project.test_command(tc, rest)
     }
-    if failed { 1 } else { 0 }
+    // `stage1 dev`: a script of the project here
+    if let Some(code) = await project.run_script_shorthand(tc, command, rest) {
+        return code
+    }
+    io.eprintln("ms: unknown command `${command}`, and no script of that name in a mod.ms here")
+    io.eprintln(USAGE)
+    2
 }

@@ -41,7 +41,42 @@ pub type Config = {
     pub fun raw_section(&this, name: string) -> json.Value? {
         this.sections.get(name)
     }
+
+    /// The configuration as `ms config` prints it: each script is `{ "sh": cmd }`, `{ "pkg": path }`
+    /// or `{ "task": "<MinScript>" }` (for toolchains written in MinScript, §17.5).
+    pub fun describe(&this) -> json.Value {
+        var scripts = m{} as Map[string, json.Value]
+        for k, s in this.scripts {
+            let entry: json.Value = match s {
+                Shell(cmd) => json.Value.Object(m{ "sh": json.Value.Str(cmd.clone()) })
+                Package(path) => json.Value.Object(m{ "pkg": json.Value.Str(path.clone()) })
+                Task(_) => json.Value.Object(m{ "task": json.Value.Str("<MinScript>") })
+            }
+            scripts[k.clone()] = entry
+        }
+        json.Value.Object(m{
+            "name": json.Value.Str(this.name.clone())
+            "version": json.Value.Str(this.version.clone())
+            "main": json.Value.Str(this.main.clone())
+            "deps": strings(this.deps)
+            "dev_deps": strings(this.dev_deps)
+            "scripts": json.Value.Object(scripts)
+            "sections": json.Value.Object(this.sections.clone())
+        })
+    }
 }
+
+fun strings(entries: &Map[string, string]) -> json.Value {
+    var out = m{} as Map[string, json.Value]
+    for k, v in entries {
+        out[k.clone()] = json.Value.Str(v.clone())
+    }
+    json.Value.Object(out)
+}
+
+/// Runs `config` as the toolchain evaluates mod.ms (§17.5): while it runs, `run` is the runtime
+/// error E_SCRIPT_IN_EVAL. For toolchains written in MinScript.
+pub fun evaluate(config: () -> Config) -> Config { _builtin() }
 
 /// A tool: reads the config, writes its own section (and maybe scripts), returns the result.
 pub type Tool = (Config) -> Config
