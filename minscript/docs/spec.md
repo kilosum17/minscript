@@ -65,6 +65,7 @@ Pipeline:
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
 | Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
 | Lexer (implemented) | — | — | template tokens for `${…}`; `"…"` interpolations stay on one line; lexer balances delimiters (§1.1, §1.5) |
+| Lowering to HIR (implemented) | — | — | one small typed core for every back end (§14.1) |
 | Ownership pass (implemented, first version) | — | — | moves, mutability, scoped values, escaping closures, borrows across spawn (§9.13) |
 | Type checker (implemented, first version) | — | — | bidirectional inference; prelude written in MinScript (`std/prelude.ms`); `unknown` for std packages without signatures (§9.12) |
 | Name resolution (implemented) | — | — | redeclaration only in inner scopes; uppercase names and members deferred to the type checker (§8.7) |
@@ -1637,6 +1638,37 @@ Target: ≥ 60 tests before starting the type checker.
 - **WASM, C (tiny-c), LLVM:** native targets sharing the same HIR.
 - Panics lower to exceptions on JS, and to unwinding (landing pads / tables) on native targets.
 
+### 14.1 HIR [D]
+
+After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir.ts`). The HIR is a small typed expression tree that every back end shares. Each expression carries its type, each name its symbol, and the sugar is gone:
+
+| Source | HIR |
+|---|---|
+| `let` / `var` / `:=` / `:==`, destructuring | one `let` per binding (through a temporary) |
+| every `for` form | `loop`, with a `step` block that `continue` runs (ranges and `Vec` / `Array` / `Slice` use a counter; other collections use `iter()` / `next()`; `for await` awaits `next()`) |
+| `?`, `or`, `??`, `?.`, `if let`, `let … else` | `match` with explicit `return`; the `ok(v)` / `fail(e)` patterns match an Option or a Result alike |
+| truthiness in conditions and `&&` / `\|\|` / `!` | an explicit `truthy` test |
+| inferred variants, `Ok()` | qualified `variant` nodes, with omitted `void` payloads filled in |
+| struct literals, `_{…}`, record → struct, spreads | `struct` with every field: given, from the spread base, the default, or `None` |
+| method calls | a call to the resolved function (`std.Vec.push(v, x)`); interface and generic-bound calls are `dyncall` |
+| variadic arguments | packed into a slice |
+| `a + b` on a type implementing `Plus` | `T.plus(a, b)` |
+| string interpolation, `+` / `+=` on strings | `concat` of `to_str` conversions |
+| int → `i64` / `u64` | an explicit `widen` |
+| subject-less `match` | an `if` / `else if` chain |
+
+- **Names:** user items keep their names (`main`, `User.new`), and std items are prefixed (`std.Vec.push`).
+- **Unknown members:** members of std packages without signatures stay symbolic (`extern:json.parse`), and so do variants of their types.
+- **Checks:** `.hir` snapshots show the lowering (`test/hir/`). A validator (`src/hir_check.ts`) checks that every valid corpus file lowers to well-formed HIR: every local is bound before use, every label exists, and nothing is unsupported.
+
+### 14.2 JS back end decisions [D]
+
+- **Integers:** `i64` and `u64` are JS `BigInt`. Every other integer type, including `int` (32-bit on JS, §7.2), is a JS `number`. Floats are `number`.
+- **Not yet on JS (to solve later):**
+  - **overflow checks:** §9.5 says overflow always panics. JS arithmetic doesn't, and `number` integers silently lose precision past 2^53;
+  - the exact wrapping of `i8`…`u32` arithmetic;
+  - `as` truncation of non-BigInt integers.
+
 ---
 
 ## 15. Deferred (not in v0.2)
@@ -1657,6 +1689,10 @@ Target: ≥ 60 tests before starting the type checker.
 14. Queue groups on Topics (`subscribe_group`), acknowledgements and redelivery.
 15. Workspaces / monorepos: several projects under one `mod.ms`.
 16. Dependency sources beyond `path:` and `git:` (`url:`, registries, workspace members).
+17. **Scoped types** (revisit once the language runs end to end). Today a field can't hold a borrow (§9.3), so user code can't define zero-copy views (`Token { text: &str }`) or its own borrowing iterators (an iterator type would need a `&Vec[T]` field). Only std's built-in iterators can borrow.
+    - **Idea:** a type marked as scoped (syntax open, e.g. `scoped type Token = { text: &str }`) may have borrow fields. Its values then follow the scoped-value rules (§9.3): they live in locals, are passed down and returned like any borrow, and can never be stored in a non-scoped field, a global, a `Ref`, an escaping closure or a task.
+    - **Owners:** a scoped struct's owners are the owners of the borrows it was built from, inferred as for any scoped value. That keeps the "no lifetime syntax" rule.
+    - **To decide:** the syntax; whether scoped types may contain other scoped types; how generic code (`Vec[Token]`) is affected; and whether it conflicts with returned borrows being tied to every borrowed argument (§9.3 rule 4).
 
 ---
 

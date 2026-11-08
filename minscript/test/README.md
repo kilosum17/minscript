@@ -11,6 +11,7 @@ The syntax under test is defined by [docs/spec.md](../docs/spec.md) (v0.2). The 
 | `resolve/` | name resolution: scopes, shadowing, captures, imports, resolver errors | `//~` annotations, plus a `*.refs` snapshot of what every name binds to |
 | `check/` | type checking: inference, coercions, calls, patterns, checker errors | `//~` annotations, plus a `*.types` snapshot of every binding's inferred type |
 | `ownership/` | moves, mutability, scoped values, escaping closures, borrows across spawn | `//~` annotations (`valid.ms` must have none) |
+| `hir/` | lowering: one case per desugaring | a `*.hir` snapshot of the lowered program |
 
 ## Conventions
 
@@ -33,6 +34,7 @@ npm run lex -- test/lexer/strings.ms       # print a token dump
 npm run parse -- test/parser/closures.ms   # print the AST
 npm run resolve -- test/resolve/scopes.ms  # print what every name binds to
 npm run check -- test/check/errors.ms      # type-check + ownership, print diagnostics
+npm run hir -- test/hir/lowering.ms        # print the lowered HIR
 ```
 
 `test/corpus.test.ts` checks that:
@@ -45,7 +47,11 @@ npm run check -- test/check/errors.ms      # type-check + ownership, print diagn
 - `std/prelude.ms` and every file in `programs/` type-check with zero diagnostics;
 - every `check/*.ms` parses and resolves cleanly, the checker reports exactly its annotated codes, and its `.types` snapshot matches;
 - every `ownership/*.ms` type-checks cleanly and the ownership pass reports exactly its annotated codes;
-- every file in `programs/` also passes the ownership pass with zero diagnostics.
+- every file in `programs/` also passes the ownership pass with zero diagnostics;
+- every `hir/*.ms` passes every check and matches its `.hir` snapshot;
+- every valid file lowers to HIR that `validateHir` accepts: every local bound, every label valid, nothing unsupported.
+
+**`.hir` format:** S-expressions, one top-level form per type and function. `(do …)` is a block, `(let x: T v)` / `(var …)` is a binding, `$name` is a temporary from lowering, and `x'2` is a second local named `x` in the same function. `@name` is a global, `#name` a function value, `(dyn r m …)` a dynamic call, and `extern:path` a member of a package without signatures. `(ok v)` / `fail` match an Option or a Result.
 
 **`.types` format:** one line per binding (local, parameter, closure parameter, pattern binding, implicit `it` at its first use), in source order: `line:col  name: type`, followed by any diagnostics. Types print as in the spec: `int`, `Vec[string]`, `User?`, `t(int, string)`, `(int, int) -> int`, `{integer}` for an unresolved literal.
 

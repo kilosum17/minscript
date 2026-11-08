@@ -8,8 +8,8 @@ import "std.io.println"
 // top-level items are order-independent: `helper` and `Point` are declared further down
 fun main() {
     let p = Point { x: 1, y: 2 }
-    helper(p)
     println(json.stringify(p))
+    helper(p)                           // `p` moves here, after its last other use
 }
 
 fun shadowing(x: int) -> int {
@@ -55,15 +55,16 @@ fun patterns(res: Result[int, string], pair: t(int, int), opt: int?) {
     }
 }
 
-fun closures(items: Vec[int]) {
+fun closures(items: Vec[int]) -> Result[int, string] {
     var total = 0
     let factor = 3
     items.for_each(#[&mut total]{ total += it })
     let scaled = items.map(#{ it * factor })            // `factor` is captured implicitly
-    let pairs = items.map(#{ n => #{ m => n + m + factor } })
-    let first = items.get(0) or 0
-    let checked = items.get(1) or Err("missing: ${it}")   // `it` is the payload of `or`
-    let named = items.get(2) or e => Err(e)
+    let pairs = items.map(#{ n => #{ m: int => n + m + factor } })
+    let first = items.get(0) ?? 0
+    let checked = "1".to_int() or Err("bad number: ${it}")   // `it` is the payload of `or`
+    let named = "2".to_int() or e => Err(e)
+    Ok(first + checked + named)
 }
 
 fun loops(grid: Vec[Vec[int]]) {

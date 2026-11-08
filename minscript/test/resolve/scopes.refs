@@ -1,9 +1,9 @@
-10:13   Point → 102:1 type
-11:5    helper → 104:1 fun
-11:12   p → 10:9 local
-12:5    println → 6:1 import "std.io.println"
-12:13   json → 5:1 package "std.json"
-12:28   p → 10:9 local
+10:13   Point → 103:1 type
+11:5    println → 6:1 import "std.io.println"
+11:13   json → 5:1 package "std.json"
+11:28   p → 10:9 local
+12:5    helper → 105:1 fun
+12:12   p → 10:9 local
 15:18   int → builtin
 15:26   int → builtin
 16:13   x → 15:15 param
@@ -59,6 +59,9 @@
 53:38   k → 53:14 local
 58:21   Vec → prelude
 58:25   int → builtin
+58:34   Result → prelude
+58:41   int → builtin
+58:46   string → builtin
 61:5    items → 58:14 param
 61:20   closure captures total@59:9
 61:22   capture total → 59:9 local
@@ -71,57 +74,60 @@
 63:17   items → 58:14 param
 63:27   closure captures factor@60:9
 63:35   closure captures n@63:30, factor@60:9
-63:43   n → 63:30 closure-param
-63:47   m → 63:38 closure-param
-63:51   factor → 60:9 local
+63:41   int → builtin
+63:48   n → 63:30 closure-param
+63:52   m → 63:38 closure-param
+63:56   factor → 60:9 local
 64:17   items → 58:14 param
-65:19   items → 58:14 param
 65:35   Err → prelude
-65:51   it → implicit it
-66:17   items → 58:14 param
+65:54   it → implicit it
 66:38   Err → prelude
 66:42   e → 66:33 local
-69:17   Vec → prelude
-69:21   Vec → prelude
-69:25   int → builtin
-70:23   grid → 69:11 param
-71:21   row → 70:16 local
-72:16   cell → 71:13 local
-76:9    n → 75:9 local
-76:18   n → 75:9 local
-81:12   Vec → prelude
-81:16   T → 80:12 generic
-83:18   Self → 80:1 type
-83:25   Stack → 80:1 type
-84:28   T → 80:12 generic
-84:33   this → this
-84:49   v → 84:25 param
-85:24   T → 80:12 generic
-85:29   this → this
-89:17   f64 → builtin
-90:12   f64 → builtin
-93:24   f64 → builtin
-94:15   this → this
-95:13   Shape.Circle → 88:1 union
-95:35   r → 95:28 local
-95:39   r → 95:28 local
-96:13   Square → deferred
-96:26   s → 96:20 local
-96:30   s → 96:20 local
-97:13   Empty → deferred
-102:19  int → builtin
-102:27  int → builtin
-104:15  Point → 102:1 type
-104:25  Shape → 88:1 union
-105:13  Shape → 88:1 union
-105:26  p → 104:12 param
-105:33  f64 → builtin
-106:5   s → 105:9 local
-109:19  string → builtin
-109:33  int → builtin
-110:18  name → 109:13 param
-110:24  port → 109:27 param
-111:14  Point → 102:1 type
-111:25  port → 109:27 param
-112:5   println → 6:1 import "std.io.println"
-112:13  cfg → 110:9 local
+67:5    Ok → prelude
+67:8    first → 64:9 local
+67:16   checked → 65:9 local
+67:26   named → 66:9 local
+70:17   Vec → prelude
+70:21   Vec → prelude
+70:25   int → builtin
+71:23   grid → 70:11 param
+72:21   row → 71:16 local
+73:16   cell → 72:13 local
+77:9    n → 76:9 local
+77:18   n → 76:9 local
+82:12   Vec → prelude
+82:16   T → 81:12 generic
+84:18   Self → 81:1 type
+84:25   Stack → 81:1 type
+85:28   T → 81:12 generic
+85:33   this → this
+85:49   v → 85:25 param
+86:24   T → 81:12 generic
+86:29   this → this
+90:17   f64 → builtin
+91:12   f64 → builtin
+94:24   f64 → builtin
+95:15   this → this
+96:13   Shape.Circle → 89:1 union
+96:35   r → 96:28 local
+96:39   r → 96:28 local
+97:13   Square → deferred
+97:26   s → 97:20 local
+97:30   s → 97:20 local
+98:13   Empty → deferred
+103:19  int → builtin
+103:27  int → builtin
+105:15  Point → 103:1 type
+105:25  Shape → 89:1 union
+106:13  Shape → 89:1 union
+106:26  p → 105:12 param
+106:33  f64 → builtin
+107:5   s → 106:9 local
+110:19  string → builtin
+110:33  int → builtin
+111:18  name → 110:13 param
+111:24  port → 110:27 param
+112:14  Point → 103:1 type
+112:25  port → 110:27 param
+113:5   println → 6:1 import "std.io.println"
+113:13  cfg → 111:9 local

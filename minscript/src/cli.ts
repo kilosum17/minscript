@@ -1,7 +1,8 @@
-// Usage: node src/cli.ts lex|parse|resolve|check <file.ms>...
+// Usage: node src/cli.ts lex|parse|resolve|check|hir <file.ms>...
 // `lex` prints the token dump (src/dump.ts); `parse` prints the AST as S-expressions (src/sexpr.ts);
 // `resolve` prints what each name refers to (src/resolve_dump.ts); `check` type-checks, runs the
-// ownership pass, and prints only diagnostics. Each file is its own package.
+// ownership pass, and prints only diagnostics; `hir` prints the lowered program (src/hir_dump.ts).
+// Each file is its own package.
 // Exits with status 1 if any file has diagnostics.
 
 import "./prelude.ts"
@@ -11,14 +12,16 @@ import { lex } from "./lexer.ts"
 import { parse } from "./parser.ts"
 import { checkPackage } from "./check.ts"
 import { checkOwnership } from "./ownership.ts"
+import { dumpHir } from "./hir_dump.ts"
+import { lowerPackage } from "./lower.ts"
 import { resolvePackage } from "./resolve.ts"
 import { dumpResolution } from "./resolve_dump.ts"
 import { printFile } from "./sexpr.ts"
 
 const [command, ...files] = process.argv.slice(2)
 
-if (!["lex", "parse", "resolve", "check"].includes(command ?? "") || files.length === 0) {
-    console.error("usage: node src/cli.ts lex|parse|resolve|check <file.ms>...")
+if (!["lex", "parse", "resolve", "check", "hir"].includes(command ?? "") || files.length === 0) {
+    console.error("usage: node src/cli.ts lex|parse|resolve|check|hir <file.ms>...")
     process.exit(2)
 }
 
@@ -41,12 +44,14 @@ for (const file of files) {
         process.stdout.write(dumpResolution(res))
         diagnostics = [...parsed.diagnostics, ...res.diagnostics]
     } else {
+        // check, hir
         const parsed = parse(src)
         const res = resolvePackage([parsed.file])
         const checked = checkPackage([parsed.file], res)
         const owned = checkOwnership([parsed.file], res, checked)
         diagnostics = [...parsed.diagnostics, ...res.diagnostics, ...checked.diagnostics, ...owned.diagnostics]
-        if (diagnostics.length === 0) console.log(`${file}: ok`)
+        if (command === "hir") process.stdout.write(dumpHir(lowerPackage([parsed.file], res, checked)))
+        else if (diagnostics.length === 0) console.log(`${file}: ok`)
     }
     for (const d of diagnostics) {
         console.error(`${file}:${d.span.line}:${d.span.col}: ${d.severity} ${d.code}: ${d.message}`)

@@ -22,10 +22,39 @@ export type CheckResult = {
     symbols: Map<Sym, Ty>
     /** For each call with a known signature: what each argument is passed as (used by the ownership pass). */
     calls: Map<A.Node, CallInfo>
+    /** The declared result type of each checked function and method. */
+    rets: Map<A.FunDecl, Ty>
+    /** What each `x.name` / `T.name` refers to (used by lowering). */
+    members: Map<A.Node, MemberTarget>
+    /** The variant each inferred name, `Some`-like name, struct-like variant literal or constructor pattern refers to. */
+    variants: Map<A.Node, VariantRef>
     diagnostics: Diagnostic[]
 }
 
+/** The owner of a method: a type or interface, or a primitive (`string`). */
+export type Owner = Sym | string
+
+export type VariantRef = { union: Sym, variant: string }
+
+/** What a call calls, as resolved by the checker. */
+export type CallTarget =
+    | { kind: "fun", decl: A.FunDecl }                                          // a top-level or extern function
+    | { kind: "method", decl: A.FunDecl | null, owner: Owner, dyn: boolean, auto: string | null }   // on a value (the receiver is the callee's object)
+    | { kind: "static", decl: A.FunDecl, owner: Owner }                         // `T.f(…)`, or `T(…)` (→ `T.new`)
+    | { kind: "variant", union: Sym, variant: string }                          // a variant constructor
+    | { kind: "value" }                                                         // calling a function value (closure, field)
+    | { kind: "unknown" }                                                       // no signature (std package not loaded yet)
+
+export type MemberTarget =
+    | { kind: "field" }
+    | { kind: "tuple", index: number }
+    | { kind: "method", decl: A.FunDecl | null, owner: Owner, dyn: boolean }     // a method used as a value
+    | { kind: "static", decl: A.FunDecl, owner: Owner }
+    | { kind: "variant", union: Sym, variant: string }
+    | { kind: "unknown" }
+
 export type CallInfo = {
+    target: CallTarget
     /** The parameter type each argument is passed to (variadic: the element type); `&T` / `&mut T` borrow. */
     args: Ty[]
     /** For a method called on a value: how it takes `this`. */
@@ -66,7 +95,19 @@ type MethodEntry = {
 type Param = { name: string, ty: Ty, variadic: boolean }
 
 /** A function signature with its own generics instantiated. */
-type Callable = { params: Param[], ret: Ty, async: boolean, bounds: { v: Ty, bounds: Ty[], span: Span | null }[], receiver?: A.Receiver | null }
+type Callable = {
+    params: Param[]
+    ret: Ty
+    async: boolean
+    bounds: { v: Ty, bounds: Ty[], span: Span | null }[]
+    receiver?: A.Receiver | null
+    // what it is, for lowering
+    decl?: A.FunDecl
+    owner?: Owner
+    dyn?: boolean
+    variant?: VariantRef
+    auto?: string
+}
 
 type FnCtx = {
     ret: Ty                     // declared result (for async functions: the value inside the Promise)
@@ -94,6 +135,9 @@ class Checker {
     private readonly diagnostics: Diagnostic[] = []
     private readonly symTypes = new Map<Sym, Ty>()
     private readonly calls = new Map<A.Node, CallInfo>()
+    private readonly members = new Map<A.Node, MemberTarget>()
+    private readonly rets = new Map<A.FunDecl, Ty>()
+    private readonly variants = new Map<A.Node, VariantRef>()
     private readonly infos = new Map<Sym, TypeInfo>()
     private readonly implsByTarget = new Map<Sym, A.ImplDecl[]>()
     private readonly primMethods = new Map<string, MethodEntry[]>()
@@ -125,7 +169,7 @@ class Checker {
 
     run(): CheckResult {
         for (const file of this.files) for (const item of file.items) this.checkItem(item)
-        return { types: this.types, symbols: this.symTypes, calls: this.calls, diagnostics: this.diagnostics }
+        return { types: this.types, symbols: this.symTypes, calls: this.calls, rets: this.rets, members: this.members, variants: this.variants, diagnostics: this.diagnostics }
     }
 
     // ---- diagnostics and inference variables --------------------------------------------------
@@ -515,7 +559,7 @@ class Checker {
             let ret = f.ret ? T.subst(this.toTy(f.ret), full) : T.VOID
             if (f.async) ret = this.named("Promise", [ret])
             const bounds = own.map((g) => ({ v: full.get(g)!, bounds: this.boundsOf(g).map((b) => T.subst(b, full)), span: at?.span ?? null }))
-            return { params, ret, async: f.async, bounds, receiver: f.receiver }
+            return { params, ret, async: f.async, bounds, receiver: f.receiver, decl: f }
         } finally {
             if (selfTy !== null) this.selfStack.pop()
         }
@@ -539,10 +583,10 @@ class Checker {
         }
         if (t.k === "prim" && (t.name === "string" || t.name === "str")) {
             const m = (this.primMethods.get("string") ?? []).find((x) => x.fun.name === name)
-            if (m) return this.callable(m.fun, new Map(), t, explicit, at)
+            if (m) return { ...this.callable(m.fun, new Map(), t, explicit, at), owner: "string", dyn: false }
         } else if (t.k === "prim") {
             const m = (this.primMethods.get(t.name) ?? []).find((x) => x.fun.name === name)
-            if (m) return this.callable(m.fun, new Map(), t, explicit, at)
+            if (m) return { ...this.callable(m.fun, new Map(), t, explicit, at), owner: t.name, dyn: false }
         }
         if (t.k === "param") {
             for (const b of this.boundsOf(t.sym)) {
@@ -550,7 +594,7 @@ class Checker {
                 if (bs.k !== "named") continue
                 const info = this.info(bs.sym)
                 const m = info?.methods.find((x) => x.fun.name === name)
-                if (info && m) return this.callable(m.fun, this.envFor(info, bs.args), t, explicit, at)   // Self = the parameter
+                if (info && m) return { ...this.callable(m.fun, this.envFor(info, bs.args), t, explicit, at), owner: bs.sym, dyn: true }   // Self = the parameter
             }
         }
         return this.autoMethod(t, name)
@@ -569,12 +613,13 @@ class Checker {
         } else {
             env = this.envFor(info, recv.args)
         }
-        return this.callable(m.fun, env, recv, explicit, at)
+        const owner = m.fromInter !== null && m.fromInter !== info.sym ? m.fromInter : info.sym
+        return { ...this.callable(m.fun, env, recv, explicit, at), owner, dyn: info.kind === "inter" }
     }
 
     /** Auto-generated methods every type has (spec §9.7). */
     private autoMethod(t: Ty, name: string): Callable | null {
-        const sig = (params: Ty[], ret: Ty): Callable => ({ params: params.map((ty, i) => ({ name: `p${i}`, ty, variadic: false })), ret, async: false, bounds: [], receiver: "&this" })
+        const sig = (params: Ty[], ret: Ty): Callable => ({ params: params.map((ty, i) => ({ name: `p${i}`, ty, variadic: false })), ret, async: false, bounds: [], receiver: "&this", auto: name })
         switch (name) {
             case "to_str": return sig([], T.STRING)
             case "clone": return sig([], t)
@@ -609,7 +654,7 @@ class Checker {
         const env = this.envFor(info, t.args)
         if (v.tuple !== null) {
             const params = v.tuple.map((p, i) => ({ name: `${i}`, ty: T.subst(this.toTy(p), env), variadic: false }))
-            return { params, ret: t, async: false, bounds: [] }
+            return { params, ret: t, async: false, bounds: [], variant: { union: info.sym, variant: v.name } }
         }
         return t
     }
@@ -745,6 +790,7 @@ class Checker {
                 if (sym) this.symTypes.set(sym, ty)
             }
             const ret = f.ret ? T.subst(this.toTy(f.ret), own) : T.VOID
+            this.rets.set(f, ret)
             const isMain = f.name === "main" && selfTy === null
             const sites = this.inferSites.length
             this.withFn({ ret, async: f.async || isMain, thisTy: f.receiver !== null ? selfTy : null, loops: [], isClosure: false }, () => {
@@ -1038,6 +1084,7 @@ class Checker {
             case "generic": return { k: "meta", ty: { k: "param", sym } }
             case "variant": {
                 const owner = sym.owner
+                if (owner) this.variants.set(at, { union: owner, variant: sym.name })
                 const info = owner ? this.info(owner) : undefined
                 const decl = sym.decl
                 if (owner === undefined || info === undefined || decl === null || decl.kind !== "Variant") return T.UNKNOWN
@@ -1058,6 +1105,7 @@ class Checker {
     private inferVariantValue(at: A.Node, name: string, exp?: Ty): Ty {
         if (exp !== undefined && T.strip(exp).k === "unknown") return T.UNKNOWN
         const found = this.expectedVariant(name, exp)
+        if (found !== null) this.variants.set(at, { union: found.info.sym, variant: name })
         if (found === null) {
             this.error("E_CANNOT_INFER_VARIANT", `unknown name \`${name}\`: no variant \`${name}\` in the expected type${exp ? ` \`${T.show(exp)}\`` : ""}; qualify it (\`Type.${name}\`)`, at)
             return T.UNKNOWN
@@ -1343,11 +1391,18 @@ class Checker {
                     this.error("E_UNKNOWN_MEMBER", `\`${T.show(target)}\` has no variant or static method \`${name}\``, e)
                     return T.UNKNOWN
                 }
+                const owner = T.prune(t.ty)
+                if (!isCallable(st) || st.variant) {
+                    if (owner.k === "named") this.members.set(e, { kind: "variant", union: owner.sym, variant: name })
+                } else if (st.decl) {
+                    this.members.set(e, { kind: "static", decl: st.decl, owner: st.owner ?? (owner.k === "named" ? owner.sym : "auto") })
+                }
                 return isCallable(st) ? this.fnType(st) : st
             }
             case "tuple":
                 if (typeof name === "number") {
                     const el = t.elems[name]
+                    this.members.set(e, { kind: "tuple", index: name })
                     if (el !== undefined) return el
                     this.error("E_UNKNOWN_FIELD", `the tuple has ${t.elems.length} elements, so \`.${name}\` doesn't exist`, e)
                     return T.UNKNOWN
@@ -1355,16 +1410,22 @@ class Checker {
                 break
             case "record": {
                 const f = t.fields.find((x) => x.name === name)
-                if (f !== undefined) return f.ty
+                if (f !== undefined) { this.members.set(e, { kind: "field" }); return f.ty }
                 break
             }
             case "named": {
                 const info = this.info(t.sym)
                 const field = info?.fields.get(String(name))
-                if (info !== undefined && field !== undefined) return T.subst(this.toTy(field.type), this.envFor(info, t.args))
+                if (info !== undefined && field !== undefined) {
+                    this.members.set(e, { kind: "field" })
+                    return T.subst(this.toTy(field.type), this.envFor(info, t.args))
+                }
                 if (typeof name === "string") {
                     const m = this.findMethod(t, name, null, e)
-                    if (m !== null) return this.fnType(m)
+                    if (m !== null) {
+                        this.members.set(e, { kind: "method", decl: m.decl ?? null, owner: m.owner ?? "auto", dyn: m.dyn ?? false })
+                        return this.fnType(m)
+                    }
                 }
                 if (info === undefined) return T.UNKNOWN
                 break
@@ -1509,12 +1570,13 @@ class Checker {
                     this.error("E_NOT_CALLABLE", `\`${T.show(ty)}\` can't be called`, e.callee)
                 }
                 for (const a of e.args) this.checkExpr(a.kind === "Spread" ? a.expr : a, T.UNKNOWN)
+                this.calls.set(e, { target: { kind: "unknown" }, args: e.args.map(() => T.UNKNOWN), receiver: null, async: false })
                 return T.UNKNOWN
             }
         }
         if (exp !== undefined) this.tryAssign(callable.ret, exp)    // let the expected result guide inference
         this.applyArgs(e, callable)
-        this.calls.set(e, { args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async })
+        this.calls.set(e, { target: this.callTarget(e, callable, onValue ?? false), args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async })
         for (const b of callable.bounds) {
             for (const bound of b.bounds) {
                 const v = T.prune(b.v)
@@ -1524,6 +1586,16 @@ class Checker {
             }
         }
         return viaOpt ? (this.isOption(callable.ret) ? callable.ret : this.option(callable.ret)) : callable.ret
+    }
+
+    private callTarget(e: Extract<A.Expr, { kind: "Call" }>, c: Callable, onValue: boolean): CallTarget {
+        if (c.variant) return { kind: "variant", ...c.variant }
+        if (c.auto) return { kind: "method", decl: null, owner: "auto", dyn: true, auto: c.auto }
+        if (c.decl === undefined) return { kind: "value" }
+        if (onValue) return { kind: "method", decl: c.decl, owner: c.owner ?? "auto", dyn: c.dyn ?? false, auto: null }
+        if (c.owner !== undefined) return { kind: "static", decl: c.decl, owner: c.owner }
+        void e
+        return { kind: "fun", decl: c.decl }
     }
 
     /** The parameter type each argument binds to (spread arguments: the variadic parameter itself). */
@@ -1671,6 +1743,7 @@ class Checker {
             }
         }
         if (variant !== null) {
+            this.variants.set(e, { union: variant.info.sym, variant: variant.v.name })
             if (variant.v.fields === null) {
                 this.error("E_TYPE_MISMATCH", `variant \`${variant.v.name}\` has no fields`, e)
                 return variant.t
@@ -2009,6 +2082,7 @@ class Checker {
             return bindAllUnknown()
         }
         const env = this.envFor(found.info, found.t.args)
+        if (found.v !== null) this.variants.set(p, { union: found.info.sym, variant: found.v.name })
         if (found.v === null) {
             // a struct pattern on a named struct: `User { id, .. }`
             if (p.kind === "PStruct") this.bindFieldPatterns(p, [...found.info.fields.values()], env, found.t)

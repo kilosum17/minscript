@@ -14,7 +14,8 @@
     "lex": "node src/cli.ts lex",
     "parse": "node src/cli.ts parse",
     "resolve": "node src/cli.ts resolve",
-    "check": "node src/cli.ts check"
+    "check": "node src/cli.ts check",
+    "hir": "node src/cli.ts hir"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

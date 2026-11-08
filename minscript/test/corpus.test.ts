@@ -7,7 +7,10 @@
 //                      resolution dump matches the `.refs` snapshot;
 // - test/check/*.ms:   parse and resolve cleanly, checker diagnostics match the annotations, and
 //                      the inferred types match the `.types` snapshot;
-// - test/ownership:    type-check cleanly, and ownership diagnostics match the annotations.
+// - test/ownership:    type-check cleanly, and ownership diagnostics match the annotations;
+// - test/hir/*.ms:     pass every check, and the lowered program matches the `.hir` snapshot;
+// - every valid file (programs, hir, check/inference, ownership/valid, resolve/scopes) lowers to HIR
+//   that passes `validateHir` (all locals bound, labels valid, nothing unsupported).
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -23,6 +26,9 @@ import { lex } from "../src/lexer.ts"
 import { parse } from "../src/parser.ts"
 import { checkPackage } from "../src/check.ts"
 import { dumpTypes } from "../src/check_dump.ts"
+import { validateHir } from "../src/hir_check.ts"
+import { dumpHir } from "../src/hir_dump.ts"
+import { lowerPackage } from "../src/lower.ts"
 import { checkOwnership } from "../src/ownership.ts"
 import { loadPrelude } from "../src/prelude.ts"
 import { resolvePackage } from "../src/resolve.ts"
@@ -172,6 +178,34 @@ describe("diagnostics match annotations (test/errors)", () => {
             const expected = annotations(text).sort()
             const actual = parse(text).diagnostics.map((d) => `${d.span.line} ${d.code}`).sort()
             assert.deepEqual(actual, expected)
+        })
+    }
+})
+
+describe("lowering (test/hir)", () => {
+    for (const file of msFiles(join(root, "hir"))) {
+        test(rel(file), () => {
+            const parsed = parse(readFileSync(file))
+            assert.deepEqual(fmt(parsed.diagnostics), [], "must parse cleanly")
+            const res = resolvePackage([parsed.file])
+            const checked = checkPackage([parsed.file], res)
+            assert.deepEqual(fmt([...res.diagnostics, ...checked.diagnostics, ...checkOwnership([parsed.file], res, checked).diagnostics]), [], "must pass every check")
+            snapshot(file, ".hir", dumpHir(lowerPackage([parsed.file], res, checked)))
+        })
+    }
+})
+
+describe("every valid file lowers to well-formed HIR", () => {
+    const valid = [
+        ...msFiles(join(root, "programs")), ...msFiles(join(root, "hir")),
+        join(root, "check", "inference.ms"), join(root, "ownership", "valid.ms"), join(root, "resolve", "scopes.ms"),
+    ]
+    for (const file of valid) {
+        test(rel(file), () => {
+            const parsed = parse(readFileSync(file))
+            const res = resolvePackage([parsed.file])
+            const checked = checkPackage([parsed.file], res)
+            assert.deepEqual(validateHir(lowerPackage([parsed.file], res, checked)), [])
         })
     }
 })
