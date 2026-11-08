@@ -129,11 +129,19 @@ export function packageName(text: string): string | null {
  * the open editors: they override the files on disk. A document that isn't a file (untitled) is
  * analysed alone, without its imports.
  */
-export function analyze(docs: Doc[], primary: string): Analysis {
+/** What the server knows about the project a file is in (from its evaluated mod.ms, spec §17). */
+export type ProjectInfo = { mainDir: string, deps: Map<string, string> }
+
+export function analyze(docs: Doc[], primary: string, project: ProjectInfo | null = null): Analysis {
     if (!primary.startsWith("file:")) return analyzeAlone(docs.filter((d) => d.uri === primary), primary)
     const open = new Map<string, string>()
     for (const d of docs) if (d.uri.startsWith("file:")) open.set(fileURLToPath(d.uri), d.text)
-    const program = loadProgram(fileURLToPath(primary), {
+    const path = fileURLToPath(primary)
+    // a `package main` file of the project's main folder: the whole folder is the package
+    const text = open.get(path) ?? (() => { try { return readFileSync(path, "utf8") } catch { return "" } })()
+    const wholeMain = project !== null && dirname(path) === project.mainDir && (packageName(text) ?? "main") === "main"
+    const program = loadProgram(wholeMain ? project.mainDir : path, {
+        ...(project ? { appRoot: project.mainDir, deps: project.deps } : {}),
         read: (p) => { const t = open.get(p); if (t !== undefined) return t; try { return readFileSync(p, "utf8") } catch { return null } },
         list: (dir) => {
             let names: string[] = []

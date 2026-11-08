@@ -14,7 +14,9 @@
 // - test/run/*.ms, and programs with a `.out` file, run on the JS back end and print their `.out`;
 // - test/packages/**/main.ms: programs of several packages (src/loader.ts). Diagnostics in any file of
 //   the program must match its `//~` annotations; one without annotations must run and print its `.out`;
-// - every std package (std/*/…) loads, resolves and type-checks cleanly.
+// - every std package (std/*/…) loads, resolves and type-checks cleanly;
+// - test/projects/*: projects (src/project.ts). Each one's mod.ms evaluates (its `config.json` snapshot)
+//   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -34,6 +36,8 @@ import { validateHir } from "../src/hir_check.ts"
 import { dumpHir } from "../src/hir_dump.ts"
 import { compileToJs, loadJs, runJs } from "../src/js/run.ts"
 import { loadProgram, STD_DIR } from "../src/loader.ts"
+import { configJson, openProject, programOptions } from "../src/project.ts"
+import { resetOutput, setOutput } from "../src/js/runtime.ts"
 import { lowerPackage } from "../src/lower.ts"
 import { checkOwnership } from "../src/ownership.ts"
 import { loadPrelude } from "../src/prelude.ts"
@@ -279,4 +283,33 @@ describe("programs of several packages (test/packages)", () => {
             snapshot(entry, ".out", lines.join("\n") + "\n")
         })
     }
+})
+
+describe("projects (test/projects)", () => {
+    const dir = join(root, "projects")
+    const projects = readdirSync(dir).filter((d) => statSync(join(dir, d)).isDirectory() && existsSync(join(dir, d, "main.ms")) || existsSync(join(dir, d, "mod.ms")))
+    for (const name of projects.filter((d) => d !== "script_in_eval")) {
+        test(name, async () => {
+            const p = await openProject(join(dir, name))
+            assert.deepEqual([...fmt(p.diagnostics), ...p.errors], [])
+            if (p.config) snapshot(join(dir, name, "config.ms"), ".json", configJson(p.config) + "\n")
+            const compiled = compileToJs(p.mainDir, programOptions(p))
+            assert.deepEqual(fmt(compiled.diagnostics), [])
+            const lines: string[] = []
+            const result = await runJs(compiled.js!, (line) => lines.push(line))
+            assert.equal(result.panic, null, lines.join("\n"))
+            // task scripts run in-process: call them as `ms run <name>` would
+            for (const [script, s] of p.config?.scripts ?? []) {
+                if (s.kind !== "Task") continue
+                setOutput((line) => lines.push(`[${script}] ${line}`))
+                try { s.fn({ $t: "std.build.Args", list: ["--verbose"] }) } finally { resetOutput() }
+            }
+            snapshot(join(dir, name, "run.ms"), ".out", lines.join("\n") + "\n")
+        })
+    }
+    test("script_in_eval: running a script while config() is evaluated fails", async () => {
+        const p = await openProject(join(dir, "script_in_eval"))
+        assert.equal(p.config, null)
+        assert.match(p.errors.join("\n"), /E_SCRIPT_IN_EVAL/)
+    })
 })

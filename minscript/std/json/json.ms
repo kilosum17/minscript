@@ -22,3 +22,9 @@ pub fun parse[T](text: &str) -> Result[T, Error] { _builtin() }
 
 /// The JSON text of a value: structs and records become objects, Options become the value or null.
 pub fun stringify[T](value: &T) -> string { _builtin() }
+
+/// A value as a JSON tree (what `stringify` would write, without the text).
+pub fun to_value[T](value: &T) -> Value { _builtin() }
+
+/// A JSON tree as a `T` (the same rules as `parse`).
+pub fun from_value[T](value: &Value) -> Result[T, Error] { _builtin() }

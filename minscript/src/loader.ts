@@ -1,7 +1,8 @@
 // Loading a program: the entry package and every package it imports (spec §8.1).
 //
-// - A folder is a package: all its `.ms` files. `main` is exempt: a `main` file is a package of its own
-//   (without a mod.ms, spec §17), so a folder of example programs works.
+// - A folder is a package: all its `.ms` files. The entry is a file or a folder: a folder's `package main`
+//   files are the main package (a project's `main`, spec §17.6); a `main` *file* is a package of its
+//   own, so a folder of example programs works.
 // - Imports: `"std.x"` is a folder under std/; `"app.x"` is a folder under the program's root (the
 //   entry file's folder); `"./x"` / `"../x"` are relative to the importing file. `"std.io.println"` and
 //   `"std.io.{a, b}"` name items of a package; `"pkg.*"` imports all its pub items. Any other path is an
@@ -53,6 +54,10 @@ export type LoadOptions = {
     read?: (path: string) => string | null
     /** Lists a folder's `.ms` files (the language server adds unsaved editors). Default: the file system. */
     list?: (dir: string) => string[]
+    /** The folder `app.x` imports start from. Default: the entry's folder (src/project.ts passes `main`). */
+    appRoot?: string
+    /** `path:` dependencies from mod.ms: import root name → folder (`"utils"` → /work/utils). */
+    deps?: Map<string, string>
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -62,6 +67,10 @@ type Located =
     | { kind: "external" }
     | { kind: "error", message: string }
 
+function isDir(path: string): boolean {
+    try { return statSync(path).isDirectory() } catch { return false }
+}
+
 function isPackageDir(dir: string): boolean {
     try {
         return statSync(dir).isDirectory() && readdirSync(dir).some((f) => f.endsWith(".ms"))
@@ -70,7 +79,11 @@ function isPackageDir(dir: string): boolean {
     }
 }
 
-function qualifiedName(dir: string, appRoot: string): string {
+function qualifiedName(dir: string, appRoot: string, deps?: Map<string, string>): string {
+    for (const [name, root] of deps ?? []) {
+        const rel = relative(root, dir)
+        if (!rel.startsWith("..")) return rel === "" ? name : `${name}.${rel.split(/[\\/]/).join(".")}`
+    }
     const std = relative(STD_DIR, dir)
     if (!std.startsWith("..") && std !== "") return `std.${std.split(/[\\/]/).join(".")}`
     const rel = relative(appRoot, dir)
@@ -79,7 +92,7 @@ function qualifiedName(dir: string, appRoot: string): string {
 }
 
 /** Where an import path points (spec §8.1). */
-function locate(path: string, fromDir: string, appRoot: string): Located {
+function locate(path: string, fromDir: string, appRoot: string, deps: Map<string, string>): Located {
     let clean = path.replace(/@.*$/, "")               // tool imports pin a version: "acme.lint@^1.2"
     let glob = false
     let items: string[] | null = null
@@ -89,20 +102,25 @@ function locate(path: string, fromDir: string, appRoot: string): Located {
 
     if (clean.startsWith("./") || clean.startsWith("../")) {
         const dir = resolve(fromDir, clean)
-        if (isPackageDir(dir)) return { kind: "package", dir, name: qualifiedName(dir, appRoot), item: null, items, glob }
+        if (isPackageDir(dir)) return { kind: "package", dir, name: qualifiedName(dir, appRoot, deps), item: null, items, glob }
         return { kind: "error", message: `no package at \`${path}\` (looked for a folder of .ms files at ${dir})` }
     }
-    const segs = clean.split(".")
-    const root = segs[0] === "std" ? STD_DIR : segs[0] === "app" ? appRoot : null
+    // `build` (the toolchain API for mod.ms) and the first-party `ms.*` tools ship with the toolchain,
+    // in std (spec §17.5)
+    const first = clean.split(".")[0]
+    const segs = first === "build" || first === "ms" ? ["std", ...clean.split(".")] : clean.split(".")
+    const dep = deps.get(segs[0]!)
+    const root = dep ?? (segs[0] === "std" ? STD_DIR : segs[0] === "app" ? appRoot : null)
     if (root === null) return { kind: "external" }
     const rest = segs.slice(1)
-    if (rest.length === 0) return { kind: "error", message: `\`${path}\` names a root, not a package` }
+    if (rest.length === 0 && dep === undefined) return { kind: "error", message: `\`${path}\` names a root, not a package` }
     const dir = join(root, ...rest)
-    if (isPackageDir(dir)) return { kind: "package", dir, name: qualifiedName(dir, appRoot), item: null, items, glob }
-    if (!glob && items === null && rest.length >= 2) {
+    if (isPackageDir(dir)) return { kind: "package", dir, name: qualifiedName(dir, appRoot, deps), item: null, items, glob }
+    if (!glob && items === null && rest.length >= (dep === undefined ? 2 : 1)) {
         const parent = join(root, ...rest.slice(0, -1))
-        if (isPackageDir(parent)) return { kind: "package", dir: parent, name: qualifiedName(parent, appRoot), item: rest[rest.length - 1]!, items: null, glob }
+        if (isPackageDir(parent)) return { kind: "package", dir: parent, name: qualifiedName(parent, appRoot, deps), item: rest[rest.length - 1]!, items: null, glob }
     }
+    if (dep !== undefined) return { kind: "error", message: `no package \`${clean}\` in the dependency \`${segs[0]}\` (${dep})` }
     return { kind: "error", message: `no package \`${clean}\`${segs[0] === "std" ? " in std" : ` (looked for the folder \`${rest.join("/")}/\` next to the entry file)`}` }
 }
 
@@ -120,14 +138,17 @@ class Loader {
     private readonly visiting = new Set<Package>()
     private readonly diagnostics: FileDiagnostic[] = []
     private appRoot = ""
+    private readonly opts: LoadOptions
 
     constructor(opts: LoadOptions) {
+        this.opts = opts
         this.read = opts.read ?? ((p) => { try { return readFileSync(p, "utf8") } catch { return null } })
         this.list = opts.list ?? ((dir) => { try { return readdirSync(dir).filter((f) => f.endsWith(".ms")) } catch { return [] } })
     }
 
     load(entry: string): Program {
-        this.appRoot = dirname(entry)
+        if (isDir(entry)) return this.loadFolder(entry)
+        this.appRoot = this.opts.appRoot ?? dirname(entry)
         const text = this.read(entry) ?? ""
         const parsed = parse(text)
         const name = parsed.file.package.join(".") || "main"
@@ -136,6 +157,28 @@ class Loader {
             main = { name: "main", dir: dirname(entry), files: [{ path: entry, text, parsed }], links: new Map() }
         } else {
             main = this.packageAt(dirname(entry), name, entry, { path: entry, text, parsed })
+        }
+        this.visit(main)
+        for (const p of this.ordered) this.analyse(p)
+        return { main, packages: this.ordered, diagnostics: this.diagnostics }
+    }
+
+    /** A folder entry: its `package main` files are the main package. */
+    private loadFolder(dir: string): Program {
+        this.appRoot = this.opts.appRoot ?? dir
+        const files: SourceFile[] = []
+        for (const f of [...new Set(this.list(dir))].sort()) {
+            const path = join(dir, f)
+            const text = this.read(path)
+            if (text === null) continue
+            const parsed = parse(text)
+            if ((parsed.file.package.join(".") || "main") === "main") files.push({ path, text, parsed })
+        }
+        const main: Package = { name: "main", dir, files, links: new Map() }
+        this.byDir.set(dir, main)
+        if (files.length === 0) {
+            this.report(dir, "E_NO_MAIN", `no \`package main\` file in ${dir}`, { start: 0, end: 0, line: 1, col: 1 } as Span)
+            return { main, packages: [], diagnostics: this.diagnostics }
         }
         this.visit(main)
         for (const p of this.ordered) this.analyse(p)
@@ -164,7 +207,7 @@ class Loader {
         this.visiting.add(pkg)
         for (const file of pkg.files) {
             for (const imp of file.parsed.file.imports) {
-                const loc = locate(imp.path, dirname(file.path), this.appRoot)
+                const loc = locate(imp.path, dirname(file.path), this.appRoot, this.opts.deps ?? new Map())
                 if (loc.kind === "external") continue
                 if (loc.kind === "error") {
                     this.report(file.path, "E_UNKNOWN_IMPORT", loc.message, imp.span)
@@ -173,6 +216,9 @@ class Loader {
                 let dep = this.byDir.get(loc.dir)
                 if (dep === undefined) {
                     dep = this.packageAt(loc.dir, loc.name)
+                    if (dep.files.some((f) => f.parsed.file.package.join(".") === "main")) {
+                        this.report(file.path, "E_IMPORT_MAIN", `\`${imp.path}\` is a \`package main\` folder; main can't be imported`, imp.span)
+                    }
                     this.visit(dep)
                 } else if (this.visiting.has(dep)) {
                     this.report(file.path, "E_IMPORT_CYCLE", `import cycle: \`${pkg.name}\` imports \`${dep.name}\`, which imports \`${pkg.name}\` back (directly or through other packages); move the shared items into a third package`, imp.span)

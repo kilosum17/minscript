@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { describe, test } from "node:test"
 import { analyze, definition, documentSymbols, hover, packageName, PositionMap, references, type Analysis } from "./analysis.ts"
 
@@ -167,6 +168,28 @@ describe("imported packages (test/packages/app)", async () => {
         const edited = analyze([{ uri, text: src }, { uri: util, text: "package util\n\npub fun sum(xs: Vec[int]) -> string { \"\" }\npub fun shout(s: &str) -> string { s.to_upper() }\n" }], uri)
         assert.deepEqual(edited.diagnostics.get(uri), [])        // sum() now returns a string: still fine in a template
         assert.match(hoverText(edited, uri, at("sum("))!, /-> string/)
+    })
+})
+
+describe("projects (test/projects/basic)", async () => {
+    const { pathToFileURL } = await import("node:url")
+    const { openProject } = await import("../../src/project.ts")
+    const root = new URL("../../test/projects/basic/", import.meta.url).pathname
+    const p = await openProject(root)
+    const greet = pathToFileURL(`${root}src/greet.ms`).href
+    test("every package main file of `main` is one package, with the path: deps", () => {
+        const an = analyze([], greet, { mainDir: p.mainDir, deps: p.deps })
+        assert.deepEqual(an.diagnostics.get(greet), [])
+        assert.ok(an.files.has(pathToFileURL(`${root}src/main.ms`).href))
+        const src = readFileSync(`${root}src/greet.ms`, "utf8")
+        const before = src.slice(0, src.indexOf("banner()"))
+        const pos = { line: before.split("\n").length - 1, character: before.length - before.lastIndexOf("\n") - 1 }
+        assert.match(hoverText(an, greet, pos)!, /package shared/)
+    })
+    test("without the project, `shared` is an external dependency: opaque, not an error", () => {
+        const an = analyze([], greet, null)
+        assert.deepEqual(an.diagnostics.get(greet), [])
+        assert.equal(an.files.size, 1)          // greet.ms alone: a main file is its own package
     })
 })
 

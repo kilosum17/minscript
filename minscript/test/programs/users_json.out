@@ -1,4 +1,4 @@
-parsed ok
+parsed ok Ok(User { id: 1, name: "Ted", email: None, role: "Admin", tags: [] })
 Ted <no-email@minscript.dev> admin=true
 admins: ["Ted"]
 total volume: 300

@@ -19,7 +19,8 @@
     "check": "node src/cli.ts check",
     "hir": "node src/cli.ts hir",
     "js": "node src/cli.ts js",
-    "run": "node src/cli.ts run"
+    "run": "node src/cli.ts run",
+    "config": "node src/cli.ts config"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

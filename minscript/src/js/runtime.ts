@@ -10,6 +10,7 @@
 // Not yet on JS (spec §14.2): overflow checks, exact wrapping of i8…u32, cooperative cancel of tasks.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import * as childProcess from "node:child_process"
 import * as cryptoModule from "node:crypto"
 import * as fsPromises from "node:fs/promises"
 
@@ -736,6 +737,9 @@ const stdErr = (pkg: string, message: string, extra: Record<string, Any> = {}) =
 const fsErr = (path: string, e: unknown) => Err(stdErr("fs", e instanceof Error ? (e as NodeJS.ErrnoException).code ?? e.message : String(e), { path }))
 
 let programArgs: string[] = []
+let evaluatingConfig = false
+/** While mod.ms's `config()` runs, scripts can't execute (E_SCRIPT_IN_EVAL, spec §17.3). */
+export function setEvaluating(on: boolean): void { evaluatingConfig = on }
 /** The program's command-line arguments (`env.args()`), after the file name. */
 export function setArgs(args: string[]): void { programArgs = args }
 
@@ -798,6 +802,25 @@ Object.assign(stdTable, {
         }
     },
     "json.stringify": (v: Any) => JSON.stringify(toJson(v)),
+    "json.to_value": (v: Any) => jsonValue(toJson(v)),
+    "json.from_value": (v: Any, shapes?: (Shape | null)[]) => {
+        try { return Ok(fromJson(toJson(v), shapes?.[0] ?? null, "")) } catch (e) {
+            if (e instanceof JsonShapeError) return Err(stdErr("json", e.message))
+            throw e
+        }
+    },
+
+    // build (mod.ms)
+    "build.current_target": () => {
+        const os = ({ linux: "Linux", darwin: "MacOs", win32: "Windows", android: "Android" } as Record<string, string>)[process.platform] ?? "Other"
+        return { $t: "std.build.Target", os: { $t: "std.build.Os", $v: os, $f: [] }, arch: process.arch, back_end: "js" }
+    },
+    "build.run": (cmd: string) => {
+        if (evaluatingConfig) panic(`E_SCRIPT_IN_EVAL: \`run(${JSON.stringify(cmd)})\` while mod.ms is being evaluated; scripts only run from \`ms run <name>\``, "User")
+        const r = childProcess.spawnSync(cmd, { shell: true, stdio: "inherit" })
+        if (r.error) return Err(r.error.message)
+        return r.status === 0 ? Ok(undefined) : Err(`\`${cmd}\` failed with exit code ${r.status ?? "?"}`)
+    },
 
     // fs (every operation is async)
     "fs.read_file": async (path: string) => { try { return Ok([...await fsp().readFile(path)]) } catch (e) { return fsErr(path, e) } },
@@ -1065,7 +1088,7 @@ function fromJson(v: Any, shape: Shape | null, at: string): Any {
     return out
 }
 
-function toJson(v: Any): Any {
+export function toJson(v: Any): Any {
     if (v === undefined) return null
     if (typeof v === "bigint") return Number(v)
     if (v === null || typeof v !== "object") return v
@@ -1089,5 +1112,6 @@ const externs: Record<string, Any> = {}
 export function ext(path: string): Any {
     const f = externs[path]
     if (f !== undefined) return f
-    return (..._args: Any[]) => panic(`\`${path}\` is not available on the JS back end yet`)
+    const pkg = path.split(".").slice(0, -1).join(".")
+    return (..._args: Any[]) => panic(`\`${path}\`: the package \`${pkg}\` isn't loaded (registry and git dependencies aren't fetched yet; a \`path:\` dependency in mod.ms is)`)
 }

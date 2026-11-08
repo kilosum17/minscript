@@ -1,9 +1,13 @@
-// Usage: node src/cli.ts lex|parse|resolve|check|hir|js <file.ms>...   or   node src/cli.ts run <file.ms>
+// Usage: node src/cli.ts lex|parse|resolve|check|hir <file.ms>...
+//        node src/cli.ts run|js [<file.ms> | <folder>] [-- args…]     node src/cli.ts run <script> [-- args…]
+//        node src/cli.ts config [<folder>]
 // `lex` prints the token dump (src/dump.ts); `parse` prints the AST as S-expressions (src/sexpr.ts);
 // `resolve` prints what each name refers to (src/resolve_dump.ts); `check` type-checks, runs the
 // ownership pass, and prints only diagnostics; `hir` prints the lowered program (src/hir_dump.ts);
-// `js` prints the generated JS; `run` compiles and runs the program (with its imported packages,
-// src/loader.ts; arguments after the file go to `env.args()`).
+// `js` prints the generated JS; `run` compiles and runs a program with its imported packages
+// (src/loader.ts). A folder, or a file inside a project's `main` folder, runs the project (src/project.ts):
+// every `package main` file of `main`, with mod.ms's `path:` deps. `run <name>` runs a mod.ms script;
+// `run` alone lists them. `config` prints the evaluated mod.ms. Arguments after the program go to `env.args()`.
 // For the other commands, each file is its own package.
 // Exits with status 1 if any file has diagnostics.
 
@@ -23,24 +27,9 @@ import { printFile } from "./sexpr.ts"
 
 const [command, ...files] = process.argv.slice(2)
 
-if (command === "run" || command === "js") {
-    const { compileToJs, runJs } = await import("./js/run.ts")
-    const file = files[0]
-    if (file === undefined) {
-        console.error(`usage: node src/cli.ts ${command} <file.ms>`)
-        process.exit(2)
-    }
-    const compiled = compileToJs(file)
-    for (const d of compiled.diagnostics) console.error(`${relative(process.cwd(), d.file)}:${d.span.line}:${d.span.col}: ${d.severity} ${d.code}: ${d.message}`)
-    if (compiled.js === null) process.exit(1)
-    if (command === "js") {
-        process.stdout.write(compiled.js)
-        process.exit(0)
-    }
-    const { setArgs } = await import("./js/runtime.ts")
-    setArgs(files.slice(1))
-    const result = await runJs(compiled.js)
-    process.exit(result.exitCode)
+if (command === "run" || command === "js" || command === "config") {
+    const { runProgramCommand } = await import("./project_cli.ts")
+    process.exit(await runProgramCommand(command, files))
 }
 
 if (!["lex", "parse", "resolve", "check", "hir"].includes(command ?? "") || files.length === 0) {

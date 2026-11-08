@@ -12,7 +12,7 @@ import { loadProgram, lowerProgram, type FileDiagnostic, type LoadOptions } from
 import { emitJs } from "./emit.ts"
 import { closeResources, Panic, resetOutput, setOutput } from "./runtime.ts"
 
-const RUNTIME_URL = new URL("./runtime.ts", import.meta.url).href
+export const RUNTIME_URL = new URL("./runtime.ts", import.meta.url).href
 
 export type Compiled = { js: string | null, diagnostics: FileDiagnostic[] }
 
