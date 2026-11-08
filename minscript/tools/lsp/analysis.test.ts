@@ -84,7 +84,7 @@ fun main() {
     test("locals show their inferred type", () => {
         assert.match(hoverText(an, A, at("total"))!, /let total: int/)
         assert.match(hoverText(an, A, at("names"))!, /let names: Vec\[int\]/)
-        assert.match(hoverText(an, A, at("it.len", 0, 0))!, /it: string/)
+        assert.match(hoverText(an, A, at("it.len", 0, 0))!, /it: &string/)
     })
     test("functions show their signature and doc comment", () => {
         const h = hoverText(an, A, at("add(p.x"))!
@@ -93,7 +93,7 @@ fun main() {
     })
     test("fields and prelude methods", () => {
         assert.match(hoverText(an, A, at("x, 2", 0, 0))!, /x: int/)
-        assert.match(hoverText(an, A, at("map("))!, /fun map\[U\]\(&this, f: &\(T, int\) -> U\) -> Vec\[U\][\s\S]*prelude/)
+        assert.match(hoverText(an, A, at("map("))!, /fun map\[U\]\(&this, f: &\(&T, int\) -> U\) -> Vec\[U\][\s\S]*prelude/)
     })
 })
 

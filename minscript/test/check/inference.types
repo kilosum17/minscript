@@ -29,17 +29,17 @@
 66:9    same: string
 67:9    p: t(int, string)
 68:9    doubled: Vec[int]
-68:32   it: int
+68:32   it: &int
 69:9    labels: Vec[string]
-69:31   n: int
+69:31   n: &int
 69:34   i: int
 70:9    big: Vec[int]
-70:31   it: int
+70:31   it: &int
 71:9    total: int
 71:34   acc: int
-71:39   n: int
+71:39   n: &int
 72:9    any_big: bool
-72:32   it: int
+72:32   it: &int
 73:9    adder: (int, int) -> int
 73:20   a: int
 73:28   b: int

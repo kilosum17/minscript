@@ -16,7 +16,7 @@ export function loadPrelude(): Prelude {
     if (cached !== null) return cached
     const src = readFileSync(new URL("../std/prelude.ms", import.meta.url))
     const parsed = parse(src)
-    const res = resolvePackage([parsed.file], { prelude: null, std: true })
+    const res = resolvePackage([parsed.file], { prelude: null, std: true, packageName: "std" })
     cached = { file: parsed.file, res, diagnostics: [...parsed.diagnostics, ...res.diagnostics] }
     return cached
 }

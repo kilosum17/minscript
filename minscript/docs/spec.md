@@ -1259,7 +1259,7 @@ Generic calls get fresh inference variables, bound by unification with the argum
   - **`.[T]` on a static method that has no generics of its own supplies the type's generics:** `Topic.new.[string]()` is `Topic[string].new()`.
 - **Callbacks:**
   - A closure may take fewer parameters than the function type it is passed as.
-  - The `Vec` pipeline callbacks (`map`, `filter`, `any`, `find`, `for_each`, …) receive `(item, index)`, so both `#{ it * 2 }` and `#{ n, i => … }` work.
+  - The `Vec` pipeline callbacks (`map`, `filter`, `any`, `find`, `for_each`, `fold`, …) receive `(&item, index)`, so both `#{ it * 2 }` and `#{ n, i => … }` work. The item is a borrow (as in `for x in items`): a callback that moves a non-Copy field out of it writes `.clone()` (strings copy implicitly, §7.2). Methods that return items (`get`, `first`, `find`, `max`, `filter`, `take`, `keys`, …) return clones, never the stored value itself.
 - **Arithmetic** needs operands of the same number type. If one side widens losslessly to the other (§9.5), the result is the wider type; otherwise convert with `as`. Other types use the operator interfaces (`Plus`, `Minus`, …).
 - **Errors:**
   - `x?` needs the function to return an `Option` (for an Option) or a `Result` whose error type accepts the error.
@@ -1332,7 +1332,11 @@ The ownership pass (`src/ownership.ts`) runs after type checking, one function a
 
 ### 10.1 Prelude
 
-The prelude is written in MinScript: [`std/prelude.ms`](../std/prelude.ms) declares every type, method and interface below. Bodies are `_builtin()` (an intrinsic of type `never`) implemented by each back end. The checker reads only the signatures, and `std/prelude.ms` must itself parse, resolve and type-check cleanly.
+The prelude is written in MinScript: [`std/prelude.ms`](../std/prelude.ms) declares every type, method and interface below. It must itself parse, resolve, type-check and ownership-check cleanly, and its private items (`is_space`) aren't visible to other packages.
+
+- **The core** is the set of functions whose body is `_builtin()` (an intrinsic of type `never`), implemented by each back end: panics, storage and hashing (`Vec.len` / `push` / `pop` / `insert` / `remove` / `truncate` / `swap` / `sort_by` / `iter`, `Map` and `Set` access), `Range`, iterators and their adapters, the string primitives (`len`, `substring`, `find`, `to_lower` / `to_upper`, `to_float`, `bytes`, `chars`), `Option.or` / `Result.or` (§18 #8), `Vec.sum` (it needs `T.default()`), and everything concurrent (`Promise`, `Ref`, `Topic`, `Queue`, `Signal`, …, `Log`).
+- **Everything else is MinScript** on top of the core: `Option` and `Result` methods, `assert`, the `Vec` lookups, changes and pipelines, `Map.keys` / `values`, and the string helpers (`trim` removes ASCII spaces, tabs and line breaks; `split`, `lines`, `replace`, `to_int`, …). These are compiled with every program; their tests are MinScript too (`test/prelude/prelude_test.ms`, run by `ms test`).
+- Methods that need something of the items are declared only where the items have it: `impl[T: PartialOrd[T]] Vec[T] { max, min, sort }`, `impl[T: Stringer] Vec[T] { join }`, `impl[T: Plus[T, T] & Default] Vec[T] { sum }`.
 
 - **Types:** `Option`/`Some`/`None`/`nil`, `Result`/`Ok`/`Err`, `Promise`, `Resolver`, `Ref`, `Topic`, `Queue`, `Signal`, `Sub`, `Watcher`, `Box`, `Weak`, `Vec`, `Map`, `Set`, `Array`, `Slice`, `Panic`, `PanicKind`, `Ordering` (`Less` / `Equal` / `Greater`).
 - **Functions:** `assert`, `panic`.
@@ -1756,6 +1760,7 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 - floats nested in collections print without `.0`;
 - `std.net.ws`: no TLS (`wss://`), no subprotocols or extensions, and the server doesn't enforce frame size limits;
 - `std.net.http`: text bodies only (no bytes, no streaming), no server TLS, and an unanswered request stays open until the client gives up;
+- a static method of a generic parameter (`T.default()`) can't be called (no monomorphization yet: `T` isn't a runtime value), which is why `Vec.sum` is still a builtin;
 - a generic MinScript function that passes its own `T` to a builtin needing the type's shape (`Config.section[T]` calling `json.from_value.[T]`) can't forward the shape (no monomorphization yet): the result has the right fields, but structs inside it aren't tagged, so their methods and `to_str` don't work;
 - `json.parse` of a field whose type is an alias (`Role = "A" | "B"`) doesn't check the value.
 

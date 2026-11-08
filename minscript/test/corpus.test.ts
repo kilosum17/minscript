@@ -325,7 +325,12 @@ describe("ms test", () => {
         assert.ok(r.packages >= 2, "std has tests")
         assert.deepEqual([r.failed, r.broken, fmt(r.diagnostics)], [0, 0, []], lines.join("\n"))
     })
-    test("test/projects: main and non-main packages, sync and async tests", async () => {
+    test("the prelude's MinScript methods (test/prelude)", async () => {
+        const lines: string[] = []
+        const r = await runTests(join(root, "prelude"), { onOutput: quiet(lines) })
+        assert.deepEqual([r.packages, r.failed, r.broken, fmt(r.diagnostics)], [1, 0, 0, []], lines.join("\n"))
+    })
+        test("test/projects: main and non-main packages, sync and async tests", async () => {
         const lines: string[] = []
         const r = await runTests(join(root, "projects"), { onOutput: quiet(lines) })
         assert.deepEqual([r.packages, r.failed, r.broken], [2, 0, 0], lines.join("\n"))

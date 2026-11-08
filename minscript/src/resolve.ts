@@ -158,6 +158,7 @@ class Resolver {
         for (const name of BUILTIN_TYPES) this.define(this.prelude, name, "builtin-type", null, null)
         if (prelude !== null) {
             for (const [name, sym] of prelude.pkgScope.names) {
+                if (sym.pub === false) continue           // the prelude's private helpers (`is_space`)
                 this.prelude.names.set(name, sym)
                 if (sym.kind === "union" && EXPORTED_VARIANTS.has(name) && sym.decl?.kind === "UnionDecl") {
                     for (const v of sym.decl.variants) {
@@ -180,6 +181,19 @@ class Resolver {
     run(files: A.File[]): Resolution {
         // 1. items of every file share the package scope
         for (const file of files) for (const item of file.items) this.declareItem(item)
+        // resolving the prelude itself: `Some`, `Ok`, `Less`… are the variants of its own unions
+        // (user packages get the same symbols from the prelude scope, see the constructor)
+        if (this.isStd && this.pkgName === "std") {
+            for (const [name, sym] of this.pkg.names) {
+                if (sym.kind !== "union" || !EXPORTED_VARIANTS.has(name) || sym.decl?.kind !== "UnionDecl") continue
+                for (const v of sym.decl.variants) {
+                    this.prelude.names.delete(v.name)
+                    const vs = this.define(this.prelude, v.name, "variant", v, v.span)
+                    vs.std = true
+                    vs.owner = sym
+                }
+            }
+        }
         // 2. each file's imports, then its bodies
         for (const file of files) {
             const fileScope = new Scope("file", this.pkg)

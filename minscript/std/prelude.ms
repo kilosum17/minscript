@@ -7,8 +7,15 @@ package prelude
 
 pub fun _builtin() -> never { _builtin() }
 
-pub fun assert(cond: bool, msg: string) { _builtin() }
+pub fun assert(cond: bool, msg: string) {
+    if !cond {
+        panic(msg)
+    }
+}
 pub fun panic(msg: string) -> never { _builtin() }
+
+/// A panic of a given kind (`Unwrap`, `OutOfBounds`…), for the prelude's own checks.
+fun _panic_kind(kind: PanicKind, msg: string) -> never { _builtin() }
 
 // ---- Option, Result, Ordering ------------------------------------------------------------------
 
@@ -16,37 +23,120 @@ pub union Option[T] = {
     Some(T)
     None
 
-    pub fun is_some(&this) -> bool { _builtin() }
-    pub fun is_none(&this) -> bool { _builtin() }
-    pub fun unwrap(this) -> T { _builtin() }
-    pub fun expect(this, msg: &str) -> T { _builtin() }
-    pub fun or[F](this, fallback: F) -> T { _builtin() }          // a value, or `#{…}` (lazy)
-    pub fun map[U](this, f: &(T) -> U) -> U? { _builtin() }
-    pub fun and_then[U](this, f: &(T) -> U?) -> U? { _builtin() }
-    pub fun ok_or[E](this, err: E) -> Result[T, E] { _builtin() }
-    pub fun filter(this, f: &(&T) -> bool) -> T? { _builtin() }
+    pub fun is_some(&this) -> bool {
+        match this {
+            Some(_) => true
+            None => false
+        }
+    }
+    pub fun is_none(&this) -> bool { !this.is_some() }
+    pub fun unwrap(this) -> T {
+        match this {
+            Some(v) => v
+            None => _panic_kind(Unwrap, "unwrap of None")
+        }
+    }
+    pub fun expect(this, msg: &str) -> T {
+        match this {
+            Some(v) => v
+            None => _panic_kind(Unwrap, msg.to_str())
+        }
+    }
+    pub fun or[F](this, fallback: F) -> T { _builtin() }          // a value, or `#{…}` (lazy): core until §18 #8
+    pub fun map[U](this, f: &(T) -> U) -> U? {
+        match this {
+            Some(v) => Some(f(v))
+            None => None
+        }
+    }
+    pub fun and_then[U](this, f: &(T) -> U?) -> U? {
+        match this {
+            Some(v) => f(v)
+            None => None
+        }
+    }
+    pub fun ok_or[E](this, err: E) -> Result[T, E] {
+        match this {
+            Some(v) => Ok(v)
+            None => Err(err)
+        }
+    }
+    pub fun filter(this, f: &(&T) -> bool) -> T? {
+        match this {
+            Some(v) => if f(v) { Some(v) } else { None }
+            None => None
+        }
+    }
 }
 
 pub union Result[T, E] = {
     Ok(T)
     Err(E)
 
-    pub fun is_ok(&this) -> bool { _builtin() }
-    pub fun is_err(&this) -> bool { _builtin() }
-    pub fun unwrap(this) -> T { _builtin() }
-    pub fun expect(this, msg: &str) -> T { _builtin() }
-    pub fun unwrap_err(this) -> E { _builtin() }
-    pub fun ok(this) -> T? { _builtin() }
-    pub fun err(this) -> E? { _builtin() }
-    pub fun or[F](this, fallback: F) -> T { _builtin() }
-    pub fun map[U](this, f: &(T) -> U) -> Result[U, E] { _builtin() }
-    pub fun map_err[F](this, f: &(E) -> F) -> Result[T, F] { _builtin() }
-    pub fun and_then[U](this, f: &(T) -> Result[U, E]) -> Result[U, E] { _builtin() }
+    pub fun is_ok(&this) -> bool {
+        match this {
+            Ok(_) => true
+            Err(_) => false
+        }
+    }
+    pub fun is_err(&this) -> bool { !this.is_ok() }
+    pub fun unwrap(this) -> T {
+        match this {
+            Ok(v) => v
+            Err(e) => _panic_kind(Unwrap, "unwrap of Err(${e})")
+        }
+    }
+    pub fun expect(this, msg: &str) -> T {
+        match this {
+            Ok(v) => v
+            Err(_) => _panic_kind(Unwrap, msg.to_str())
+        }
+    }
+    pub fun unwrap_err(this) -> E {
+        match this {
+            Ok(_) => _panic_kind(Unwrap, "unwrap_err of Ok")
+            Err(e) => e
+        }
+    }
+    pub fun ok(this) -> T? {
+        match this {
+            Ok(v) => Some(v)
+            Err(_) => None
+        }
+    }
+    pub fun err(this) -> E? {
+        match this {
+            Ok(_) => None
+            Err(e) => Some(e)
+        }
+    }
+    pub fun or[F](this, fallback: F) -> T { _builtin() }          // core until §18 #8
+    pub fun map[U](this, f: &(T) -> U) -> Result[U, E] {
+        match this {
+            Ok(v) => Ok(f(v))
+            Err(e) => Err(e)
+        }
+    }
+    pub fun map_err[F](this, f: &(E) -> F) -> Result[T, F] {
+        match this {
+            Ok(v) => Ok(v)
+            Err(e) => Err(f(e))
+        }
+    }
+    pub fun and_then[U](this, f: &(T) -> Result[U, E]) -> Result[U, E] {
+        match this {
+            Ok(v) => f(v)
+            Err(e) => Err(e)
+        }
+    }
 }
 
 pub union Ordering = { Less  Equal  Greater }
 
 // ---- collections ------------------------------------------------------------------------------
+
+// Core builtins are storage and hashing (`len`, `push`, `pop`, `insert`, `remove`, `truncate`, `swap`,
+// `sort_by`, `iter`, Map / Set access); everything else is MinScript on top of them.
 
 pub type Range[T] = {
     pub fun contains(&this, v: &T) -> bool { _builtin() }
@@ -56,82 +146,233 @@ pub type Range[T] = {
 }
 
 pub type Vec[T] = {
-    pub fun new() -> Vec[T] { _builtin() }
+    pub fun new() -> Vec[T] { [] }
     pub fun with_capacity(n: int) -> Vec[T] { _builtin() }
 
     pub fun len(&this) -> int { _builtin() }
-    pub fun is_empty(&this) -> bool { _builtin() }
-    pub fun get(&this, i: int) -> T? { _builtin() }
-    pub fun at(&this, i: int) -> T? { _builtin() }
-    pub fun first(&this) -> T? { _builtin() }
-    pub fun last(&this) -> T? { _builtin() }
-    pub fun contains(&this, v: &T) -> bool { _builtin() }
-    pub fun index_of(&this, v: &T) -> int? { _builtin() }
+    pub fun is_empty(&this) -> bool { this.len() == 0 }
+    pub fun get(&this, i: int) -> T? {
+        if i >= 0 && i < this.len() { Some(this[i].clone()) } else { None }
+    }
+    /// Like `get`, and a negative index counts from the end (`at(-1)` is the last item).
+    pub fun at(&this, i: int) -> T? {
+        this.get(if i < 0 { this.len() + i } else { i })
+    }
+    pub fun first(&this) -> T? { this.get(0) }
+    pub fun last(&this) -> T? { this.get(this.len() - 1) }
+    pub fun contains(&this, v: &T) -> bool { this.index_of(v).is_some() }
+    pub fun index_of(&this, v: &T) -> int? {
+        for x, i in this {
+            if x == v {
+                return Some(i)
+            }
+        }
+        None
+    }
 
     pub fun push(&mut this, v: T) { _builtin() }
     pub fun pop(&mut this) -> T? { _builtin() }
     pub fun insert(&mut this, i: int, v: T) { _builtin() }
     pub fun remove(&mut this, i: int) -> T { _builtin() }
-    pub fun clear(&mut this) { _builtin() }
-    pub fun extend(&mut this, other: Vec[T]) { _builtin() }
-    pub fun sort(&mut this) { _builtin() }
+    /// Keeps the first `n` items.
+    pub fun truncate(&mut this, n: int) { _builtin() }
+    pub fun swap(&mut this, i: int, j: int) { _builtin() }
+    pub fun clear(&mut this) { this.truncate(0) }
+    pub fun extend(&mut this, other: Vec[T]) {
+        var rest = other
+        rest.reverse()
+        for let Some(x) = rest.pop() {
+            this.push(x)
+        }
+    }
     pub fun sort_by(&mut this, f: &(&T, &T) -> Ordering) { _builtin() }
-    pub fun reverse(&mut this) { _builtin() }
+    pub fun reverse(&mut this) {
+        var i = 0
+        var j = this.len() - 1
+        for i < j {
+            this.swap(i, j)
+            i += 1
+            j -= 1
+        }
+    }
 
     pub fun iter(&this) -> Iterator[&T] { _builtin() }
     pub fun iter_mut(&mut this) -> Iterator[&mut T] { _builtin() }
     // pipeline callbacks receive (item, index); a callback may take fewer parameters (spec §4.4)
-    pub fun map[U](&this, f: &(T, int) -> U) -> Vec[U] { _builtin() }
-    pub fun filter(&this, f: &(T, int) -> bool) -> Vec[T] { _builtin() }
-    pub fun find(&this, f: &(T, int) -> bool) -> T? { _builtin() }
-    pub fun any(&this, f: &(T, int) -> bool) -> bool { _builtin() }
-    pub fun all(&this, f: &(T, int) -> bool) -> bool { _builtin() }
-    pub fun count(&this, f: &(T, int) -> bool) -> int { _builtin() }
-    pub fun for_each(&this, f: &(T, int) -> void) { _builtin() }
-    pub fun fold[A](&this, init: A, f: &(A, T) -> A) -> A { _builtin() }
-    pub fun reduce[A](&this, init: A, f: &(A, T) -> A) -> A { _builtin() }
+    pub fun map[U](&this, f: &(&T, int) -> U) -> Vec[U] {
+        var out = Vec.with_capacity.[U](this.len())
+        for x, i in this {
+            out.push(f(x, i))
+        }
+        out
+    }
+    pub fun filter(&this, f: &(&T, int) -> bool) -> Vec[T] {
+        var out = [] as Vec[T]
+        for x, i in this {
+            if f(x, i) {
+                out.push(x.clone())
+            }
+        }
+        out
+    }
+    pub fun find(&this, f: &(&T, int) -> bool) -> T? {
+        for x, i in this {
+            if f(x, i) {
+                return Some(x.clone())
+            }
+        }
+        None
+    }
+    pub fun any(&this, f: &(&T, int) -> bool) -> bool {
+        for x, i in this {
+            if f(x, i) {
+                return true
+            }
+        }
+        false
+    }
+    pub fun all(&this, f: &(&T, int) -> bool) -> bool {
+        for x, i in this {
+            if !f(x, i) {
+                return false
+            }
+        }
+        true
+    }
+    pub fun count(&this, f: &(&T, int) -> bool) -> int {
+        var n = 0
+        for x, i in this {
+            if f(x, i) {
+                n += 1
+            }
+        }
+        n
+    }
+    pub fun for_each(&this, f: &(&T, int) -> void) {
+        for x, i in this {
+            f(x, i)
+        }
+    }
+    pub fun fold[A](&this, init: A, f: &(A, &T) -> A) -> A {
+        var acc = init
+        for x in this {
+            acc = f(acc, x)
+        }
+        acc
+    }
+    pub fun reduce[A](&this, init: A, f: &(A, &T) -> A) -> A { this.fold(init, f) }
+    pub fun take(&this, n: int) -> Vec[T] { this.filter(#{ _, i => i < n }) }
+    pub fun skip(&this, n: int) -> Vec[T] { this.filter(#{ _, i => i >= n }) }
+    pub fun to_vec(&this) -> Vec[T] { this.filter(#{ true }) }
+}
+
+// methods that need something of the items: only on Vecs whose items have it
+impl[T: PartialOrd[T]] Vec[T] {
+    pub fun max(&this) -> T? {
+        var best: T? = None
+        for x in this {
+            best = match best {
+                Some(b) => Some(if x > b { x.clone() } else { b })
+                None => Some(x.clone())
+            }
+        }
+        best
+    }
+    pub fun min(&this) -> T? {
+        var best: T? = None
+        for x in this {
+            best = match best {
+                Some(b) => Some(if x < b { x.clone() } else { b })
+                None => Some(x.clone())
+            }
+        }
+        best
+    }
+    pub fun sort(&mut this) {
+        this.sort_by(#{ a, b => if a < b { Less } else if a > b { Greater } else { Equal } })
+    }
+}
+
+impl[T: Stringer] Vec[T] {
+    pub fun join(&this, sep: &str) -> string {
+        var out = ""
+        for x, i in this {
+            if i > 0 {
+                out += sep
+            }
+            out += x.to_str()
+        }
+        out
+    }
+}
+
+impl[T: Plus[T, T] & Default] Vec[T] {
+    // builtin: it starts from `T.default()`, and the JS back end can't call a static of a generic
+    // parameter yet (no monomorphization, spec §14.2)
     pub fun sum(&this) -> T { _builtin() }
-    pub fun join(&this, sep: &str) -> string { _builtin() }
-    pub fun max(&this) -> T? { _builtin() }
-    pub fun min(&this) -> T? { _builtin() }
-    pub fun take(&this, n: int) -> Vec[T] { _builtin() }
-    pub fun skip(&this, n: int) -> Vec[T] { _builtin() }
-    pub fun to_vec(&this) -> Vec[T] { _builtin() }
 }
 
 pub type Array[T, N] = {
     pub fun len(&this) -> int { _builtin() }
-    pub fun get(&this, i: int) -> T? { _builtin() }
+    pub fun get(&this, i: int) -> T? {
+        if i >= 0 && i < this.len() { Some(this[i].clone()) } else { None }
+    }
     pub fun iter(&this) -> Iterator[&T] { _builtin() }
-    pub fun to_vec(&this) -> Vec[T] { _builtin() }
+    pub fun to_vec(&this) -> Vec[T] {
+        var out = [] as Vec[T]
+        for x in this {
+            out.push(x.clone())
+        }
+        out
+    }
 }
 
 pub type Slice[T] = {
     pub fun len(&this) -> int { _builtin() }
-    pub fun is_empty(&this) -> bool { _builtin() }
-    pub fun get(&this, i: int) -> T? { _builtin() }
+    pub fun is_empty(&this) -> bool { this.len() == 0 }
+    pub fun get(&this, i: int) -> T? {
+        if i >= 0 && i < this.len() { Some(this[i].clone()) } else { None }
+    }
     pub fun iter(&this) -> Iterator[&T] { _builtin() }
-    pub fun to_vec(&this) -> Vec[T] { _builtin() }
+    pub fun to_vec(&this) -> Vec[T] {
+        var out = [] as Vec[T]
+        for x in this {
+            out.push(x.clone())
+        }
+        out
+    }
 }
 
 pub type Map[K, V] = {
     pub fun new() -> Map[K, V] { _builtin() }
     pub fun len(&this) -> int { _builtin() }
-    pub fun is_empty(&this) -> bool { _builtin() }
+    pub fun is_empty(&this) -> bool { this.len() == 0 }
     pub fun get(&this, k: &K) -> V? { _builtin() }
     pub fun has(&this, k: &K) -> bool { _builtin() }
     pub fun insert(&mut this, k: K, v: V) -> V? { _builtin() }
     pub fun remove(&mut this, k: &K) -> V? { _builtin() }
     pub fun clear(&mut this) { _builtin() }
-    pub fun keys(&this) -> Vec[K] { _builtin() }
-    pub fun values(&this) -> Vec[V] { _builtin() }
+    pub fun keys(&this) -> Vec[K] {
+        var out = [] as Vec[K]
+        for k, _ in this {
+            out.push(k.clone())
+        }
+        out
+    }
+    pub fun values(&this) -> Vec[V] {
+        var out = [] as Vec[V]
+        for _, v in this {
+            out.push(v.clone())
+        }
+        out
+    }
     pub fun iter(&this) -> Iterator[t(&K, &V)] { _builtin() }
 }
 
 pub type Set[T] = {
     pub fun new() -> Set[T] { _builtin() }
     pub fun len(&this) -> int { _builtin() }
-    pub fun is_empty(&this) -> bool { _builtin() }
+    pub fun is_empty(&this) -> bool { this.len() == 0 }
     pub fun has(&this, v: &T) -> bool { _builtin() }
     pub fun insert(&mut this, v: T) -> bool { _builtin() }
     pub fun remove(&mut this, v: &T) -> bool { _builtin() }
@@ -141,28 +382,92 @@ pub type Set[T] = {
 // ---- strings (implemented once on &str, spec §10.3) -------------------------------------------
 
 impl string {
+    // core: offsets (UTF-16 units on JS for now, spec §14.2), Unicode tables, float parsing
     pub fun len(&this) -> int { _builtin() }
-    pub fun is_empty(&this) -> bool { _builtin() }
-    pub fun trim(&this) -> &str { _builtin() }
     pub fun substring(&this, start: int, end: int) -> &str { _builtin() }
-    pub fun strip_prefix(&this, p: &str) -> &str { _builtin() }
-    pub fun strip_suffix(&this, s: &str) -> &str { _builtin() }
-    pub fun try_strip_prefix(&this, p: &str) -> &str? { _builtin() }
-    pub fun try_strip_suffix(&this, s: &str) -> &str? { _builtin() }
-    pub fun split(&this, sep: &str) -> Vec[&str] { _builtin() }
-    pub fun lines(&this) -> Vec[&str] { _builtin() }
-    pub fun contains(&this, s: &str) -> bool { _builtin() }
-    pub fun starts_with(&this, s: &str) -> bool { _builtin() }
-    pub fun ends_with(&this, s: &str) -> bool { _builtin() }
-    pub fun replace(&this, from: &str, to: &str) -> string { _builtin() }
+    /// The offset of the first `needle` at or after `from`.
+    pub fun find(&this, needle: &str, from: int) -> int? { _builtin() }
     pub fun to_lower(&this) -> string { _builtin() }
     pub fun to_upper(&this) -> string { _builtin() }
-    pub fun to_int(&this) -> Result[int, string] { _builtin() }
     pub fun to_float(&this) -> Result[f64, string] { _builtin() }
     pub fun bytes(&this) -> Vec[u8] { _builtin() }
     pub fun chars(&this) -> Vec[char] { _builtin() }
     pub fun as_ptr(&this) -> *u8 { _builtin() }
+
+    pub fun is_empty(&this) -> bool { this.len() == 0 }
+    pub fun contains(&this, s: &str) -> bool { this.find(s, 0).is_some() }
+    pub fun starts_with(&this, s: &str) -> bool {
+        this.len() >= s.len() && this.substring(0, s.len()) == s
+    }
+    pub fun ends_with(&this, s: &str) -> bool {
+        this.len() >= s.len() && this.substring(this.len() - s.len(), this.len()) == s
+    }
+    /// Without leading and trailing spaces, tabs and line breaks.
+    pub fun trim(&this) -> &str {
+        var start = 0
+        var end = this.len()
+        for start < end && is_space(this.substring(start, start + 1)) {
+            start += 1
+        }
+        for end > start && is_space(this.substring(end - 1, end)) {
+            end -= 1
+        }
+        this.substring(start, end)
+    }
+    pub fun strip_prefix(&this, p: &str) -> &str { this.try_strip_prefix(p) ?? this }
+    pub fun strip_suffix(&this, s: &str) -> &str { this.try_strip_suffix(s) ?? this }
+    pub fun try_strip_prefix(&this, p: &str) -> &str? {
+        if this.starts_with(p) { Some(this.substring(p.len(), this.len())) } else { None }
+    }
+    pub fun try_strip_suffix(&this, s: &str) -> &str? {
+        if s.len() > 0 && this.ends_with(s) { Some(this.substring(0, this.len() - s.len())) } else { None }
+    }
+    /// The parts between each `sep` (an empty `sep` splits into characters).
+    pub fun split(&this, sep: &str) -> Vec[&str] {
+        var parts = [] as Vec[&str]
+        if sep.is_empty() {
+            var i = 0
+            for i < this.len() {
+                parts.push(this.substring(i, i + 1))
+                i += 1
+            }
+            return parts
+        }
+        var start = 0
+        for let Some(at) = this.find(sep, start) {
+            parts.push(this.substring(start, at))
+            start = at + sep.len()
+        }
+        parts.push(this.substring(start, this.len()))
+        parts
+    }
+    /// The lines, without their `\n` or `\r\n`.
+    pub fun lines(&this) -> Vec[&str] {
+        this.split("\n").map(#{ line => line.strip_suffix("\r") })
+    }
+    pub fun replace(&this, from: &str, to: &str) -> string { this.split(from).join(to) }
+    pub fun to_int(&this) -> Result[int, string] {
+        let s = this.trim()
+        var i = 0
+        var negative = false
+        if s.starts_with("-") || s.starts_with("+") {
+            negative = s.starts_with("-")
+            i = 1
+        }
+        if i >= s.len() {
+            return Err("not an integer: \"${this}\"")
+        }
+        var n = 0
+        for i < s.len() {
+            let digit = "0123456789".find(s.substring(i, i + 1), 0) or return Err("not an integer: \"${this}\"")
+            n = n * 10 + digit
+            i += 1
+        }
+        Ok(if negative { -n } else { n })
+    }
 }
+
+fun is_space(c: &str) -> bool { c == " " || c == "\t" || c == "\n" || c == "\r" }
 
 // ---- async ------------------------------------------------------------------------------------
 

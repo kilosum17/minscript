@@ -66,6 +66,9 @@ class Emitter {
             "",
         ]
         for (const f of this.program.funs) if (!f.builtin) lines.push(...this.fun(f), "")
+        // std functions written in MinScript: dynamic calls (`$rt.dyn(v, "map")`) find them by name
+        const compiledStd = this.program.funs.filter((f) => !f.builtin && f.name.startsWith("std."))
+        if (compiledStd.length > 0) lines.push(`$rt.defStd({ ${compiledStd.map((f) => `${JSON.stringify(f.name.slice(4))}: ${this.fnName(f.name)}`).join(", ")} })`, "")
         // the type registry: methods for dynamic dispatch, field names for printing
         for (const t of this.program.types) lines.push(this.typeDef(t))
         lines.push("")

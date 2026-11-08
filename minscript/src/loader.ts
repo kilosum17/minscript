@@ -297,9 +297,21 @@ function hasSpan(root: unknown, span: Span): boolean {
 
 // ---------------------------------------------------------------------------------------------
 
-/** Lowers every package of a loaded program into one HIR program (dependencies first). */
+let preludeFunsCache: H.Fun[] | null = null
+
+/** The prelude's functions written in MinScript (not `_builtin()`), lowered once: every program
+ *  carries them (spec §10.1). */
+export function preludeFuns(): H.Fun[] {
+    if (preludeFunsCache !== null) return preludeFunsCache
+    const p = loadPrelude()
+    const checked = checkPackage([p.file], p.res, p)
+    preludeFunsCache = lowerPackage([p.file], p.res, checked, p, "std").funs.filter((f) => !f.builtin)
+    return preludeFunsCache
+}
+
+/** Lowers every package of a loaded program into one HIR program (the prelude, then dependencies first). */
 export function lowerProgram(program: Program): H.Program {
-    const out: H.Program = { types: [], funs: [], globals: [] }
+    const out: H.Program = { types: [], funs: [...preludeFuns()], globals: [] }
     const loader = new Loader({})
     for (const pkg of program.packages) {
         if (!pkg.res || !pkg.checked) continue
