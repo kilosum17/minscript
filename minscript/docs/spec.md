@@ -1421,6 +1421,7 @@ Each std package is a folder under [`std/`](../std/), written in MinScript like 
 | `std.math` | `pi`, `e`, `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `sin`, `cos` |
 | `std.crypto` | `encrypt_aes_gcm` / `decrypt_aes_gcm` (password-based), `sha256`, `random_bytes` |
 | `std.runtime` | `async yield()` (§9.6) |
+| `std.utf8` | `decode(&Slice[u8]) -> string` (invalid sequences → U+FFFD), `decode_range(bytes, start, end)`, `encode(&str) -> Vec[u8]`, `sequence_length(lead: u8)` |
 | `std.net.http` | HTTP/1.1: `async listen(host, port) -> Result[Server, http.Error]` (port 0 picks one, see `Server.port()`), `Server.accept` (cancel-safe) → `Request` (`method`, `path`, `query`, `headers`, `body`, `header(name)`, `json.[T]()`, `respond(body)`, `respond_with(Response)`), `Response` (`status = 200`, `headers`, `body`, `ok()`, `json.[T]()`), `json_response(status, &value)`; client `get`, `post`, `send(Outgoing)` (an HTTP error status is still `Ok`). Header names are lowercase; bodies are text |
 | `build` (`std/build`) | the mod.ms API (§17): `Config`, `Tool`, `Script` (`sh`, `pkg`, `task`), `Args`, `run`, `target` (`Target`, `Os`), `env` |
 | `ms.fmt`, `ms.test` (`std/ms/…`) | first-party tools' `Options` and `setup(o) -> Tool` (§17.4); `ms.test` also adds a `test` script |

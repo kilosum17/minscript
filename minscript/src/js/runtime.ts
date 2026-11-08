@@ -942,6 +942,14 @@ Object.assign(stdTable, {
 
     "testing.clock": () => BigInt(Date.now()),
 
+    // utf8
+    "utf8.decode": (b: number[]) => new TextDecoder().decode(Uint8Array.from(b)),
+    "utf8.decode_range": (b: number[], start: number, end: number) => {
+        const lo = Math.max(0, Math.min(start, b.length)), hi = Math.max(lo, Math.min(end, b.length))
+        return new TextDecoder().decode(Uint8Array.from(b.slice(lo, hi)))
+    },
+    "utf8.encode": (s: string) => [...new TextEncoder().encode(s)],
+
     // build (mod.ms)
     "build.current_target": () => {
         const os = ({ linux: "Linux", darwin: "MacOs", win32: "Windows", android: "Android" } as Record<string, string>)[process.platform] ?? "Other"

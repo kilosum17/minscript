@@ -19,6 +19,8 @@
 //   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL;
 // - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
 //   test/testing/failing reports its failures as in `report.out`;
+// - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer dumps every
+//   file exactly like stage 0's;
 // - `ms fmt` (src/fmt.ts): every valid file formats to the same AST, keeps its comments, and formatting
 //   again changes nothing; test/fmt/*.ms format to their `.fmt` snapshot.
 //
@@ -382,4 +384,32 @@ describe("ms fmt (src/fmt.ts)", () => {
     for (const file of msFiles(join(root, "fmt"))) {
         test(`snapshot: ${rel(file)}`, () => snapshot(file, ".fmt", format(readFileSync(file, "utf8")).text!))
     }
+})
+
+describe("stage 1 (../stage1, the self-hosted compiler)", () => {
+    const stage1 = join(root, "..", "..", "stage1")
+    if (!existsSync(join(stage1, "mod.ms"))) return
+    test("checks cleanly and its tests pass", { timeout: 60_000 }, async () => {
+        const p = await openProject(stage1)
+        assert.deepEqual([...fmt(p.diagnostics), ...p.errors], [])
+        const program = loadProgram(p.mainDir, programOptions(p))
+        assert.deepEqual(program.diagnostics.map((d) => `${relative(stage1, d.file)}:${d.span.line} ${d.code} ${d.message}`), [])
+        const lines: string[] = []
+        const r = await runTests(stage1, { onOutput: (l) => lines.push(l) })
+        assert.deepEqual([r.failed, r.broken], [0, 0], lines.join("\n"))
+    })
+    test("its lexer dumps every file like stage 0's", { timeout: 60_000 }, async () => {
+        const { spawnSync } = await import("node:child_process")
+        const files = [...msFiles(join(root, "..", "std")), ...msFiles(root), ...msFiles(join(stage1, "src"))]
+        const ms = join(root, "..", "bin", "ms.js")
+        const r = spawnSync(process.execPath, [ms, "run", stage1, "--", "lex", ...files], { encoding: "utf8", maxBuffer: 1 << 28 })
+        assert.equal(r.status, 0, r.stderr)
+        const expected = files.map((f) => `== ${f}\n${dumpTokens(lex(readFileSync(f)))}`).join("")
+        const actual = r.stdout
+        if (actual !== expected) {
+            const a = actual.split("\n"), b = expected.split("\n")
+            const i = a.findIndex((l, k) => l !== b[k])
+            assert.fail(`first difference at output line ${i + 1}:\n  stage 1: ${a[i]}\n  stage 0: ${b[i]}`)
+        }
+    })
 })

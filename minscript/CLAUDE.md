@@ -4,7 +4,7 @@ MinScript is a language that aims for TypeScript-style concision, Rust-style own
 
 ## Boundaries
 
-- Work only inside `min_script/minscript/`. **Never modify files in the parent `min_script/` folder** (`cmd_ts/`, `ms_cmd_ts/`, `samples/`, `docs/`). Reading them for reference is fine.
+- Work only inside `min_script/minscript/` (stage 0: this TypeScript compiler) and `min_script/stage1/` (the self-hosted compiler, written in MinScript; see its CLAUDE.md). **Never modify anything else in the parent `min_script/` folder** (`cmd_ts/`, `ms_cmd_ts/`, `samples/`, `docs/`). Reading them for reference is fine.
 
 ## Layout
 
