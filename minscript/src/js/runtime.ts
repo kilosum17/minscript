@@ -1034,6 +1034,73 @@ Object.assign(stdTable, {
     "net.ws.Writer.send": (w: Any, msg: Any) => w.conn.send(msg),
 })
 
+// ---- std.net.http ------------------------------------------------------------------------------------
+// The server is node:http; the client is the global fetch. Bodies are text for now.
+
+const HTTP = "std.net.http"
+const httpErr = (message: string) => Err(stdErr("net.http", message))
+const headerMap = (entries: Iterable<[string, string]>) => {
+    const m = new MsMap()
+    for (const [k, v] of entries) m.set(k.toLowerCase(), v)
+    return m
+}
+const decodeBody = (body: string, shapes?: (Shape | null)[]) => stdTable["json.parse"](body, shapes)
+
+Object.assign(stdTable, {
+    "net.http.listen": async (host: string, port: number) => {
+        const h = await http()
+        const accepted = new Inbox()
+        const srv = h.createServer((req, res) => {
+            const chunks: Buffer[] = []
+            req.on("data", (c: Buffer) => chunks.push(c))
+            req.on("end", () => {
+                const url = new URL(req.url ?? "/", "http://localhost")
+                const headers = new MsMap()
+                for (const [k, v] of Object.entries(req.headers)) headers.set(k, Array.isArray(v) ? v.join(", ") : v ?? "")
+                accepted.push(Ok({
+                    $t: `${HTTP}.Request`, method: req.method ?? "GET", path: url.pathname,
+                    query: headerMap([...url.searchParams.entries()].map(([k, v]) => [k, v] as [string, string])), headers,
+                    body: Buffer.concat(chunks).toString("utf8"), $res: res,
+                }))
+            })
+        })
+        const server = { $t: `${HTTP}.Server`, accepted, port: () => (srv.address() as import("node:net").AddressInfo).port,
+            close: () => { srv.close(); srv.closeAllConnections?.(); accepted.close(httpErr("server closed")); openResources.delete(server) } }
+        return await new Promise((resolve) => {
+            srv.once("error", (e) => resolve(httpErr(`cannot listen on ${host}:${port}: ${e.message}`)))
+            srv.listen(port, host, () => { openResources.add(server); resolve(Ok(server)) })
+        })
+    },
+    "net.http.Server.accept": (s: Any) => s.accepted.take(),
+    "net.http.Server.close": (s: Any) => { s.close() },
+    "net.http.Server.port": (s: Any) => s.port(),
+    "net.http.Request.respond_with": (req: Any, r: Any) => {
+        const res = req.$res as import("node:http").ServerResponse | undefined
+        if (!res || res.headersSent || res.writableEnded) return Promise.resolve(httpErr(res ? "this request was already answered" : "this request didn't come from a server"))
+        const headers: Record<string, string> = { "content-type": "text/plain; charset=utf-8" }
+        for (const [k, v] of r.headers.entries() as Iterable<[string, string]>) headers[String(k).toLowerCase()] = v
+        return new Promise((resolve) => {
+            res.writeHead(Number(r.status), headers)
+            res.end(r.body, () => resolve(Ok(undefined)))
+            res.once("error", (e) => resolve(httpErr(e.message)))
+        })
+    },
+    "net.http.Request.json": (req: Any, shapes?: (Shape | null)[]) => decodeBody(req.body, shapes),
+    "net.http.Response.json": (res: Any, shapes?: (Shape | null)[]) => decodeBody(res.body, shapes),
+    "net.http.send": async (o: Any) => {
+        const headers: Record<string, string> = {}
+        for (const [k, v] of o.headers.entries() as Iterable<[string, string]>) headers[k] = v
+        try {
+            const method = String(o.method).toUpperCase()
+            const r = await fetch(o.url, { method, headers, body: method === "GET" || method === "HEAD" ? undefined : o.body })
+            return Ok({ $t: `${HTTP}.Response`, status: r.status, headers: headerMap(r.headers.entries()), body: await r.text() })
+        } catch (e) {
+            const cause = e instanceof Error && e.cause instanceof Error ? `: ${e.cause.message}` : ""
+            return httpErr(`${e instanceof Error ? e.message : String(e)}${cause}`)
+        }
+    },
+})
+
 // ---- JSON ↔ values ------------------------------------------------------------------------------
 
 /** The structure of a type (src/hir.ts `Shape`), so plain JSON data can become MinScript values. */
@@ -1114,6 +1181,7 @@ const externs: Record<string, Any> = {}
 export function ext(path: string): Any {
     const f = externs[path]
     if (f !== undefined) return f
-    const pkg = path.split(".").slice(0, -1).join(".")
-    return (..._args: Any[]) => panic(`\`${path}\`: the package \`${pkg}\` isn't loaded (registry and git dependencies aren't fetched yet; a \`path:\` dependency in mod.ms is)`)
+    const name = path.slice(path.lastIndexOf(".") + 1)
+    const pkg = path.slice(0, path.lastIndexOf(".")).replace(/@.*$/, "")
+    return (..._args: Any[]) => panic(`\`${pkg}.${name}\`: the package \`${pkg}\` isn't loaded (registry and git dependencies aren't fetched yet; a \`path:\` dependency in mod.ms is)`)
 }

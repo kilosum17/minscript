@@ -960,7 +960,12 @@ class Lowerer {
             }
             case "method": {
                 if (callee.kind !== "Member") return this.unsupported("method call", e, ty)
-                return this.methodCall(target, this.expr(callee.object), String(callee.name), args(target.decl), ty, span)
+                const call = this.methodCall(target, this.expr(callee.object), String(callee.name), args(target.decl), ty, span)
+                // `res.json.[User]()`: a builtin method gets the shapes of its own type arguments too
+                if (call.k === "call" && target.decl && isBuiltinBody(target.decl) && target.decl.generics.length > 0 && info?.typeArgs) {
+                    call.shapes = info.typeArgs.map((t) => this.tyShape(t))
+                }
+                return call
             }
             case "value": return { k: "callvalue", ty, span, callee: this.expr(callee), args: args(null) }
             case "unknown": {

@@ -1413,6 +1413,7 @@ Each std package is a folder under [`std/`](../std/), written in MinScript like 
 | `std.math` | `pi`, `e`, `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `sin`, `cos` |
 | `std.crypto` | `encrypt_aes_gcm` / `decrypt_aes_gcm` (password-based), `sha256`, `random_bytes` |
 | `std.runtime` | `async yield()` (§9.6) |
+| `std.net.http` | HTTP/1.1: `async listen(host, port) -> Result[Server, http.Error]` (port 0 picks one, see `Server.port()`), `Server.accept` (cancel-safe) → `Request` (`method`, `path`, `query`, `headers`, `body`, `header(name)`, `json.[T]()`, `respond(body)`, `respond_with(Response)`), `Response` (`status = 200`, `headers`, `body`, `ok()`, `json.[T]()`), `json_response(status, &value)`; client `get`, `post`, `send(Outgoing)` (an HTTP error status is still `Ok`). Header names are lowercase; bodies are text |
 | `build` (`std/build`) | the mod.ms API (§17): `Config`, `Tool`, `Script` (`sh`, `pkg`, `task`), `Args`, `run`, `target` (`Target`, `Os`), `env` |
 | `ms.fmt`, `ms.test` (`std/ms/…`) | first-party tools' `Options` and `setup(o) -> Tool` (§17.4); `ms.test` also adds a `test` script |
 | `std.testing` | assertions (`assert_eq`, `assert_ne`, `assert_true`, `assert_ok`, `assert_err`, `assert_some`, `fail`) and the test runner `run_all` (§17.7); it imports nothing |
@@ -1736,7 +1737,7 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
   - a refutable pattern that fails disables its arm;
   - losing waits are cancelled, and std waits give back a value they already took (`Sub.next`, `Watcher.next`, `time.after`), which keeps them cancel-safe (§4.9).
 - **Floats** print as `2.0`, not `2`. Where the type is known (interpolation, `&Stringer` arguments, struct fields and variant payloads), the generated code uses the float-aware `to_str`.
-- **std packages:** builtin functions are runtime entries named by package (`$rt.std["json.parse"]`, `$rt.std["net.ws.Writer.send"]`); the rest of a std package is compiled like user code. Node provides the platform: `node:fs/promises`, `node:crypto` (AES-256-GCM with an scrypt key), `node:readline` on stdin, and for `std.net.ws` a small RFC 6455 server over `node:http` plus Node's global `WebSocket` as the client. Servers and sockets still open when `main` returns are closed. Members of packages that aren't loaded are looked up at run time (`$rt.ext(…)`) and panic with "not available on the JS back end yet".
+- **std packages:** builtin functions are runtime entries named by package (`$rt.std["json.parse"]`, `$rt.std["net.ws.Writer.send"]`); the rest of a std package is compiled like user code. A call to a generic builtin function or method gets its type arguments' shapes as a last argument (`json.parse.[User]`, `res.json.[User]()`). Node provides the platform: `node:fs/promises`, `node:crypto` (AES-256-GCM with an scrypt key), `node:readline` on stdin, for `std.net.ws` a small RFC 6455 server over `node:http` plus Node's global `WebSocket` as the client, and for `std.net.http` `node:http` plus the global `fetch`. Servers and sockets still open when `main` returns are closed. Members of packages that aren't loaded are looked up at run time (`$rt.ext(…)`) and panic with "not available on the JS back end yet".
 
 **Panics and deadlock** (§9.8, §9.10):
 - A panic escaping `main` prints `panic: …` and exits with status 101.
@@ -1754,6 +1755,8 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 - copies of `Copy` aggregates share the JS object (harmless unless one is mutated);
 - floats nested in collections print without `.0`;
 - `std.net.ws`: no TLS (`wss://`), no subprotocols or extensions, and the server doesn't enforce frame size limits;
+- `std.net.http`: text bodies only (no bytes, no streaming), no server TLS, and an unanswered request stays open until the client gives up;
+- a generic MinScript function that passes its own `T` to a builtin needing the type's shape (`Config.section[T]` calling `json.from_value.[T]`) can't forward the shape (no monomorphization yet): the result has the right fields, but structs inside it aren't tagged, so their methods and `to_str` don't work;
 - `json.parse` of a field whose type is an alias (`Role = "A" | "B"`) doesn't check the value.
 
 ---

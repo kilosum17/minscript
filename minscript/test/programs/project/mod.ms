@@ -4,7 +4,9 @@ package mod
 import "build.*"
 import "ms.fmt"
 import "ms.test"
-import "acme.lint@^1.2"
+// A third-party tool pins its version in the import (spec §17.5). Registry packages aren't fetched
+// yet, so it is commented out here to keep the project runnable:
+// import "acme.lint@^1.2"
 
 pub fun config() -> Config {
     var c = Config {
@@ -48,6 +50,6 @@ pub fun config() -> Config {
     c.tools([
         fmt.setup(_{ indent: 4 }),
         test.setup(_{ parallel: true }),
-        lint.setup(_{ strict: true, warn: ["L_IMPLICIT_STR_COPY"] }),
+        // lint.setup(_{ strict: true, warn: ["L_IMPLICIT_STR_COPY"] }),
     ])
 }
