@@ -21,15 +21,23 @@ pub type ParseResult = {
     /// lexer diagnostics first, then parser diagnostics
     pub diagnostics: Vec[Diagnostic]
     pub lexed: LexResult
+    /// the first node id after this file's: the next file of a program starts there (ids are unique
+    /// across the files of a program, since the passes key their side tables by id)
+    pub next_id: int
 }
 
 pub fun parse(src: Vec[u8]) -> ParseResult {
+    parse_from(src, 0)
+}
+
+/// Parses a file whose node ids start after `first_id`.
+pub fun parse_from(src: Vec[u8], first_id: int) -> ParseResult {
     let lexed = lex(src)
-    var p = Parser { t: lexed.tokens.clone() }
+    var p = Parser { t: lexed.tokens.clone(), next_id: first_id }
     let file = p.parse_file()
     var diagnostics = lexed.diagnostics.clone()
     diagnostics.extend(p.diagnostics)
-    ParseResult { file, diagnostics, lexed }
+    ParseResult { file, diagnostics, lexed, next_id: p.next_id + 1 }
 }
 
 /// Returned by `fail()` after reporting: carried with `?` to a recovery boundary.
@@ -43,7 +51,9 @@ type Infix = r{ bp: int, assoc: string }
 
 fun infix(kind: &str) -> Infix? {
     match kind {
-        "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | "??=" => Some(r{ bp: 1, assoc: "right" })
+        "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | "??=" => Some(
+            r{ bp: 1, assoc: "right" },
+        )
         "or" => Some(r{ bp: 2, assoc: "left" })
         ".." | "..=" => Some(r{ bp: 4, assoc: "none" })
         "??" => Some(r{ bp: 5, assoc: "right" })
@@ -291,7 +301,12 @@ pub type Parser = {
 
     /// The span from `start` to the end of the last consumed token.
     fun sp(&this, start: Span) -> Span {
-        r{ start: start.start, end: if this.prev_end > start.start { this.prev_end } else { start.start }, line: start.line, col: start.col }
+        r{
+            start: start.start,
+            end: if this.prev_end > start.start { this.prev_end } else { start.start },
+            line: start.line,
+            col: start.col
+        }
     }
 
     fun closer_index(&this, opener: &Token) -> int {
@@ -383,7 +398,10 @@ pub type Parser = {
             }
         } else {
             let found = describe(this.cur())
-            this.report("E_UNEXPECTED_TOKEN", "expected `package` at the start of the file, found ${found}")
+            this.report(
+                "E_UNEXPECTED_TOKEN",
+                "expected `package` at the start of the file, found ${found}",
+            )
         }
 
         var imports = [] as Vec[Import]
@@ -410,7 +428,11 @@ pub type Parser = {
             let tok = this.cur()
             let imp = this.parse_import()?
             if !items.is_empty() {
-                this.report_at("E_IMPORT_AFTER_ITEM", "imports must come before the first item", tok.span)
+                this.report_at(
+                    "E_IMPORT_AFTER_ITEM",
+                    "imports must come before the first item",
+                    tok.span,
+                )
             }
             imports.push(imp)
         } else {
@@ -422,7 +444,10 @@ pub type Parser = {
         }
         if !this.at("EOF") && !this.at(";") && !this.nl() {
             let found = describe(this.cur())
-            return this.fail("E_UNEXPECTED_TOKEN", "expected a newline after the declaration, found ${found}")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "expected a newline after the declaration, found ${found}",
+            )
         }
         Ok()
     }
@@ -452,7 +477,10 @@ pub type Parser = {
             return Ok(text_of(tok))
         }
         if is_keyword(tok.kind) {
-            this.report("E_KEYWORD_AS_IDENT", "`${tok.kind}` is a keyword and can't be used as ${what}")
+            this.report(
+                "E_KEYWORD_AS_IDENT",
+                "`${tok.kind}` is a keyword and can't be used as ${what}",
+            )
             let _ = this.advance()
             return Ok(tok.kind.clone())
         }
@@ -464,19 +492,34 @@ pub type Parser = {
         let is_pub = this.eat("pub")
         let path_tok = this.cur()
         if path_tok.kind != "String" && path_tok.kind != "RawString" {
-            return this.fail("E_UNEXPECTED_TOKEN", "expected an import path string, found ${describe(path_tok)}")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "expected an import path string, found ${describe(path_tok)}",
+            )
         }
         let _ = this.advance()
         var alias: string? = None
         if this.eat("as") {
             alias = Some(this.ident_name("an import alias")?)
         }
-        Ok(Import { id: this.id(), span: this.sp(start.span), path: text_of(path_tok), is_pub, alias })
+        Ok(
+            Import {
+                id: this.id(),
+                span: this.sp(start.span),
+                path: text_of(path_tok),
+                is_pub,
+                alias
+            },
+        )
     }
 
     fun skip_attribute(&mut this) {
         let at = this.advance()
-        this.report_at("E_ATTRIBUTES_RESERVED", "attributes (`@name`) are reserved for a future version", at.span)
+        this.report_at(
+            "E_ATTRIBUTES_RESERVED",
+            "attributes (`@name`) are reserved for a future version",
+            at.span,
+        )
         if this.at("Ident") && !this.cur().ws_before {
             let _ = this.advance()
         }
@@ -498,7 +541,10 @@ pub type Parser = {
                 let _ = this.advance()
                 if !this.at("fun") {
                     let found = describe(this.cur())
-                    return this.fail("E_UNEXPECTED_TOKEN", "expected `fun` after `async`, found ${found}")
+                    return this.fail(
+                        "E_UNEXPECTED_TOKEN",
+                        "expected `fun` after `async`, found ${found}",
+                    )
                 }
                 return Ok(Some(Fun(this.parse_fun(start, is_pub, true, "item", false)?)))
             }
@@ -508,7 +554,10 @@ pub type Parser = {
             "impl" => return Ok(Some(Impl(this.parse_impl(start)?)))
             "let" => return Ok(Some(Let(this.parse_let_decl(start, is_pub)?)))
             "var" => {
-                this.report("E_GLOBAL_VAR", "top-level `var` is not allowed: use `let`, or `Ref(…)` for mutable global state")
+                this.report(
+                    "E_GLOBAL_VAR",
+                    "top-level `var` is not allowed: use `let`, or `Ref(…)` for mutable global state",
+                )
                 return Ok(Some(Let(this.parse_let_decl(start, is_pub)?)))
             }
             "extern" => return Ok(Some(Extern(this.parse_extern(start)?)))
@@ -516,9 +565,15 @@ pub type Parser = {
         }
         if is_pub {
             let found = describe(this.cur())
-            return this.fail("E_UNEXPECTED_TOKEN", "expected a declaration after `pub`, found ${found}")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "expected a declaration after `pub`, found ${found}",
+            )
         }
-        this.report("E_TOP_LEVEL_STATEMENT", "only declarations are allowed at the top level; move this into a function")
+        this.report(
+            "E_TOP_LEVEL_STATEMENT",
+            "only declarations are allowed at the top level; move this into a function",
+        )
         this.sync_from(this.i, this.t.len() - 1, this.i + 1, "item")
         this.sync_to_item_start()
         Ok(None)
@@ -527,7 +582,11 @@ pub type Parser = {
     fun parse_generic_params(&mut this) -> Result[Vec[GenericParam], Sync] {
         if this.at("<") {
             let lt = this.cur()
-            this.report_at("E_ANGLE_GENERICS", "generic parameters use `[…]`: write `name[T]`", lt.span)
+            this.report_at(
+                "E_ANGLE_GENERICS",
+                "generic parameters use `[…]`: write `name[T]`",
+                lt.span,
+            )
             let _ = this.advance()
             let params = this.generic_param_list(true)?
             let _ = this.close_angle()
@@ -549,7 +608,11 @@ pub type Parser = {
     fun generic_param_list(&mut this, angle: bool) -> Result[Vec[GenericParam], Sync] {
         var params = [] as Vec[GenericParam]
         for {
-            let done = if angle { this.gt_pending || this.at(">") || this.at(">>") } else { this.at("]") }
+            let done = if angle {
+                this.gt_pending || this.at(">") || this.at(">>")
+            } else {
+                this.at("]")
+            }
             if done {
                 break
             }
@@ -597,20 +660,41 @@ pub type Parser = {
         if this.eat("->") {
             ret = Some(this.parse_type(false, true)?)
         } else if this.at(":") {
-            return this.fail("E_UNEXPECTED_TOKEN", "return types are written with `->`: `fun f() -> int`")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "return types are written with `->`: `fun f() -> int`",
+            )
         }
 
         var body: Block? = None
         if this.at("{") {
             if this.nl() {
-                this.report_brace_newline("the `{` of a function body goes on the same line as its signature")
+                this.report_brace_newline(
+                    "the `{` of a function body goes on the same line as its signature",
+                )
             }
             body = Some(this.parse_function_body()?)
         } else if mode == "item" {
             let found = describe(this.cur())
-            return this.fail("E_UNEXPECTED_TOKEN", "expected `{` to start the function body, found ${found}")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "expected `{` to start the function body, found ${found}",
+            )
         }
-        Ok(FunDecl { id: this.id(), span: this.sp(start), is_pub, is_async, name, generics, receiver, params, ret, body })
+        Ok(
+            FunDecl {
+                id: this.id(),
+                span: this.sp(start),
+                is_pub,
+                is_async,
+                name,
+                generics,
+                receiver,
+                params,
+                ret,
+                body
+            },
+        )
     }
 
     fun parse_function_body(&mut this) -> Result[Block, Sync] {
@@ -643,7 +727,11 @@ pub type Parser = {
                 }
             }
             if let Some(v) = variadic {
-                this.report_at("E_VARIADIC_NOT_LAST", "a variadic parameter (`...name: T`) must be the last parameter", v)
+                this.report_at(
+                    "E_VARIADIC_NOT_LAST",
+                    "a variadic parameter (`...name: T`) must be the last parameter",
+                    v,
+                )
                 variadic = None
             }
             let start_tok = this.cur()
@@ -658,7 +746,10 @@ pub type Parser = {
         }
         if !this.at(")") {
             let found = describe(this.cur())
-            return this.fail("E_UNEXPECTED_TOKEN", "expected `,` or `)` in the parameter list, found ${found}")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "expected `,` or `)` in the parameter list, found ${found}",
+            )
         }
         Ok(t(receiver, params))
     }
@@ -745,7 +836,10 @@ pub type Parser = {
             return Ok()
         }
         let found = describe(this.cur())
-        this.fail("E_EXPECTED_COLON", "expected `:` and a type after the ${what} name, found ${found}")
+        this.fail(
+            "E_EXPECTED_COLON",
+            "expected `:` and a type after the ${what} name, found ${found}",
+        )
     }
 
     fun parse_impl_list(&mut this) -> Result[Vec[Type], Sync] {
@@ -768,19 +862,59 @@ pub type Parser = {
         let _ = this.expect("=")?
 
         if this.at("|") {
-            this.report("E_LEADING_PIPE_UNION", "sum types are declared with `union`: `union X = { A  B }`")
+            this.report(
+                "E_LEADING_PIPE_UNION",
+                "sum types are declared with `union`: `union X = { A  B }`",
+            )
             var variants = [] as Vec[Variant]
             for this.eat("|") {
                 variants.push(this.parse_variant()?)
             }
-            return Ok(Union(UnionDecl { id: this.id(), span: this.sp(start), is_pub, name, generics, impls, variants, methods: [] }))
+            return Ok(
+                Union(
+                    UnionDecl {
+                        id: this.id(),
+                        span: this.sp(start),
+                        is_pub,
+                        name,
+                        generics,
+                        impls,
+                        variants,
+                        methods: []
+                    },
+                ),
+            )
         }
         if this.at("{") {
             let body = this.parse_struct_body()?
-            return Ok(TypeDef(TypeDecl { id: this.id(), span: this.sp(start), is_pub, name, generics, impls, body: Struct(body) }))
+            return Ok(
+                TypeDef(
+                    TypeDecl {
+                        id: this.id(),
+                        span: this.sp(start),
+                        is_pub,
+                        name,
+                        generics,
+                        impls,
+                        body: Struct(body)
+                    },
+                ),
+            )
         }
         let body = this.parse_type(true, true)?
-        Ok(TypeDef(TypeDecl { id: this.id(), span: this.sp(start), is_pub, name, generics, impls, body: Alias(body) }))
+        Ok(
+            TypeDef(
+                TypeDecl {
+                    id: this.id(),
+                    span: this.sp(start),
+                    is_pub,
+                    name,
+                    generics,
+                    impls,
+                    body: Alias(body)
+                },
+            ),
+        )
     }
 
     /// Parses `{ member* }` with per-member recovery. Members are separated by `,`, `;`, newlines, or nothing.
@@ -890,7 +1024,18 @@ pub type Parser = {
         let impls = this.parse_impl_list()?
         let _ = this.expect("=")?
         let m = this.parse_members(UnionMembers, "{")?
-        Ok(UnionDecl { id: this.id(), span: this.sp(start), is_pub, name, generics, impls, variants: m.variants, methods: m.methods })
+        Ok(
+            UnionDecl {
+                id: this.id(),
+                span: this.sp(start),
+                is_pub,
+                name,
+                generics,
+                impls,
+                variants: m.variants,
+                methods: m.methods
+            },
+        )
     }
 
     fun parse_inter_decl(&mut this, start: Span, is_pub: bool) -> Result[InterDecl, Sync] {
@@ -907,10 +1052,32 @@ pub type Parser = {
         let _ = this.expect("=")?
         if !this.at("{") {
             let composition = this.parse_type(false, true)?
-            return Ok(InterDecl { id: this.id(), span: this.sp(start), is_pub, name, generics, supers, methods: None, composition: Some(composition) })
+            return Ok(
+                InterDecl {
+                    id: this.id(),
+                    span: this.sp(start),
+                    is_pub,
+                    name,
+                    generics,
+                    supers,
+                    methods: None,
+                    composition: Some(composition)
+                },
+            )
         }
         let m = this.parse_members(InterMembers, "{")?
-        Ok(InterDecl { id: this.id(), span: this.sp(start), is_pub, name, generics, supers, methods: Some(m.methods), composition: None })
+        Ok(
+            InterDecl {
+                id: this.id(),
+                span: this.sp(start),
+                is_pub,
+                name,
+                generics,
+                supers,
+                methods: Some(m.methods),
+                composition: None
+            },
+        )
     }
 
     fun parse_impl(&mut this, start: Span) -> Result[ImplDecl, Sync] {
@@ -926,13 +1093,25 @@ pub type Parser = {
             interfaces = first
             target = this.parse_type_postfix()?
         } else if first.len() > 1 {
-            return this.fail("E_UNEXPECTED_TOKEN", "expected `for` after a list of interfaces: `impl A, B for T`")
+            return this.fail(
+                "E_UNEXPECTED_TOKEN",
+                "expected `for` after a list of interfaces: `impl A, B for T`",
+            )
         }
         if this.nl() && this.at("{") {
             this.report_brace_newline("the `{` of an `impl` goes on the same line")
         }
         let m = this.parse_members(ImplMembers, "{")?
-        Ok(ImplDecl { id: this.id(), span: this.sp(start), generics, interfaces, target, methods: m.methods })
+        Ok(
+            ImplDecl {
+                id: this.id(),
+                span: this.sp(start),
+                generics,
+                interfaces,
+                target,
+                methods: m.methods
+            },
+        )
     }
 
     fun parse_let_decl(&mut this, start: Span, is_pub: bool) -> Result[LetDecl, Sync] {
@@ -951,7 +1130,14 @@ pub type Parser = {
         let _ = this.advance()
         let abi_tok = this.expect_what("String", "an ABI string such as `\"C\"`")?
         let m = this.parse_members(ExternFuns, "{")?
-        Ok(ExternDecl { id: this.id(), span: this.sp(start), abi: text_of(abi_tok), funs: m.methods })
+        Ok(
+            ExternDecl {
+                id: this.id(),
+                span: this.sp(start),
+                abi: text_of(abi_tok),
+                funs: m.methods
+            },
+        )
     }
 
     // ---- types ----
@@ -994,7 +1180,10 @@ pub type Parser = {
         var ty = this.parse_type_primary()?
         for this.at("?") && !this.nl() {
             if let TOption(_) = &ty.kind {
-                this.report("E_UNEXPECTED_TOKEN", "`T??` is not a type: an Option can't be optional again")
+                this.report(
+                    "E_UNEXPECTED_TOKEN",
+                    "`T??` is not a type: an Option can't be optional again",
+                )
             }
             let _ = this.advance()
             ty = this.mk_type(start, TOption(Box(ty)))
@@ -1115,7 +1304,10 @@ pub type Parser = {
     fun parse_type_args(&mut this) -> Result[Vec[Type], Sync] {
         let open = this.advance()
         if this.at("]") {
-            this.report("E_EXPECTED_TYPE_ARGUMENTS", "expected at least one type argument inside `[ ]`")
+            this.report(
+                "E_EXPECTED_TYPE_ARGUMENTS",
+                "expected at least one type argument inside `[ ]`",
+            )
             let _ = this.advance()
             return Ok([])
         }
@@ -1132,7 +1324,11 @@ pub type Parser = {
     fun parse_angle_args(&mut this) -> Result[Vec[Type], Sync] {
         let lt = this.advance()
         if this.angle_depth == 0 {
-            this.report_at("E_ANGLE_GENERICS", "generic arguments use `[…]` in types and `.[…]` in expressions: `Vec[int]`, `f.[T](x)`", lt.span)
+            this.report_at(
+                "E_ANGLE_GENERICS",
+                "generic arguments use `[…]` in types and `.[…]` in expressions: `Vec[int]`, `f.[T](x)`",
+                lt.span,
+            )
         }
         this.angle_depth += 1
         let r = this.angle_args_inner()

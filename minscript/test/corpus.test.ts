@@ -19,8 +19,8 @@
 //   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL;
 // - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
 //   test/testing/failing reports its failures as in `report.out`;
-// - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer and parser
-//   produce exactly stage 0's output (dumps and diagnostics) on every file;
+// - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer, parser and
+//   resolver produce exactly stage 0's output (dumps and diagnostics) on every file;
 // - `ms fmt` (src/fmt.ts): every valid file formats to the same AST, keeps its comments, and formatting
 //   again changes nothing; test/fmt/*.ms format to their `.fmt` snapshot.
 //
@@ -419,7 +419,15 @@ describe("stage 1 (../stage1, the self-hosted compiler)", () => {
         same(r.stdout, list.map((f) => `== ${f}\n${dumpTokens(lex(readFileSync(f)))}`).join(""), "token dumps")
         same(r.stderr, list.map((f) => diagnosticLines(f, lex(readFileSync(f)).diagnostics)).join(""), "diagnostics")
     })
-    test("its parser builds the same AST and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
+    test("its resolver gives the same resolution and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
+        const list = files()
+        const r = await stage1Run("resolve", ["--prelude", join(root, "..", "std", "prelude.ms"), ...list])
+        assert.equal(r.status, 0, r.stderr)
+        const resolved = list.map((f) => { const p = parse(readFileSync(f)); return { f, p, res: resolvePackage([p.file]) } })
+        same(r.stdout, resolved.map(({ f, res }) => `== ${f}\n${dumpResolution(res)}`).join(""), "resolution dumps")
+        same(r.stderr, resolved.map(({ f, p, res }) => diagnosticLines(f, [...p.diagnostics, ...res.diagnostics])).join(""), "diagnostics")
+    })
+        test("its parser builds the same AST and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
         const list = files()
         const r = await stage1Run("parse", list)
         assert.equal(r.status, 0, r.stderr)

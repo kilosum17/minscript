@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Differential test: stage 0 (../minscript, TypeScript) and stage 1 (this compiler) must produce the
-# same output on every .ms file in the repository: the token dumps (lexer), and the AST dumps plus
-# diagnostics (parser). Run from stage1/: `ms run difftest`.
+# same output on every .ms file in the repository: the token dumps (lexer), the AST dumps (parser) and
+# the resolution dumps (resolver: each file on its own, as stage 0's `ms resolve`), with their
+# diagnostics. Run from stage1/: `ms run difftest`.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 out=$(mktemp -d)
@@ -28,5 +29,6 @@ compare() {   # compare <pass> <stage-0 command> <stage-1 command>
 
 compare lexer "ms lex" "ms run . -- lex"
 compare parser "ms parse" "ms run . -- parse"
+compare resolver "ms resolve" "ms run . -- resolve --prelude ../minscript/std/prelude.ms"
 [ $status -eq 0 ] && rm -r "$out" || echo "(outputs kept in $out)"
 exit $status
