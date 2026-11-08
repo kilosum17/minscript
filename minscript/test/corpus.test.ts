@@ -18,7 +18,9 @@
 // - test/projects/*: projects (src/project.ts). Each one's mod.ms evaluates (its `config.json` snapshot)
 //   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL;
 // - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
-//   test/testing/failing reports its failures as in `report.out`.
+//   test/testing/failing reports its failures as in `report.out`;
+// - `ms fmt` (src/fmt.ts): every valid file formats to the same AST, keeps its comments, and formatting
+//   again changes nothing; test/fmt/*.ms format to their `.fmt` snapshot.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -40,6 +42,7 @@ import { compileToJs, loadJs, runJs } from "../src/js/run.ts"
 import { loadProgram, STD_DIR } from "../src/loader.ts"
 import { configJson, openProject, programOptions } from "../src/project.ts"
 import { runTests } from "../src/test_runner.ts"
+import { format } from "../src/fmt.ts"
 import { resetOutput, setOutput } from "../src/js/runtime.ts"
 import { lowerPackage } from "../src/lower.ts"
 import { checkOwnership } from "../src/ownership.ts"
@@ -346,4 +349,37 @@ describe("ms test", () => {
         const r = await runTests(join(root, "testing", "failing"), { onOutput: quiet(lines), filter: "passes" })
         assert.deepEqual([r.failed, lines.filter((l) => /^(ok|FAIL) /.test(l)).length], [0, 1])
     })
+})
+
+/** A `;` means something only after a block's last statement (spec §5.4): forget the others. */
+function semis<T>(node: T): T {
+    const seen = new Set<object>()
+    const visit = (x: unknown): void => {
+        if (typeof x !== "object" || x === null || seen.has(x)) return
+        seen.add(x)
+        const stmts = (x as { stmts?: unknown }).stmts
+        if (Array.isArray(stmts)) stmts.slice(0, -1).forEach((s) => { if (s && typeof s === "object" && "semi" in s) (s as { semi: boolean }).semi = false })
+        for (const v of Object.values(x)) visit(v)
+    }
+    visit(node)
+    return node
+}
+
+describe("ms fmt (src/fmt.ts)", () => {
+    const valid = [...msFiles(STD_DIR), ...msFiles(root).filter((f) => !f.includes(`${join(root, "errors")}/`))]
+    for (const file of valid) {
+        const src = readFileSync(file, "utf8")
+        if (parse(src).diagnostics.length > 0) continue
+        test(`round trip: ${file.startsWith(STD_DIR) ? `std/${relative(STD_DIR, file)}` : rel(file)}`, () => {
+            const out = format(src).text!
+            const before = parse(src), after = parse(out)
+            assert.deepEqual(fmt(after.diagnostics), [], "the output parses")
+            assert.equal(printFile(semis(after.file)), printFile(semis(before.file)), "same AST")
+            assert.deepEqual(after.lex.trivia.map((t) => t.text.trim()), before.lex.trivia.map((t) => t.text.trim()), "every comment, in order")
+            assert.equal(format(out).text, out, "idempotent")
+        })
+    }
+    for (const file of msFiles(join(root, "fmt"))) {
+        test(`snapshot: ${rel(file)}`, () => snapshot(file, ".fmt", format(readFileSync(file, "utf8")).text!))
+    }
 })

@@ -15,6 +15,8 @@ import { TextDocument } from "vscode-languageserver-textdocument"
 import { defaultMainDir, findProjectRoot, MOD_FILE, openProject } from "../../src/project.ts"
 import { analyze, definition, documentSymbols, hover, packageName, references, type Analysis, type Doc, type ProjectInfo } from "./analysis.ts"
 import { completion, inlayHints, prepareRename, rename, signatureHelp } from "./features.ts"
+import { format } from "../../src/fmt.ts"
+import { fmtOptionsFrom } from "../../src/fmt_cli.ts"
 
 const connection = lsp.createConnection(lsp.ProposedFeatures.all)
 const documents = new lsp.TextDocuments(TextDocument)
@@ -59,7 +61,7 @@ function projectFor(uri: string): ProjectInfo | null {
     const read = (p: string) => { const d = documents.get(pathToFileURL(p).href); if (d) return d.getText(); try { return readFileSync(p, "utf8") } catch { return null } }
     openProject(root, { read }).then((p) => {
         if (projects.get(root)?.modText !== text) return            // edited again meanwhile
-        projects.set(root, { modText: text, info: { mainDir: p.mainDir, deps: p.deps }, evaluating: false })
+        projects.set(root, { modText: text, info: { mainDir: p.mainDir, deps: p.deps, fmt: p.config?.sections["fmt"] as Record<string, unknown> | undefined }, evaluating: false })
         for (const d of documents.all()) if (d.uri.startsWith(pathToFileURL(root).href)) schedule(d.uri)
     }, (e) => connection.console.error(`MinScript: evaluating ${root}/${MOD_FILE} failed: ${e instanceof Error ? e.message : String(e)}`))
     return info
@@ -117,6 +119,7 @@ connection.onInitialize(() => ({
         signatureHelpProvider: { triggerCharacters: ["(", ","], retriggerCharacters: [","] },
         inlayHintProvider: true,
         renameProvider: { prepareProvider: true },
+        documentFormattingProvider: true,
     },
     serverInfo: { name: "minscript", version: "0.1.0" },
 }))
@@ -175,6 +178,19 @@ connection.onRenameRequest((p) => {
     } catch (e) {
         throw new lsp.ResponseError(lsp.ErrorCodes.InvalidParams, e instanceof Error ? e.message : String(e))
     }
+})
+
+// formatting: the whole document, with the project's `fmt` settings (mod.ms); the editor's tab size
+// when there is no project. A document with a syntax error isn't changed.
+connection.onDocumentFormatting((p) => {
+    const doc = documents.get(p.textDocument.uri)
+    if (!doc) return []
+    const text = doc.getText()
+    const project = projectFor(p.textDocument.uri)
+    const opts = project?.fmt ? fmtOptionsFrom(project.fmt) : { ...fmtOptionsFrom(undefined), indent: p.options.tabSize }
+    const r = format(text, opts)
+    if (r.text === null || r.text === text) return []
+    return [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(text.length) }, newText: r.text }]
 })
 
 function logError(what: string, e: unknown): void {

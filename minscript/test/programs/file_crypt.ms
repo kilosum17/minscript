@@ -10,6 +10,7 @@ pub type Mode = "encrypt" | "decrypt"
 // Process one file in the selected mode.
 async fun process_file(path: string, password: string, mode: Mode) -> Result[void, string] {
     let data = await fs.read_file(path) or Err("Failed to read file: ${path}")
+    let s = path.trim()
 
     match mode {
         "encrypt" => {
@@ -70,11 +71,11 @@ async fun main() {
         // Each process_file call schedules a task immediately; owned args, so no await needed here.
         let promises = files
             .filter(#{ f =>
-                match mode {
-                    "encrypt" => !f.ends_with(".enc")
-                    "decrypt" => f.ends_with(".enc")
-                }
-            })
+            match mode {
+                "encrypt" => !f.ends_with(".enc")
+                "decrypt" => f.ends_with(".enc")
+            }
+        })
             .map(#{ f => process_file(f, password, mode) })
 
         let results = await Promise.all(promises)

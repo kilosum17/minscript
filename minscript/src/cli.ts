@@ -34,6 +34,7 @@ programs and projects
   check [<path>…]           type-check and ownership-check a program with its imports (default: .)
   test [<path>…] [--run <name>] [--reporter spec|dots]
                             run the test_ functions of *_test.ms files at or under each path (default: .)
+  fmt [<path>…] [--check]   format .ms files in place (--check: only report, for CI)
   js <path>                 print the generated JavaScript
   config [<path>]           print the evaluated mod.ms as JSON
 
@@ -44,7 +45,7 @@ compiler internals (each file on its own)
   version                   the toolchain version
 `
 
-const COMMANDS = new Set(["run", "js", "config", "check", "test", "lex", "parse", "resolve", "hir", "help", "version"])
+const COMMANDS = new Set(["run", "js", "config", "check", "test", "fmt", "lex", "parse", "resolve", "hir", "help", "version"])
 const [command, ...rest] = process.argv.slice(2)
 
 if (command === undefined || command === "help" || command === "--help" || command === "-h") {
@@ -73,6 +74,11 @@ if (command === "check") {
         else console.log(`${path}: ok (${program.packages.length} package${program.packages.length === 1 ? "" : "s"}, ${program.packages.reduce((n, p) => n + p.files.length, 0)} files)`)
     }
     process.exit(failed ? 1 : 0)
+}
+
+if (command === "fmt") {
+    const { runFmt } = await import("./fmt_cli.ts")
+    process.exit(await runFmt(rest))
 }
 
 if (command === "test") {

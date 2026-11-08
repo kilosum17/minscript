@@ -130,7 +130,7 @@ export function packageName(text: string): string | null {
  * analysed alone, without its imports.
  */
 /** What the server knows about the project a file is in (from its evaluated mod.ms, spec §17). */
-export type ProjectInfo = { mainDir: string, deps: Map<string, string> }
+export type ProjectInfo = { mainDir: string, deps: Map<string, string>, fmt?: Record<string, unknown> }
 
 export function analyze(docs: Doc[], primary: string, project: ProjectInfo | null = null): Analysis {
     if (!primary.startsWith("file:")) return analyzeAlone(docs.filter((d) => d.uri === primary), primary)

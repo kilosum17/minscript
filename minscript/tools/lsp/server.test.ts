@@ -92,6 +92,12 @@ describe("language server over stdio", () => {
             const edit = await s.request("textDocument/rename", { textDocument: { uri }, position: { line: 5, character: 8 }, newName: "doubled" })
             assert.equal(edit.changes[uri].length, 2)
 
+            // formatting: the whole document (4 spaces, from the editor's tab size: no mod.ms here)
+            s.notify("textDocument/didChange", { textDocument: { uri, version: 5 }, contentChanges: [{ text: fixed.replace("    let x = twice(21)", "  let x = twice( 21 )") }] })
+            const edits = await s.request("textDocument/formatting", { textDocument: { uri }, options: { tabSize: 4, insertSpaces: true } })
+            assert.equal(edits.length, 1)
+            assert.equal(edits[0].newText, fixed)
+
             await s.request("shutdown", {})
             s.notify("exit", {})
         } finally {

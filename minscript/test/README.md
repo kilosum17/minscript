@@ -16,6 +16,7 @@ The syntax under test is defined by [docs/spec.md](../docs/spec.md) (v0.2). The 
 | `projects/` | projects (spec §17): `mod.ms` evaluated, `main` = every `package main` file of its folder, `path:` deps, scripts | `config.json` (the evaluated `Config`) and `run.out`; `script_in_eval` must fail with `E_SCRIPT_IN_EVAL` |
 | `prelude/` | the prelude's methods written in MinScript, tested from outside (`ms test test/prelude`) | the tests pass |
 | `testing/` | `ms test` itself: `failing/` has tests that fail on purpose | `report.out`, the runner's report (timings blanked) |
+| `fmt/` | `ms fmt`: deliberately unformatted inputs | `*.fmt` snapshot of the formatted output (and every valid file round-trips: same AST and comments, idempotent) |
 | `packages/` | programs of several packages (`app.x`, `./x`, std), loaded by `src/loader.ts` from each `main.ms` | `//~` annotations in any file of the program; without any, a `main.out` snapshot of the run |
 
 ## Conventions

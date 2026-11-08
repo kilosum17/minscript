@@ -1,7 +1,7 @@
 # MinScript for VS Code
 
 Syntax highlighting, plus live errors, completion, signature help, inlay type hints, hover,
-go-to-definition, find-references, rename and an outline from the MinScript compiler (the language
+go-to-definition, find-references, rename, formatting and an outline from the MinScript compiler (the language
 server in [`../lsp`](../lsp)). The server speaks standard LSP, so other editors can use it too: run
 `node tools/lsp/server.ts --stdio` (Node ≥ 23.6) from their LSP client.
 
@@ -46,7 +46,13 @@ starts with the extension loaded, on the `test/` corpus.
 - **Inlay hints:** inferred types after `let` / `:=` without a type (not when the value already shows it: `User { … }`, literals, `as`), closure parameters and `for` bindings. VS Code's `editor.inlayHints.enabled` turns them off (or on `Ctrl+Alt` only).
 - **Rename** (`F2`): locals, parameters, functions, types and globals of the package, across its files. The record shorthand `P { name }` becomes `P { name: new }`. std names, `this` and `it` can't be renamed.
 
-Not yet: formatting, semantic highlighting, renaming fields and methods, code actions (quick fixes).
+- **Formatting** (*Format Document*, `Shift+Alt+F`): `ms fmt`'s style (spec §17.8), with the project's `fmt` settings from mod.ms, or the editor's tab size outside a project. To format on save, add to your settings:
+
+  ```json
+  "[minscript]": { "editor.formatOnSave": true }
+  ```
+
+Not yet: semantic highlighting, renaming fields and methods, code actions (quick fixes).
 
 ## Development
 

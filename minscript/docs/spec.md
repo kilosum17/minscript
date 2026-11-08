@@ -1999,7 +1999,7 @@ section[T](name: string) -> Result[T, json.Error]
 **Implementation status** (`src/project.ts`, `ms run` / `ms config` in `src/project_cli.ts`):
 - `config()` is compiled with its imports (`build`, `ms.*` tools) and run on the JS back end; the result is read back. Tools from other packages (`"acme.lint@^1.2"`) aren't fetched, so calling them panics while evaluating.
 - Not yet: the sandbox of §17.5 (evaluation can do anything a program can, except `run`), the evaluation cache (the language server re-evaluates when the text of `mod.ms` changes), `E_SECTION_CONFLICT`, `mod.lock`, registry and `git:` dependencies, and `dev_deps` loading.
-- The command is `bin/ms.js` (`npm link` in `minscript/` puts `ms` on the PATH): `ms run`, `ms check`, `ms js`, `ms config`, `ms <script>`, and the compiler-internal `lex` / `parse` / `resolve` / `hir`. `ms help` lists them. `ms build` and `ms fmt` don't exist yet.
+- The command is `bin/ms.js` (`npm link` in `minscript/` puts `ms` on the PATH): `ms run`, `ms check`, `ms js`, `ms config`, `ms <script>`, and the compiler-internal `lex` / `parse` / `resolve` / `hir`. `ms help` lists them. `ms build` doesn't exist yet.
 
 ### 17.7 Testing: `ms test` [D]
 
@@ -2031,6 +2031,24 @@ ms test --reporter dots
 - **The runner is MinScript:** for each package, `ms test` adds a generated file to it, with a `main` that passes every test to `std.testing.run_all`. That function runs each test inside `recover`, times it, prints the report, and returns the number of failures; `ms test` exits with status 1 if any test failed or a package didn't compile. Because `std.testing` imports nothing, every package can be tested from the inside, std's own included (`std/json/json_test.ms`).
 - **Settings:** `reporter` comes from the `test` section of mod.ms (`ms.test.setup(_{ reporter: "dots" })`), and the command line overrides it. `parallel` is accepted but tests run one at a time for now.
 - Not yet: parallel runs, benchmarks, and tests of a package from outside it (Go's `package x_test`).
+
+### 17.8 Formatting: `ms fmt` [D]
+
+```bash
+ms fmt                       # format every .ms file at or under the current folder, in place
+ms fmt src/models main.ms    # some files and folders
+ms fmt --check               # only report unformatted files; exit 1 if there are any (CI)
+```
+
+The language server formats a document on request (VS Code: *Format Document*, format on save) with the same rules. The settings come from the `fmt` section of mod.ms (`ms.fmt.setup(_{ indent: 2, max_width: 80, trailing_commas: false })`; defaults 4, 100, true). A file with a syntax error isn't changed.
+
+**The style** (`src/fmt.ts`):
+- **Width:** a construct goes on one line if it fits in `max_width`. Otherwise it breaks only where §5.4 allows it: arguments, parameters and elements inside `(…)` / `[…]` go one per line, with a trailing comma (`trailing_commas`); the entries of a `{…}` literal (`User { … }`, `r{ }`, `_{ }`, `m{ }`, `s{ }`) go one per line without commas; the branches of an `if` / `else` chain break together.
+- **The author decides where the style has no opinion:** a block, struct or union body, literal, `match` or `select` written over several lines stays expanded; a one-liner stays one while it fits. A method chain broken before `.`, a line break after a binary operator or before `or`, and a multi-line closure or literal as the last argument (`xs.map(#{ x =>` … `})`) keep their shape.
+- **Fixed spellings:** 4-space indents (`indent`), `{` on the header line (§5.4 rule 7), one space around binary operators and none around `..`, `#{ x => … }` closures, unions on one line separated by two spaces (`{ A  B(int) }`), and `match` arms without commas once they are one per line. Literals (strings, templates, numbers, chars) are copied as written. `a [0]` and `t (x)` keep their space (§1.6).
+- **Semicolons:** every `;` is removed except one after a block's last expression, which discards its value (§5.4 rule 8).
+- **Comments and blank lines:** comments between entries (items, statements, fields, members, arms) stay on their own lines; blank lines between entries are kept, several becoming one. A trailing `//` comment keeps its column if the code still ends before it (hand-aligned comments stay aligned), otherwise its run of consecutive lines is aligned two spaces after the longest one. A comment after an opening `{` stays there. A comment the printer can't place (inside an expression) makes it keep that whole statement exactly as written.
+- **Guarantees** (checked on every file of the repository by `npm test`): the output parses to the same AST, keeps every comment, and formatting it again changes nothing.
 
 ---
 
