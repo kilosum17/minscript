@@ -3,7 +3,10 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "MinScript compiler front end: lexer and parser",
+  "bin": {
+    "ms": "bin/ms.js"
+  },
+  "description": "MinScript: compiler, JS back end and tools (the `ms` command)",
   "engines": {
     "node": ">=23.6"
   },

@@ -7,14 +7,15 @@ import type { FileDiagnostic, LoadOptions } from "./loader.ts"
 import { configJson, defaultMainDir, findProjectRoot, openProject, programOptions, type Project } from "./project.ts"
 
 const isDir = (p: string) => { try { return statSync(p).isDirectory() } catch { return false } }
-const show = (p: string) => relative(process.cwd(), p) || "."
+/** A path as the user would type it here: relative below the current folder, absolute elsewhere. */
+export const show = (p: string) => { const r = relative(process.cwd(), p); return r === "" ? "." : r.startsWith("..") ? p : r }
 
-function printDiagnostics(ds: FileDiagnostic[]): void {
+export function printDiagnostics(ds: FileDiagnostic[]): void {
     for (const d of ds) console.error(`${show(d.file)}:${d.span.line}:${d.span.col}: ${d.severity} ${d.code}: ${d.message}`)
 }
 
 /** Opens a project and reports why it can't be used. */
-async function open(root: string): Promise<Project | null> {
+export async function open(root: string): Promise<Project | null> {
     const p = await openProject(root)
     printDiagnostics(p.diagnostics)
     for (const e of p.errors) console.error(`error: ${e}`)
@@ -66,7 +67,7 @@ export async function runProgramCommand(command: "run" | "js" | "config", argv: 
 }
 
 /** The entry and load options for a path: a project, a plain folder, or a single file. */
-async function entryFor(path: string): Promise<{ entry: string, opts: LoadOptions } | null> {
+export async function entryFor(path: string): Promise<{ entry: string, opts: LoadOptions } | null> {
     const root = findProjectRoot(path)
     if (root !== null) {
         const p = await open(root)
@@ -90,6 +91,16 @@ async function runProgram(command: "run" | "js", path: string, args: string[]): 
     const { setArgs } = await import("./js/runtime.ts")
     setArgs(args)
     return (await runJs(compiled.js)).exitCode
+}
+
+/** `ms <name>`: the script `name` of the project here, if there is one (null: no such script). */
+export async function runScriptShorthand(name: string, argv: string[]): Promise<number | null> {
+    const root = findProjectRoot(".")
+    if (root === null) return null
+    const p = await openProject(root)
+    if (!p.config?.scripts.has(name)) return null
+    const dash = argv.indexOf("--")
+    return await runScript(p, name, dash < 0 ? argv : [...argv.slice(0, dash), ...argv.slice(dash + 1)])
 }
 
 async function runScript(p: Project, name: string, args: string[]): Promise<number> {

@@ -40,6 +40,7 @@ npm run check -- test/check/errors.ms      # type-check + ownership, print diagn
 npm run hir -- test/hir/lowering.ms        # print the lowered HIR
 npm run js -- test/run/basics.ms           # print the generated JS
 npm run run -- test/run/basics.ms          # compile and run on Node
+ms run test/projects/basic                 # with `ms` on the PATH (`npm link` in minscript/): see `ms help`
 ```
 
 `test/corpus.test.ts` checks that:
