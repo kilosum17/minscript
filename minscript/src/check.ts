@@ -64,6 +64,9 @@ export type CallInfo = {
     async: boolean
     /** The callee's own generics, as instantiated (`json.parse.[User]`: [User]); a builtin may need them. */
     typeArgs?: Ty[]
+    /** Every generic parameter of the callee in scope, own and outer (a method's type or impl), as
+     *  instantiated at this call: lowering turns them into type witnesses (spec §14.1). */
+    typeEnv?: [Sym, Ty][]
 }
 
 /** A package this one imports: its files and results (checked before this one). */
@@ -113,6 +116,10 @@ type Callable = {
     dyn?: boolean
     variant?: VariantRef
     auto?: string
+    /** the instantiation of every generic in scope (own and outer) */
+    env?: Map<Sym, Ty>
+    /** bounds of the impl block the method comes from (`impl[T: Stringer] Vec[T]`), checked at the call */
+    outerBounds?: { v: Ty, bounds: Ty[], span: Span | null }[]
 }
 
 type FnCtx = {
@@ -125,6 +132,12 @@ type FnCtx = {
 
 /** Interfaces every type implements through auto-generated code (spec §9.7). */
 const AUTO_INTERFACES: ReadonlySet<string> = new Set(["Stringer", "Clone", "PartialEq", "Hash", "Copy", "PartialOrd"])
+/** Interfaces of the arithmetic operators, which every number type implements. */
+const OPERATOR_INTERFACES: ReadonlySet<string> = new Set([
+    "Plus", "Minus", "Times", "Divide", "Remainder", "PlusAssign", "MinusAssign", "TimesAssign", "DivideAssign", "RemainderAssign",
+])
+/** Prelude types whose default is empty. */
+const DEFAULT_STD: ReadonlySet<string> = new Set(["Vec", "Map", "Set", "Option"])
 /** Prelude type-level forms, evaluated by a later version of the checker. */
 const TYPE_LEVEL: ReadonlySet<string> = new Set(["KeyOf", "ElementOf", "IndexOf", "Partial", "Omit", "Pick"])
 
@@ -367,16 +380,25 @@ class Checker {
     private implements(t: Ty, iface: Ty & { k: "named" }): boolean {
         t = T.strip(t)
         if (AUTO_INTERFACES.has(iface.sym.name) && iface.sym.std) return true
+        const name = iface.sym.std ? iface.sym.name : ""
         switch (t.k) {
             case "unknown": case "var": case "never": return true
+            case "prim": {
+                // the operators of numbers and strings, and the types with a natural default (spec §9.7)
+                if (T.isNumeric(t)) return OPERATOR_INTERFACES.has(name) || name === "Default"
+                if (T.isStringy(t)) return name === "Plus" || name === "PlusAssign" || name === "Default"
+                return t.name === "bool" && name === "Default"
+            }
             case "param": {
                 const bounds = this.boundsOf(t.sym)
                 return bounds.some((b) => b.k === "named" && (b.sym === iface.sym || this.interExtends(b.sym, iface.sym)))
             }
             case "named": {
                 if (t.sym === iface.sym || this.interExtends(t.sym, iface.sym)) return true
+                if (name === "Default" && t.sym.std && DEFAULT_STD.has(t.sym.name)) return true
                 const info = this.info(t.sym)
                 if (info === undefined) return true
+                if (name === "Default" && info.kind === "struct" && this.autoDefault(info, t)) return true
                 return info.interfaces.some((it) => {
                     const s = it.kind === "TName" ? this.refs.get(it) : undefined
                     return s !== undefined && (s === iface.sym || this.interExtends(s, iface.sym))
@@ -384,6 +406,26 @@ class Checker {
             }
             default: return false
         }
+    }
+
+    /** A struct has an auto-generated `Default` when every field has a default value, is optional, or
+     *  has a `Default` type (spec §9.7). */
+    private autoDefault(info: TypeInfo, t: Ty & { k: "named" }, seen = new Set<Sym>()): boolean {
+        if (seen.has(info.sym)) return false
+        seen.add(info.sym)
+        const env = this.envFor(info, t.args)
+        const iface = this.prelude("Default")
+        if (iface === undefined) return false
+        for (const f of info.fields.values()) {
+            if (f.default !== null || f.type.kind === "TOption") continue
+            const ft = T.strip(T.subst(this.toTy(f.type), env))
+            if (ft.k === "named" && this.info(ft.sym)?.kind === "struct" && !(ft.sym.std)) {
+                if (!this.autoDefault(this.info(ft.sym)!, ft, seen)) return false
+                continue
+            }
+            if (!this.implements(ft, { k: "named", sym: iface, args: [] })) return false
+        }
+        return true
     }
 
     private interExtends(a: Sym, b: Sym, seen = new Set<Sym>()): boolean {
@@ -574,7 +616,7 @@ class Checker {
             let ret = f.ret ? T.subst(this.toTy(f.ret), full) : T.VOID
             if (f.async) ret = this.named("Promise", [ret])
             const bounds = own.map((g) => ({ v: full.get(g)!, bounds: this.boundsOf(g).map((b) => T.subst(b, full)), span: at?.span ?? null }))
-            return { params, ret, async: f.async, bounds, receiver: f.receiver, decl: f }
+            return { params, ret, async: f.async, bounds, receiver: f.receiver, decl: f, env: full }
         } finally {
             if (selfTy !== null) this.selfStack.pop()
         }
@@ -621,6 +663,10 @@ class Checker {
             // impl[T] Box[T] { … }: bind the impl's generics by unifying its target with the receiver
             env = new Map(m.outer.map((g) => [g, this.fresh()]))
             this.tryAssign(recv, T.subst(this.toTy(m.implTarget), env))
+            const outerBounds = m.outer.map((g) => ({ v: env.get(g)!, bounds: this.boundsOf(g).map((b) => T.subst(b, env)), span: at.span }))
+                .filter((b) => b.bounds.length > 0)
+            const owner = m.fromInter !== null && m.fromInter !== info.sym ? m.fromInter : info.sym
+            return { ...this.callable(m.fun, env, recv, explicit, at), owner, dyn: info.kind === "inter", ...(outerBounds.length > 0 ? { outerBounds } : {}) }
         } else if (m.fromInter !== null && m.fromInter !== info.sym && m.implTarget !== null) {
             // a default method of an implemented interface: bind the interface's generics from `impl I[X] for T`
             const it = this.toTy(m.implTarget)
@@ -1635,8 +1681,8 @@ class Checker {
         // so it must not decide a generic result: `log.println(xs.fold(0, …))`)
         if (exp !== undefined && !this.isInterface(exp)) this.tryAssign(callable.ret, exp)
         this.applyArgs(e, callable)
-        this.calls.set(e, { target: this.callTarget(e, callable, onValue ?? false), args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async, typeArgs: callable.bounds.map((b) => b.v) })
-        for (const b of callable.bounds) {
+        this.calls.set(e, { target: this.callTarget(e, callable, onValue ?? false), args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async, typeArgs: callable.bounds.map((b) => b.v), ...(callable.env && callable.env.size > 0 ? { typeEnv: [...callable.env] } : {}) })
+        for (const b of [...callable.bounds, ...(callable.outerBounds ?? [])]) {
             for (const bound of b.bounds) {
                 const v = T.prune(b.v)
                 const bs = T.strip(bound)

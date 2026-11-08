@@ -18,6 +18,7 @@ import { checkPackage, type CheckedDep, type CheckResult } from "./check.ts"
 import type { Diagnostic } from "./diagnostic.ts"
 import type * as H from "./hir.ts"
 import { lowerPackage } from "./lower.ts"
+import { computeWitnesses } from "./witness.ts"
 import { checkOwnership } from "./ownership.ts"
 import { parse, type ParseResult } from "./parser.ts"
 import { loadPrelude } from "./prelude.ts"
@@ -321,6 +322,7 @@ export function lowerProgram(program: Program): H.Program {
         out.funs.push(...p.funs)
         out.globals.push(...p.globals)
     }
+    computeWitnesses(out)
     return out
 }
 

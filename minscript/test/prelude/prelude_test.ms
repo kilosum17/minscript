@@ -2,6 +2,7 @@
 package prelude_test
 
 import "std.testing.*"
+import "std.json"
 
 type User = { name: string, tags: Vec[string] }
 
@@ -158,4 +159,41 @@ fun test_string_to_int() {
     assert_eq("12a".to_int().unwrap_err(), "not an integer: \"12a\"")
     assert_true("".to_int().is_err() && "-".to_int().is_err(), "empty and sign-only")
     assert_eq("2.5".to_float().unwrap(), 2.5)
+}
+
+// ---- type witnesses (spec §14.1): generic code that needs its `T` at run time ------------------------
+
+type Settings = { level: int = 1, name: string = "default", tags: Vec[string], extra: int? }
+
+fun fresh[T: Default]() -> T { T.default() }
+
+fun total[T: Plus[T, T] & Default](xs: Vec[T]) -> T { xs.sum() }
+
+fun decode[T](text: &str) -> T? { json_like.[T](text) }
+
+fun json_like[T](text: &str) -> T? { json.parse.[T](text).ok() }
+
+fun test_sum_of_each_number_type() {
+    let big: Vec[i64] = [1, 2, 3]
+    assert_eq(big.sum(), 6)
+    assert_eq([0.5, 0.25].sum(), 0.75)
+    assert_eq(total([4, 5]), 9)
+    assert_eq(([] as Vec[int]).sum(), 0)
+    assert_eq(["a", "b"].sum(), "ab")
+}
+
+fun test_default_through_a_witness() {
+    assert_eq(fresh.[int](), 0)
+    assert_eq(fresh.[string](), "")
+    assert_eq(fresh.[Vec[int]]().len(), 0)
+    let s = fresh.[Settings]()                  // auto-generated: field defaults, empty Vec, None
+    assert_eq(s.to_str(), "prelude_test.Settings { level: 1, name: \"default\", tags: [], extra: None }")
+}
+
+fun test_shapes_pass_through_generic_functions() {
+    // decode[T] → json_like[T] → json.parse.[T]: the witness travels two levels
+    let s = decode.[Settings]("{\"level\": 3, \"tags\": [\"x\"]}") ?? fresh.[Settings]()
+    assert_eq(s.level, 3)
+    assert_eq(s.name, "default")
+    assert_eq(s.to_str(), "prelude_test.Settings { level: 3, name: \"default\", tags: [\"x\"], extra: None }")
 }

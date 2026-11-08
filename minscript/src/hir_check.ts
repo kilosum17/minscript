@@ -70,6 +70,7 @@ class Validator {
             case "dyncall": go(e.recv); e.args.forEach(go); return
             case "callvalue": go(e.callee); e.args.forEach(go); return
             case "extern": e.args?.forEach(go); return
+            case "wstatic": e.args.forEach(go); return
             case "struct": case "record": e.fields.forEach((f) => go(f.value)); return
             case "variant": e.fields.forEach(go); return
             case "tuple": e.elems.forEach(go); return

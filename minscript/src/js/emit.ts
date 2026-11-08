@@ -50,6 +50,8 @@ class Emitter {
     private labels = 0
 
     private readonly globals = new Set<string>()
+    /** the type witnesses of the function being emitted */
+    private witnesses = new Set<Sym>()
 
     constructor(p: H.Program) {
         this.program = p
@@ -109,6 +111,7 @@ class Emitter {
     }
 
     private resetFn(): void {
+        this.witnesses = new Set()
         this.out = []
         this.names = new Map()
         this.used = new Set()
@@ -134,6 +137,9 @@ class Emitter {
                 params.push(name)
             }
         }
+        // type witnesses: hidden parameters, after the others (spec §14.1)
+        this.witnesses = new Set(f.witnesses ?? [])
+        for (const w of f.witnesses ?? []) params.push(witnessVar(w))
         const async = f.async || f.name === "main"
         const head = `${async ? "async " : ""}function ${this.fnName(f.name)}(${params.join(", ")})`
         if (f.body === null) return [`${head} { $rt.panic(${JSON.stringify(`extern function \`${f.name}\` is not available on the JS back end`)}) }`]
@@ -488,6 +494,10 @@ class Emitter {
                 const cellParams = ft.k === "fn" ? ft.params.map(needsCell) : []
                 return this.callWithCells(`(${callee})`, args, e.args, cellParams)
             }
+            case "wstatic": {
+                const args = this.exprs(e.args)
+                return `$rt.wstatic(${this.witnessCode(e.witness)}, ${JSON.stringify(e.method)}, [${args.join(", ")}])`
+            }
             case "extern": {
                 if (e.args === null) return `$rt.ext(${JSON.stringify(e.path)})`
                 const args = this.exprs(e.args)
@@ -579,6 +589,16 @@ class Emitter {
         }
     }
 
+    /** A shape as JS; a generic parameter of this function is its witness parameter (null if it has none). */
+    private witnessCode(s: H.Shape | null): string {
+        if (s === null) return "null"
+        if ("param" in s) return this.witnesses.has(s.param) ? witnessVar(s.param) : "null"
+        if ("vec" in s) return `{ vec: ${this.witnessCode(s.vec)} }`
+        if ("opt" in s) return `{ opt: ${this.witnessCode(s.opt)} }`
+        if ("map" in s) return `{ map: ${this.witnessCode(s.map)} }`
+        return JSON.stringify(s)
+    }
+
     private elems(list: (H.Expr | H.Spread)[]): string[] {
         const codes = this.exprs(list.map((x) => (x.k === "spread" ? x.expr : x)))
         return list.map((x, i) => (x.k === "spread" ? `...${codes[i]}` : codes[i]!))
@@ -586,8 +606,12 @@ class Emitter {
 
     private call(e: Extract<H.Expr, { k: "call" }>): string {
         const args = this.exprs(e.args)
-        if (e.shapes) args.push(JSON.stringify(e.shapes))     // a builtin's type arguments (`json.parse.[User]`)
+        if (e.shapes) args.push(`[${e.shapes.map((s) => this.witnessCode(s)).join(", ")}]`)     // a builtin's type arguments (`json.parse.[User]`)
         const fn = this.userFuns.get(e.fn)
+        for (const w of fn?.witnesses ?? []) {
+            const given = e.witnessArgs?.find(([s]) => s === w)
+            args.push(this.witnessCode(given ? given[1] : null))
+        }
         const cellParams = fn ? [...(fn.self ? [false] : []), ...fn.params.map((p) => needsCell(p.ty))] : []
         return this.callWithCells(this.fnName(e.fn), args, e.args, cellParams)
     }
@@ -711,6 +735,10 @@ function isBig(t: Ty): boolean {
 }
 
 /** `&mut T` parameters use the cell protocol (see `callWithCells`). */
+function witnessVar(s: Sym): string {
+    return `$w_${s.name}${s.id}`
+}
+
 function needsCell(t: Ty): boolean {
     const p = T.prune(t)
     return p.k === "ref" && p.mut

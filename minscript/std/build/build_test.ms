@@ -33,6 +33,8 @@ fun test_sections() {
     let back = assert_ok(c.section.[Opts]("demo"))
     assert_eq(back.level, 3)
     assert_eq(back.name, "x")
+    // a real `Opts` (the type witness reaches json.from_value through the generic `section[T]`)
+    assert_eq(back.to_str(), "build.Opts { level: 3, name: \"x\" }")
     let _ = assert_err(c.section.[Opts]("nope"))
 }
 

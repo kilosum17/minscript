@@ -873,6 +873,7 @@ impl Reader for File { … }
 impl Plus, Minus for Money { … }
 ```
 
+- **Bounded impl blocks:** `impl[T: Stringer] Vec[T] { fun join(…) }` declares methods only for types whose arguments meet the bounds; each call checks them (`E_BOUND_NOT_SATISFIED`: `[true].sum()`).
 - **Orphan rule:** `impl X for T` must be in the package that owns `X` or owns `T`.
 - Inherent `impl T` must be in `T`'s package, but may be in any file of that package.
 - Duplicate method names across interfaces are `E_AMBIGUOUS_IMPL_METHOD`.
@@ -1080,6 +1081,9 @@ pub fun println(...args: &Stringer) { … }   // args: Slice[&Stringer], no allo
 | `Clone.clone()` | field-wise |
 | `PartialEq.eq()` | field-wise |
 | `Hash.hash()` | field-wise |
+| `Default.default()` | a struct whose every field has a default value (§7.3), is optional, or has a `Default` type: those values, `None` for optional fields |
+
+**Built in:** numbers implement the operator interfaces (`Plus` … `Remainder`, and the `…Assign` forms) and `Default` (0); `string` implements `Plus` (concatenation), `PlusAssign` and `Default` (`""`); `bool` implements `Default` (`false`); `Vec`, `Map`, `Set` and `Option` implement `Default` (empty, `None`).
 
 Generation only happens when the implementation is used, so unused code is never emitted.
 
@@ -1334,7 +1338,7 @@ The ownership pass (`src/ownership.ts`) runs after type checking, one function a
 
 The prelude is written in MinScript: [`std/prelude.ms`](../std/prelude.ms) declares every type, method and interface below. It must itself parse, resolve, type-check and ownership-check cleanly, and its private items (`is_space`) aren't visible to other packages.
 
-- **The core** is the set of functions whose body is `_builtin()` (an intrinsic of type `never`), implemented by each back end: panics, storage and hashing (`Vec.len` / `push` / `pop` / `insert` / `remove` / `truncate` / `swap` / `sort_by` / `iter`, `Map` and `Set` access), `Range`, iterators and their adapters, the string primitives (`len`, `substring`, `find`, `to_lower` / `to_upper`, `to_float`, `bytes`, `chars`), `Option.or` / `Result.or` (§18 #8), `Vec.sum` (it needs `T.default()`), and everything concurrent (`Promise`, `Ref`, `Topic`, `Queue`, `Signal`, …, `Log`).
+- **The core** is the set of functions whose body is `_builtin()` (an intrinsic of type `never`), implemented by each back end: panics, storage and hashing (`Vec.len` / `push` / `pop` / `insert` / `remove` / `truncate` / `swap` / `sort_by` / `iter`, `Map` and `Set` access), `Range`, iterators and their adapters, the string primitives (`len`, `substring`, `find`, `to_lower` / `to_upper`, `to_float`, `bytes`, `chars`), `Option.or` / `Result.or` (§18 #8), and everything concurrent (`Promise`, `Ref`, `Topic`, `Queue`, `Signal`, …, `Log`).
 - **Everything else is MinScript** on top of the core: `Option` and `Result` methods, `assert`, the `Vec` lookups, changes and pipelines, `Map.keys` / `values`, and the string helpers (`trim` removes ASCII spaces, tabs and line breaks; `split`, `lines`, `replace`, `to_int`, …). These are compiled with every program; their tests are MinScript too (`test/prelude/prelude_test.ms`, run by `ms test`).
 - Methods that need something of the items are declared only where the items have it: `impl[T: PartialOrd[T]] Vec[T] { max, min, sort }`, `impl[T: Stringer] Vec[T] { join }`, `impl[T: Plus[T, T] & Default] Vec[T] { sum }`.
 
@@ -1709,6 +1713,11 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 
 - **Names:** items of `main` keep their names (`main`, `User.new`); prelude items are prefixed `std.` (`std.Vec.push`), and items of other packages by the package (`std.json.parse`, `app.models.User.new`).
 - **Programs:** `lowerProgram` (`src/loader.ts`) merges the HIR of every loaded package, dependencies first. A std function whose body is `_builtin()` is marked `builtin`: the back end provides it. A call to a generic builtin carries the *shapes* of its type arguments (`json.parse.[User]`), and struct definitions carry their field shapes and defaults, so the runtime can build values from plain data.
+- **Type witnesses:** generic code is compiled once (no monomorphization), but some generic functions need their type parameter at run time: to call a static of it (`T.default()`, a `wstatic` node), or to give a builtin its shape (`json.parse.[T]`).
+  - Every function lists the generics in scope (its type's or impl's, then its own), and every call records the callee's generics as instantiated there (`witnessArgs`, from the checker's `typeEnv`).
+  - `computeWitnesses` (`src/witness.ts`) runs on the whole program and marks the generics each function needs: those it uses that way, directly or by passing them to a function that needs them (`decode.[Vec[T]]` inside `load[T]`). It is a fixpoint across packages and the prelude.
+  - Only those functions get hidden parameters, after the others: a witness is a type's shape (`{ s: "app.User" }`, `{ vec: … }`, `{ p: "int" }`), built at each call from the caller's types and its own witnesses. Every other generic function is unchanged.
+  - This makes `Vec.sum` (`T.default()`), `Config.section[T]` and generic JSON helpers ordinary MinScript.
 - **Unknown members:** members of packages that aren't loaded (external dependencies) stay symbolic (`extern:acme.http.get`), and so do variants of their types.
 - **Checks:** `.hir` snapshots show the lowering (`test/hir/`). A validator (`src/hir_check.ts`) checks that every valid corpus file lowers to well-formed HIR: every local is bound before use, every label exists, and nothing is unsupported.
 
@@ -1760,8 +1769,8 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 - floats nested in collections print without `.0`;
 - `std.net.ws`: no TLS (`wss://`), no subprotocols or extensions, and the server doesn't enforce frame size limits;
 - `std.net.http`: text bodies only (no bytes, no streaming), no server TLS, and an unanswered request stays open until the client gives up;
-- a static method of a generic parameter (`T.default()`) can't be called (no monomorphization yet: `T` isn't a runtime value), which is why `Vec.sum` is still a builtin;
-- a generic MinScript function that passes its own `T` to a builtin needing the type's shape (`Config.section[T]` calling `json.from_value.[T]`) can't forward the shape (no monomorphization yet): the result has the right fields, but structs inside it aren't tagged, so their methods and `to_str` don't work;
+- type witnesses (§14.1) are passed only by direct calls: a generic function that needs one, called through an interface value, a closure or a method value, panics if it uses the witness;
+- every program carries the whole compiled prelude (about 70 functions): there is no tree shaking yet;
 - `json.parse` of a field whose type is an alias (`Role = "A" | "B"`) doesn't check the value.
 
 ---

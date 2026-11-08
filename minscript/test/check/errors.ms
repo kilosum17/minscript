@@ -218,3 +218,15 @@ fun nullish_fallback_type(o: int?) {
 fun branch_types(c: bool) {
     let v = if c { 1 } else { "one" }           //~ E_TYPE_MISMATCH
 }
+
+type NoDefault = { id: int, owner: Point, order: Ordering }    // a union has no default
+
+fun fresh_of[T: Default]() -> T { T.default() }
+
+fun impl_block_bound(flags: Vec[bool]) {
+    let n = flags.sum()                         //~ E_BOUND_NOT_SATISFIED
+}
+
+fun no_auto_default() {
+    let d = fresh_of.[NoDefault]()              //~ E_BOUND_NOT_SATISFIED
+}

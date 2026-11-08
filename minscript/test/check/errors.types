@@ -70,6 +70,9 @@
 215:9   v: int
 218:18  c: bool
 219:9   v: int
+226:22  flags: Vec[bool]
+227:9   n: bool
+231:9   d: NoDefault
 
 -- diagnostics --
 25:18   E_TYPE_MISMATCH expected `int`, found `string`
@@ -108,3 +111,5 @@
 210:18  E_TYPE_MISMATCH `or` returns its right side from the function, which returns `Result[int, string]`, found `{integer}`
 215:18  E_TYPE_MISMATCH the fallback of `??` should be `int`, found `string`
 219:13  E_TYPE_MISMATCH the branches have different types: `{integer}` and `string`
+227:13  E_BOUND_NOT_SATISFIED `bool` doesn't implement `Plus[bool, bool]`
+231:13  E_BOUND_NOT_SATISFIED `NoDefault` doesn't implement `Default`

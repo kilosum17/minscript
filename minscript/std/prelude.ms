@@ -307,9 +307,13 @@ impl[T: Stringer] Vec[T] {
 }
 
 impl[T: Plus[T, T] & Default] Vec[T] {
-    // builtin: it starts from `T.default()`, and the JS back end can't call a static of a generic
-    // parameter yet (no monomorphization, spec §14.2)
-    pub fun sum(&this) -> T { _builtin() }
+    pub fun sum(&this) -> T {
+        var total = T.default()             // through T's type witness (spec §14.1)
+        for x in this {
+            total = total + x
+        }
+        total
+    }
 }
 
 pub type Array[T, N] = {

@@ -608,7 +608,6 @@ const stdTable: Record<string, Any> = {
     "Vec.remove": (v: Any[], i: number) => { at(v, i); return v.splice(i, 1)[0] },
     "Vec.sort_by": (v: Any[], f: Function) => { v.sort((a, b) => fromOrdering(f(a, b))) },
     "Vec.iter": (v: Any[]) => new Iter(v), "Vec.iter_mut": (v: Any[]) => new Iter(v),
-    "Vec.sum": (v: Any[]) => v.reduce((a, x) => a + x, typeof v[0] === "bigint" ? 0n : 0),
     "Array.len": (v: Any[]) => v.length, "Array.iter": (v: Any[]) => new Iter(v),
     "Slice.len": (v: Any[]) => v.length,
     "Slice.iter": (v: Any[]) => new Iter(v),
@@ -1061,7 +1060,7 @@ Object.assign(stdTable, {
 // ---- JSON ↔ values ------------------------------------------------------------------------------
 
 /** The structure of a type (src/hir.ts `Shape`), so plain JSON data can become MinScript values. */
-type Shape = { s: string } | { vec: Shape | null } | { opt: Shape | null } | { map: Shape | null } | { f: true } | { i64: true }
+type Shape = { s: string } | { vec: Shape | null } | { opt: Shape | null } | { map: Shape | null } | { f: true } | { i64: true } | { p: string }
 
 class JsonShapeError extends Error {}
 
@@ -1083,6 +1082,11 @@ function fromJson(v: Any, shape: Shape | null, at: string): Any {
     if (shape !== null && "opt" in shape) return v === null || v === undefined ? None : Some(fromJson(v, shape.opt, at))
     if (v === undefined) throw new JsonShapeError(`missing field${where}`)
     if (shape === null) return v
+    if ("p" in shape) {
+        const want = shape.p === "bool" ? "boolean" : shape.p === "string" || shape.p === "str" || shape.p === "char" ? "string" : "number"
+        if (typeof v !== want) throw new JsonShapeError(`expected a ${shape.p}${where}`)
+        return v
+    }
     if ("f" in shape) { if (typeof v !== "number") throw new JsonShapeError(`expected a number${where}`); return v }
     if ("i64" in shape) { if (typeof v !== "number") throw new JsonShapeError(`expected a number${where}`); return BigInt(Math.trunc(v)) }
     if ("vec" in shape) {
@@ -1129,6 +1133,44 @@ export function toJson(v: Any): Any {
     const out: Any = {}
     for (const k of Object.keys(v)) if (k !== "$t") out[k] = toJson(v[k])
     return out
+}
+
+// ---- type witnesses (spec §14.1) -----------------------------------------------------------------
+
+/** `T.method(args)` for a generic parameter `T`, through the witness its caller passed. */
+export function wstatic(w: Shape | null | undefined, method: string, args: Any[]): Any {
+    if (w === null || w === undefined) {
+        panic(`\`${method}\` of a generic type parameter: the type isn't known here (the function was called through an interface or a closure, which can't pass it yet)`)
+    }
+    if ("s" in w) {
+        const own = types.get(w.s)?.methods[method]
+        if (own) return own(...args)
+        const key = `${w.s.slice(4)}.${method}`
+        if (w.s.startsWith("std.") && key in stdTable) return stdTable[key](...args)
+    }
+    if (method === "default") return defaultOf(w)
+    panic(`no static \`${method}\` on ${describeShape(w)}`)
+}
+
+/** The default value of a type: zero, "", false, empty collections, None; a struct of its fields'
+ *  defaults (a field's own default first). */
+export function defaultOf(w: Shape | null): Any {
+    if (w === null) panic("the default of a type that isn't known at run time")
+    if ("p" in w) return w.p === "bool" ? false : w.p === "string" || w.p === "str" ? "" : w.p === "char" ? "\0" : w.p === "void" ? undefined : 0
+    if ("f" in w) return 0
+    if ("i64" in w) return 0n
+    if ("vec" in w) return []
+    if ("opt" in w) return None
+    if ("map" in w) return new MsMap()
+    const info = types.get(w.s)
+    if (info?.kind !== "struct") panic(`\`${w.s}\` has no default (it isn't a struct, and implements no \`default\`)`)
+    const out: Any = { $t: w.s }
+    for (const f of info.fields as string[]) out[f] = info.defaults[f] ? info.defaults[f]() : defaultOf(info.shapes[f] ?? null)
+    return out
+}
+
+function describeShape(w: Shape): string {
+    return "s" in w ? w.s : "p" in w ? w.p : "f" in w ? "a float" : "i64" in w ? "i64" : "vec" in w ? "Vec" : "opt" in w ? "Option" : "Map"
 }
 
 // ---- external packages (opaque: `extern:acme.http.get`) ------------------------------------------

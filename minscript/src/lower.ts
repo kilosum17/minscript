@@ -260,12 +260,14 @@ class Lowerer {
         if (sym.kind === "type" || sym.kind === "union") return { s: this.typeName(sym) }
         if (sym.kind === "builtin-type" && (sym.name === "f32" || sym.name === "f64")) return { f: true }
         if (sym.kind === "builtin-type" && (sym.name === "i64" || sym.name === "u64")) return { i64: true }
+        if (sym.kind === "builtin-type") return { p: sym.name }
         return null
     }
 
     private tyShape(t: Ty): H.Shape | null {
         const s = T.strip(t)
-        if (s.k === "prim") return T.isFloat(s) ? { f: true } : s.name === "i64" || s.name === "u64" ? { i64: true } : null
+        if (s.k === "param") return { param: s.sym }
+        if (s.k === "prim") return T.isFloat(s) ? { f: true } : s.name === "i64" || s.name === "u64" ? { i64: true } : { p: s.name }
         if (s.k !== "named") return null
         const arg = (i: number) => (s.args[i] ? this.tyShape(s.args[i]!) : null)
         if (s.sym.std && (s.sym.name === "Vec" || s.sym.name === "Slice" || s.sym.name === "Array")) return { vec: arg(0) }
@@ -292,7 +294,7 @@ class Lowerer {
                 const ifaces = sym ? interfaces.get(sym) ?? [] : []
                 if (item.body.kind === "StructBody") {
                     p.types.push({ kind: "struct", name: sym ? this.typeName(sym) : item.name, fields: this.fieldDefs(item.body.fields, true), interfaces: ifaces })
-                    for (const m of item.body.methods) p.funs.push(this.lowerFun(m))
+                    for (const m of item.body.methods) p.funs.push(this.lowerFun(m, item.generics))
                 }
                 return
             }
@@ -306,15 +308,15 @@ class Lowerer {
                         fields: v.fields ? this.fieldDefs(v.fields) : (v.tuple ?? []).map((t, i) => ({ name: `${i}`, optional: false, ...(isFloatType(t) ? { float: true } : {}) })),
                     })),
                 })
-                for (const m of item.methods) p.funs.push(this.lowerFun(m))
+                for (const m of item.methods) p.funs.push(this.lowerFun(m, item.generics))
                 return
             }
             case "InterDecl":
                 p.types.push({ kind: "inter", name: item.name, methods: (item.methods ?? []).map((m) => m.name) })
-                for (const m of item.methods ?? []) if (m.body !== null) p.funs.push(this.lowerFun(m))
+                for (const m of item.methods ?? []) if (m.body !== null) p.funs.push(this.lowerFun(m, item.generics))
                 return
             case "ImplDecl":
-                for (const m of item.methods) p.funs.push(this.lowerFun(m))
+                for (const m of item.methods) p.funs.push(this.lowerFun(m, item.generics))
                 return
         }
     }
@@ -328,14 +330,18 @@ class Lowerer {
         return this.thisSyms.find((t) => t.span.start >= body.span.start && t.span.end <= body.span.end)?.sym
     }
 
-    private lowerFun(f: A.FunDecl): H.Fun {
+    private lowerFun(f: A.FunDecl, outer: A.GenericParam[] = []): H.Fun {
+        const generics = [...outer, ...f.generics].map((g) => this.decls.get(g)).filter((s): s is Sym => s !== undefined)
         const params = f.params.map((p) => this.localOf(this.decls.get(p)!))
         const thisSym = f.body ? this.thisSymIn(f.body) : undefined
         const self = f.receiver === null ? null : thisSym ? this.localOf(thisSym) : this.temp("this", T.UNKNOWN)
         const ret = this.retTy(f)
         this.ctx = { ret, retNode: f.ret }
         const body = f.body ? this.body(f.body, ret) : null
-        return { name: this.funName(f), params, self, ret, async: f.async, body, extern: null, span: f.span, ...(isBuiltinBody(f) ? { builtin: true } : {}) }
+        return {
+            name: this.funName(f), params, self, ret, async: f.async, body, extern: null, span: f.span,
+            ...(isBuiltinBody(f) ? { builtin: true } : {}), ...(generics.length > 0 ? { generics } : {}),
+        }
     }
 
     /** A function or closure body: the tail value is coerced to the result type. */
@@ -929,11 +935,27 @@ class Lowerer {
     // ---- calls --------------------------------------------------------------------------------
 
     private call(e: Extract<A.Expr, { kind: "Call" }>, ty: Ty): H.Expr {
+        const out = this.callInner(e, ty)
+        // the callee's generics as instantiated here: type witnesses, if the callee needs them
+        const env = this.calls.get(e)?.typeEnv
+        if (out.k === "call" && env && env.length > 0) out.witnessArgs = env.map(([s, t]) => [s, this.tyShape(t)])
+        return out
+    }
+
+    private callInner(e: Extract<A.Expr, { kind: "Call" }>, ty: Ty): H.Expr {
         const span = e.span
         const info = this.calls.get(e)
         const callee = e.callee.kind === "GenericApply" ? e.callee.target : e.callee
         const target: CallTarget = info?.target ?? { kind: "unknown" }
         const args = (decl: A.FunDecl | null) => this.args(e, info, decl)
+
+        // `T.default()`: a static of a generic parameter, called through T's witness
+        if (callee.kind === "Member" && callee.object.kind === "Ident") {
+            const owner = this.refs.get(callee.object)
+            if (owner?.kind === "generic") {
+                return { k: "wstatic", ty, span, witness: { param: owner }, method: String(callee.name), args: args(target.kind === "method" || target.kind === "static" || target.kind === "fun" ? target.decl : null) }
+            }
+        }
 
         // calls through `?.`: `x?.f()` → match x { Some(o) => Some(o.f()), None => None }
         if (callee.kind === "OptMember" && (target.kind === "method" || target.kind === "unknown")) {

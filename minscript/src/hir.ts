@@ -26,7 +26,13 @@ export type Program = {
 export type FieldDef = { name: string, optional: boolean, float?: boolean, shape?: Shape, default?: Expr }
 
 /** The structure of a type, for builtins that build values from plain data (`json.parse.[User]`). */
-export type Shape = { s: string } | { vec: Shape | null } | { opt: Shape | null } | { map: Shape | null } | { f: true } | { i64: true }
+/** The structure of a type, for builtins that build values from plain data (`json.parse.[User]`), and
+ *  as a *type witness* (spec §14.1): a function that needs a generic parameter at run time gets its
+ *  shape as a hidden argument. `p` is a primitive; `param` (HIR only) is a generic parameter of the
+ *  enclosing function, i.e. its own witness. */
+export type Shape =
+    | { s: string } | { vec: Shape | null } | { opt: Shape | null } | { map: Shape | null } | { f: true } | { i64: true }
+    | { p: string } | { param: Sym }
 
 export type TypeDef =
     | { kind: "struct", name: string, fields: FieldDef[], interfaces: string[] }
@@ -44,6 +50,8 @@ export type Fun = {
     body: Block | null            // null: extern
     extern: string | null         // the ABI of an extern function
     builtin?: boolean             // a std function whose body is `_builtin()`: provided by the back end's runtime
+    generics?: Sym[]              // every generic parameter in scope: the type's or impl's, then its own
+    witnesses?: Sym[]             // the generics it needs at run time (hidden parameters, after the others); set by `computeWitnesses`
     span: Span
 }
 
@@ -65,7 +73,8 @@ export type Expr =
     | E<"local", { sym: Sym }>
     | E<"global", { name: string }>
     | E<"fn", { name: string }>                                          // a function (or variant constructor) as a value
-    | E<"call", { fn: string, args: Expr[], shapes?: (Shape | null)[] }>   // shapes: a builtin's type arguments                          // a resolved function; methods take the receiver first
+    | E<"call", { fn: string, args: Expr[], shapes?: (Shape | null)[], witnessArgs?: [Sym, Shape | null][] }>   // shapes: a builtin's type arguments; witnessArgs: the callee's generics as instantiated here
+    | E<"wstatic", { witness: Shape | null, method: string, args: Expr[] }>   // `T.default()`: a static of a generic parameter, through its witness                          // a resolved function; methods take the receiver first
     | E<"dyncall", { recv: Expr, method: string, args: Expr[] }>       // dispatch on the receiver: interfaces, bounds, auto methods, unknown types
     | E<"callvalue", { callee: Expr, args: Expr[] }>                   // calling a closure or function value
     | E<"extern", { path: string, args: Expr[] | null, typeArgs?: string[] }>   // a member of a std package without signatures yet (`json.parse`); `.[T]` names
