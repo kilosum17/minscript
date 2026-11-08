@@ -65,6 +65,7 @@ Pipeline:
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
 | Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
 | Lexer (implemented) | — | — | template tokens for `${…}`; `"…"` interpolations stay on one line; lexer balances delimiters (§1.1, §1.5) |
+| Ownership pass (implemented, first version) | — | — | moves, mutability, scoped values, escaping closures, borrows across spawn (§9.13) |
 | Type checker (implemented, first version) | — | — | bidirectional inference; prelude written in MinScript (`std/prelude.ms`); `unknown` for std packages without signatures (§9.12) |
 | Name resolution (implemented) | — | — | redeclaration only in inner scopes; uppercase names and members deferred to the type checker (§8.7) |
 | Parser (implemented) | — | — | struct literals need a PascalCase name; `break x` is a label only if declared; one diagnostic per mistake (§4.2, §5.3, §5.4, §11) |
@@ -1259,7 +1260,52 @@ Generic calls get fresh inference variables, bound by unification with the argum
 - The same applies to names from glob imports.
 - When std packages get real signatures (written in MinScript, like the prelude), these checks tighten automatically.
 
-**Borrows** (`&T`, `&mut T`) are part of types but don't affect compatibility here: call sites never write `&` (§9.2). Whether each borrow is *valid* is checked by the ownership pass (§9.3), which comes next.
+**Borrows** (`&T`, `&mut T`) are part of types but don't affect compatibility here: call sites never write `&` (§9.2). Whether each borrow is *valid* is checked by the ownership pass (§9.13).
+
+### 9.13 Ownership checking [D]
+
+The ownership pass (`src/ownership.ts`) runs after type checking, one function at a time. It walks the statements in evaluation order with the set of moved bindings:
+- branches are analysed separately and merged, so a move on some paths makes the binding *maybe moved*;
+- a loop body is analysed twice, so a move in one iteration is a use in the next;
+- `return`, `break`, `continue` and `never` calls end a path.
+
+**Moves** (§9.1):
+- **What consumes a value:** a `let` / `:=`, an assignment, an owned parameter `x: T`, a field or element of a literal, the function's result, a `this` / `mut this` method call, a by-value capture `#[x]`, `await` of a stored Promise, and the operand of `?`, `or` and `??`.
+- **What never moves:**
+  - Copy types: primitives, `string` (an immutable shared value), shared borrows, tuples and records of Copy, `Option` / `Result` of Copy, and types declared `Copy`.
+  - Handles (`Ref`, `Weak`, `Topic`, `Queue`, `Signal`), which are cloned instead.
+- A moved binding can't be used until it is assigned again (`E_USE_AFTER_MOVE`).
+- **Moving out of a borrow** is `E_MOVE_OUT_OF_BORROW`. That covers a `&T` parameter, `this` in a `&this` method, an implicit capture, and **the item of `for x in items`, which borrows each element** (`iter()` yields `&T`, §10.2). It also covers passing a `&T` where an owned `T` is needed. Use `.clone()`.
+- Partial moves (moving one field out of a local struct) are not tracked yet.
+
+**Mutability:**
+- Assigning to a binding that isn't `var`, `:==` or a `mut` parameter is `E_ASSIGN_IMMUTABLE`. Writing through `&mut` is fine; writing through `&`, `&this`, or an implicit capture is not.
+- A `&mut T` argument, a `&mut this` method, `&mut x` and `#[&mut x]` need a mutable binding (`E_MUT_BORROW_IMMUTABLE`). Temporaries are fine: `[1].push(2)`.
+
+**Scoped values** (§9.3):
+- **Owners:** a binding whose type holds a borrow (`&T`, `&str`, `Slice[T]`, `Vec[&str]`, `Iterator[&T]`, or a closure holding borrows) records its **owners**, by the shape of its initializer:
+  - places it reads (`x`, `x.f`, `x[i]` → `x`);
+  - receivers of `&this` / `&mut this` methods;
+  - arguments passed by reference;
+  - borrowed captures of closures.
+
+  Arithmetic, templates and owned arguments produce owned values.
+- **Conflicts:**
+  - From its declaration to its last use, it is live. If a use is inside a loop that the declaration is outside of, it is live until the end of that loop.
+  - Changing an owner while it is live (assigning to it, `&mut`-borrowing it, moving it) is `E_BORROW_CONFLICT`.
+  - An owner borrowed *mutably* (`#[&mut x]`, `&mut this` methods) may not be used at all while live.
+- **Returning borrows:** a function returning a borrow may only return borrows of its `&T` parameters or its `&this` receiver (`E_RETURN_LOCAL_BORROW`).
+- **Fields:** field declarations (struct, union variant, record alias) can't hold borrows (`E_BORROW_IN_FIELD`).
+- **Escaping closures** (§9.4):
+  - **What a closure borrows:** implicit captures are shared borrows, and `#[&mut x]` captures are mutable borrows. Handles are the exception: they are cloned into the closure.
+  - **Where it may not go:** a closure holding borrows can't be returned, stored in a field or literal, or passed to an owned `(T) -> U` parameter (`E_CLOSURE_ESCAPES_BORROW`).
+- **Async calls** (§9.6): an async call whose receiver or a by-reference argument is a borrowed place (not a handle, not Copy) must be awaited in the same expression (`E_BORROW_ACROSS_SPAWN`). `select` arms count as awaited.
+
+**Not yet checked:**
+- borrows inside a single expression (`v.push(v.len())` is accepted);
+- poisoning after `recover` (§9.8);
+- partial moves;
+- borrows that flow through function calls in more detail than "the result borrows from every by-reference argument".
 
 ---
 
@@ -1401,6 +1447,12 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_NOT_INDEXABLE` | `x[i]` on a type that can't be indexed (strings: use `.chars()` / `.substring()`) |
 | `E_NOT_ITERABLE` | `for … in` over a value that can't be iterated |
 | `E_NON_EXHAUSTIVE_MATCH` | a `match` that doesn't cover every case |
+| `E_USE_AFTER_MOVE` | a binding used after its value was moved (or on a path where it may have been) |
+| `E_MOVE_OUT_OF_BORROW` | moving a value that is only borrowed (`&T` parameter, `&this`, loop item, capture): `.clone()` it |
+| `E_ASSIGN_IMMUTABLE` | assigning to a binding that isn't `var` / `:==` / `mut`, or through a shared borrow |
+| `E_MUT_BORROW_IMMUTABLE` | `&mut` borrow (argument, `&mut this` method, `#[&mut x]`) of a binding that isn't mutable |
+| `E_BORROW_CONFLICT` | an owner changed (or, if mutably borrowed, used) while a value borrowed from it is still live |
+| `E_RETURN_LOCAL_BORROW` | returning a borrow of a local or of an owned parameter |
 | `E_INVALID_CAST` | `as T` that is neither a valid type annotation nor a numeric/pointer cast |
 | `E_SELECT_ARM_NOT_PROMISE` | `select` arm expression is not a `Promise[T]` |
 | `E_AWAIT_OUTSIDE_ASYNC` | `await` / `for await` / `select` outside an `async fun` or `main` |
@@ -1810,7 +1862,8 @@ section[T](name: string) -> Result[T, json.Error]
 | 6 | **Implicit `Some`:** may a `T` be used where `T?` is expected (`fun f() -> int? { 5 }`), as TypeScript allows? | no: write `Some(5)`; `nil` / `None` for absence |
 | 7 | **Error conversion with `?`:** when the function's error type differs, should `?` convert through an interface (like Rust's `From`)? | no: the error types must match (`.map_err(#{…})` converts) |
 | 8 | **`Option.or` / `Result.or`** take "a value or `#{…}`" (§10.1). The prelude types the fallback loosely (`or[F](fallback: F)`); should there be two methods (`or(v)` / `or_else(#{…})`) so both are checked? | loose for now |
-| 5 | Mutability of bindings: should assigning to a `let` binding (`let x = 1; x = 2`) be a resolver error? `y = 0` where `y: &mut i32` writes through the borrow, so the check needs types | left to the type checker |
+| 9 | **`Option` / `Result` of Copy are Copy** (like Rust's `Option<i32>`), so `opt.unwrap()` doesn't consume an `int?`. Keep? | yes |
+| 10 | **Implicit captures of Copy values** (`#{ it + n }` with `n: int`) are borrows (§9.4), so returning such a closure needs `#[n]`. Should Copy values be captured by copy implicitly instead, so only non-Copy captures need listing? | no: borrows, as §9.4 says (the fix-it adds `#[n]`) |
 
 **Resolved in this revision** (formerly open questions):
 - **Handles clone implicitly**: `Ref`, `Topic`, `Queue`, `Signal` and std handles have no `.clone()` at call sites (§9.1). `Subscription` is renamed `Sub[T]`.
@@ -1833,3 +1886,4 @@ section[T](name: string) -> Result[T, json.Error]
 - Default method bodies are allowed in `inter`.
 - `Config` replaces `Project`.
 - Operator interfaces are `Plus` / `Minus` / `Times` / `Divide` / `Remainder` (and `…Assign`), so `Sub[T]` stays the subscription type.
+- Assigning to a `let` binding is an error, checked by the ownership pass (`E_ASSIGN_IMMUTABLE`, §9.13).

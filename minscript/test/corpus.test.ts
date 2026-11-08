@@ -1,12 +1,13 @@
-// Runs the lexer, parser, resolver and type checker over the `.ms` corpus (see test/README.md):
+// Runs the lexer, parser, resolver, type checker and ownership pass over the `.ms` corpus (see test/README.md):
 // - test/lexer/*.ms:   zero diagnostics, and the token dump must match the `.tokens` snapshot;
 // - test/parser/*.ms:  zero diagnostics, and the AST dump must match the `.ast` snapshot;
-// - test/programs:     zero diagnostics from the lexer, parser, resolver and type checker;
+// - test/programs:     zero diagnostics from every pass;
 // - test/errors:       the diagnostics must match the `//~` annotations exactly (code and line);
 // - test/resolve/*.ms: parse cleanly, resolver diagnostics match the annotations, and the
 //                      resolution dump matches the `.refs` snapshot;
 // - test/check/*.ms:   parse and resolve cleanly, checker diagnostics match the annotations, and
-//                      the inferred types match the `.types` snapshot.
+//                      the inferred types match the `.types` snapshot;
+// - test/ownership:    type-check cleanly, and ownership diagnostics match the annotations.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -22,6 +23,7 @@ import { lex } from "../src/lexer.ts"
 import { parse } from "../src/parser.ts"
 import { checkPackage } from "../src/check.ts"
 import { dumpTypes } from "../src/check_dump.ts"
+import { checkOwnership } from "../src/ownership.ts"
 import { loadPrelude } from "../src/prelude.ts"
 import { resolvePackage } from "../src/resolve.ts"
 import { dumpResolution } from "../src/resolve_dump.ts"
@@ -94,7 +96,25 @@ describe("programs parse, resolve and type-check cleanly (test/programs)", () =>
             const parsed = parse(src)
             const res = resolvePackage([parsed.file])
             assert.deepEqual(fmt(res.diagnostics), [])
-            assert.deepEqual(fmt(checkPackage([parsed.file], res).diagnostics), [])
+            const checked = checkPackage([parsed.file], res)
+            assert.deepEqual(fmt(checked.diagnostics), [])
+            assert.deepEqual(fmt(checkOwnership([parsed.file], res, checked).diagnostics), [])
+        })
+    }
+})
+
+describe("ownership (test/ownership)", () => {
+    for (const file of msFiles(join(root, "ownership"))) {
+        test(rel(file), () => {
+            const text = readFileSync(file, "utf8")
+            const parsed = parse(text)
+            assert.deepEqual(fmt(parsed.diagnostics), [], "must parse cleanly")
+            const res = resolvePackage([parsed.file])
+            assert.deepEqual(fmt(res.diagnostics), [], "must resolve cleanly")
+            const checked = checkPackage([parsed.file], res)
+            assert.deepEqual(fmt(checked.diagnostics), [], "must type-check cleanly")
+            const owned = checkOwnership([parsed.file], res, checked)
+            assert.deepEqual(owned.diagnostics.map((d) => `${d.span.line} ${d.code}`).sort(), annotations(text).sort())
         })
     }
 })

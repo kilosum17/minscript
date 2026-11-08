@@ -20,7 +20,18 @@ export type CheckResult = {
     types: Map<A.Node, Ty>
     /** The type of every local, parameter and global that was checked. */
     symbols: Map<Sym, Ty>
+    /** For each call with a known signature: what each argument is passed as (used by the ownership pass). */
+    calls: Map<A.Node, CallInfo>
     diagnostics: Diagnostic[]
+}
+
+export type CallInfo = {
+    /** The parameter type each argument is passed to (variadic: the element type); `&T` / `&mut T` borrow. */
+    args: Ty[]
+    /** For a method called on a value: how it takes `this`. */
+    receiver: A.Receiver | null
+    /** The callee is an `async fun`: the call starts a task and returns a Promise. */
+    async: boolean
 }
 
 export function checkPackage(files: A.File[], res: Resolution, prelude: Prelude = loadPrelude()): CheckResult {
@@ -55,7 +66,7 @@ type MethodEntry = {
 type Param = { name: string, ty: Ty, variadic: boolean }
 
 /** A function signature with its own generics instantiated. */
-type Callable = { params: Param[], ret: Ty, async: boolean, bounds: { v: Ty, bounds: Ty[], span: Span | null }[] }
+type Callable = { params: Param[], ret: Ty, async: boolean, bounds: { v: Ty, bounds: Ty[], span: Span | null }[], receiver?: A.Receiver | null }
 
 type FnCtx = {
     ret: Ty                     // declared result (for async functions: the value inside the Promise)
@@ -82,6 +93,7 @@ class Checker {
     private readonly types = new Map<A.Node, Ty>()
     private readonly diagnostics: Diagnostic[] = []
     private readonly symTypes = new Map<Sym, Ty>()
+    private readonly calls = new Map<A.Node, CallInfo>()
     private readonly infos = new Map<Sym, TypeInfo>()
     private readonly implsByTarget = new Map<Sym, A.ImplDecl[]>()
     private readonly primMethods = new Map<string, MethodEntry[]>()
@@ -113,7 +125,7 @@ class Checker {
 
     run(): CheckResult {
         for (const file of this.files) for (const item of file.items) this.checkItem(item)
-        return { types: this.types, symbols: this.symTypes, diagnostics: this.diagnostics }
+        return { types: this.types, symbols: this.symTypes, calls: this.calls, diagnostics: this.diagnostics }
     }
 
     // ---- diagnostics and inference variables --------------------------------------------------
@@ -503,7 +515,7 @@ class Checker {
             let ret = f.ret ? T.subst(this.toTy(f.ret), full) : T.VOID
             if (f.async) ret = this.named("Promise", [ret])
             const bounds = own.map((g) => ({ v: full.get(g)!, bounds: this.boundsOf(g).map((b) => T.subst(b, full)), span: at?.span ?? null }))
-            return { params, ret, async: f.async, bounds }
+            return { params, ret, async: f.async, bounds, receiver: f.receiver }
         } finally {
             if (selfTy !== null) this.selfStack.pop()
         }
@@ -562,7 +574,7 @@ class Checker {
 
     /** Auto-generated methods every type has (spec §9.7). */
     private autoMethod(t: Ty, name: string): Callable | null {
-        const sig = (params: Ty[], ret: Ty): Callable => ({ params: params.map((ty, i) => ({ name: `p${i}`, ty, variadic: false })), ret, async: false, bounds: [] })
+        const sig = (params: Ty[], ret: Ty): Callable => ({ params: params.map((ty, i) => ({ name: `p${i}`, ty, variadic: false })), ret, async: false, bounds: [], receiver: "&this" })
         switch (name) {
             case "to_str": return sig([], T.STRING)
             case "clone": return sig([], t)
@@ -1398,7 +1410,7 @@ class Checker {
     }
 
     /** Resolves what is being called: a function, method, constructor or closure. */
-    private callee(e: Extract<A.Expr, { kind: "Call" }>, exp?: Ty): { c: Callable | null, ty: Ty, viaOpt: boolean } {
+    private callee(e: Extract<A.Expr, { kind: "Call" }>, exp?: Ty): { c: Callable | null, ty: Ty, viaOpt: boolean, onValue?: boolean } {
         let callee = e.callee
         let explicit: Ty[] | null = null
         if (callee.kind === "GenericApply") {
@@ -1432,7 +1444,7 @@ class Checker {
             const st = T.strip(recv)
             if (st.k === "unknown" || st.k === "var" || st.k === "package" || st.k === "never") return { c: null, ty: T.UNKNOWN, viaOpt }
             const m = this.findMethod(st, callee.name, explicit, callee)
-            if (m !== null) return { c: m, ty: this.fnType(m), viaOpt }
+            if (m !== null) return { c: m, ty: this.fnType(m), viaOpt, onValue: true }
             // a field holding a function
             const ft = this.memberOf(callee, st, callee.name)
             return { c: null, ty: ft, viaOpt }
@@ -1486,7 +1498,7 @@ class Checker {
     }
 
     private checkCall(e: Extract<A.Expr, { kind: "Call" }>, exp?: Ty): Ty {
-        const { c, ty, viaOpt } = this.callee(e, exp)
+        const { c, ty, viaOpt, onValue } = this.callee(e, exp)
         let callable = c
         if (callable === null) {
             const s = T.strip(ty)
@@ -1502,6 +1514,7 @@ class Checker {
         }
         if (exp !== undefined) this.tryAssign(callable.ret, exp)    // let the expected result guide inference
         this.applyArgs(e, callable)
+        this.calls.set(e, { args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async })
         for (const b of callable.bounds) {
             for (const bound of b.bounds) {
                 const v = T.prune(b.v)
@@ -1511,6 +1524,20 @@ class Checker {
             }
         }
         return viaOpt ? (this.isOption(callable.ret) ? callable.ret : this.option(callable.ret)) : callable.ret
+    }
+
+    /** The parameter type each argument binds to (spread arguments: the variadic parameter itself). */
+    private argParams(e: Extract<A.Expr, { kind: "Call" }>, c: Callable): Ty[] {
+        const params = c.params
+        const variadic = params.length > 0 && params[params.length - 1]!.variadic
+        const fixed = variadic ? params.length - 1 : params.length
+        return e.args.map((a, i) => {
+            const p = i < fixed ? params[i] : variadic ? params[params.length - 1] : undefined
+            if (p === undefined) return T.UNKNOWN
+            if (!p.variadic || a.kind === "Spread") return p.ty
+            const s = T.strip(p.ty)
+            return s.k === "named" ? s.args[0] ?? T.UNKNOWN : T.UNKNOWN
+        })
     }
 
     private applyArgs(e: Extract<A.Expr, { kind: "Call" }>, c: Callable): void {

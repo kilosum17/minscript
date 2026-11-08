@@ -52,7 +52,7 @@ pub type Range[T] = {
     pub fun contains(&this, v: &T) -> bool { _builtin() }
     pub fun len(&this) -> int { _builtin() }
     pub fun rev(&this) -> Iterator[T] { _builtin() }
-    pub fun iter(&this) -> Iterator[T] { _builtin() }
+    pub fun iter(&this) -> Iterator[&T] { _builtin() }
 }
 
 pub type Vec[T] = {
@@ -78,8 +78,8 @@ pub type Vec[T] = {
     pub fun sort_by(&mut this, f: &(&T, &T) -> Ordering) { _builtin() }
     pub fun reverse(&mut this) { _builtin() }
 
-    pub fun iter(&this) -> Iterator[T] { _builtin() }
-    pub fun iter_mut(&mut this) -> Iterator[T] { _builtin() }
+    pub fun iter(&this) -> Iterator[&T] { _builtin() }
+    pub fun iter_mut(&mut this) -> Iterator[&mut T] { _builtin() }
     // pipeline callbacks receive (item, index); a callback may take fewer parameters (spec §4.4)
     pub fun map[U](&this, f: &(T, int) -> U) -> Vec[U] { _builtin() }
     pub fun filter(&this, f: &(T, int) -> bool) -> Vec[T] { _builtin() }
@@ -102,7 +102,7 @@ pub type Vec[T] = {
 pub type Array[T, N] = {
     pub fun len(&this) -> int { _builtin() }
     pub fun get(&this, i: int) -> T? { _builtin() }
-    pub fun iter(&this) -> Iterator[T] { _builtin() }
+    pub fun iter(&this) -> Iterator[&T] { _builtin() }
     pub fun to_vec(&this) -> Vec[T] { _builtin() }
 }
 
@@ -110,7 +110,7 @@ pub type Slice[T] = {
     pub fun len(&this) -> int { _builtin() }
     pub fun is_empty(&this) -> bool { _builtin() }
     pub fun get(&this, i: int) -> T? { _builtin() }
-    pub fun iter(&this) -> Iterator[T] { _builtin() }
+    pub fun iter(&this) -> Iterator[&T] { _builtin() }
     pub fun to_vec(&this) -> Vec[T] { _builtin() }
 }
 
@@ -125,7 +125,7 @@ pub type Map[K, V] = {
     pub fun clear(&mut this) { _builtin() }
     pub fun keys(&this) -> Vec[K] { _builtin() }
     pub fun values(&this) -> Vec[V] { _builtin() }
-    pub fun iter(&this) -> Iterator[t(K, V)] { _builtin() }
+    pub fun iter(&this) -> Iterator[t(&K, &V)] { _builtin() }
 }
 
 pub type Set[T] = {
@@ -135,7 +135,7 @@ pub type Set[T] = {
     pub fun has(&this, v: &T) -> bool { _builtin() }
     pub fun insert(&mut this, v: T) -> bool { _builtin() }
     pub fun remove(&mut this, v: &T) -> bool { _builtin() }
-    pub fun iter(&this) -> Iterator[T] { _builtin() }
+    pub fun iter(&this) -> Iterator[&T] { _builtin() }
 }
 
 // ---- strings (implemented once on &str, spec §10.3) -------------------------------------------
@@ -307,7 +307,7 @@ pub inter Iterator[T] = {
 }
 pub inter AsyncIterator[T] = { async fun next(&mut this) -> T? }
 pub inter Iterable[T] = {
-    fun iter(&this) -> Iterator[T]
-    fun iter_mut(&mut this) -> Iterator[T]
+    fun iter(&this) -> Iterator[&T]
+    fun iter_mut(&mut this) -> Iterator[&mut T]
     fun into_iter(this) -> Iterator[T]
 }
