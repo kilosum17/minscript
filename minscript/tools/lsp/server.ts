@@ -14,6 +14,7 @@ import lsp from "vscode-languageserver/node.js"
 import { TextDocument } from "vscode-languageserver-textdocument"
 import { defaultMainDir, findProjectRoot, MOD_FILE, openProject } from "../../src/project.ts"
 import { analyze, definition, documentSymbols, hover, packageName, references, type Analysis, type Doc, type ProjectInfo } from "./analysis.ts"
+import { completion, inlayHints, prepareRename, rename, signatureHelp } from "./features.ts"
 
 const connection = lsp.createConnection(lsp.ProposedFeatures.all)
 const documents = new lsp.TextDocuments(TextDocument)
@@ -112,6 +113,10 @@ connection.onInitialize(() => ({
         definitionProvider: true,
         referencesProvider: true,
         documentSymbolProvider: true,
+        completionProvider: { triggerCharacters: [".", "\""] },
+        signatureHelpProvider: { triggerCharacters: ["(", ","], retriggerCharacters: [","] },
+        inlayHintProvider: true,
+        renameProvider: { prepareProvider: true },
     },
     serverInfo: { name: "minscript", version: "0.1.0" },
 }))
@@ -143,6 +148,38 @@ connection.onDocumentSymbol((p) => {
     const an = current(p.textDocument.uri)
     return an ? documentSymbols(an, p.textDocument.uri) : []
 })
+
+// completion and signature help analyse the text as typed (with a placeholder at the cursor), so
+// they don't wait for the debounced analysis
+connection.onCompletion((p) => {
+    if (!documents.get(p.textDocument.uri)) return []
+    try { return completion(openDocs(), p.textDocument.uri, p.position, projectFor(p.textDocument.uri)) } catch (e) { logError("completion", e); return [] }
+})
+connection.onSignatureHelp((p) => {
+    if (!documents.get(p.textDocument.uri)) return null
+    try { return signatureHelp(openDocs(), p.textDocument.uri, p.position, projectFor(p.textDocument.uri)) } catch (e) { logError("signature help", e); return null }
+})
+connection.languages.inlayHint.on((p) => {
+    const an = current(p.textDocument.uri)
+    return an ? inlayHints(an, p.textDocument.uri, p.range) : []
+})
+connection.onPrepareRename((p) => {
+    const an = current(p.textDocument.uri)
+    return an ? prepareRename(an, p.textDocument.uri, p.position) : null
+})
+connection.onRenameRequest((p) => {
+    const an = current(p.textDocument.uri)
+    if (!an) return null
+    try {
+        return rename(an, p.textDocument.uri, p.position, p.newName)
+    } catch (e) {
+        throw new lsp.ResponseError(lsp.ErrorCodes.InvalidParams, e instanceof Error ? e.message : String(e))
+    }
+})
+
+function logError(what: string, e: unknown): void {
+    connection.console.error(`MinScript: ${what} failed: ${e instanceof Error ? e.stack : String(e)}`)
+}
 
 documents.listen(connection)
 connection.listen()

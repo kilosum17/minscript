@@ -49,7 +49,7 @@ function startServer() {
 }
 
 describe("language server over stdio", () => {
-    test("initialize, diagnostics, hover, definition, shutdown", { timeout: 20_000 }, async () => {
+    test("initialize, diagnostics, hover, definition, editing features, shutdown", { timeout: 20_000 }, async () => {
         const dir = mkdtempSync(join(tmpdir(), "minscript-lsp-"))
         const file = join(dir, "main.ms")
         const text = "package main\n\nfun twice(n: int) -> int { n * 2 }\n\nfun main() {\n    let x = twice(21)\n    let bad: string = x\n}\n"
@@ -76,6 +76,21 @@ describe("language server over stdio", () => {
             s.notify("textDocument/didChange", { textDocument: { uri, version: 2 }, contentChanges: [{ text: fixed }] })
             const after = await s.wait((m) => m.method === "textDocument/publishDiagnostics" && m.params.uri === uri && m.params.diagnostics.length === 0)
             assert.deepEqual(after.params.diagnostics, [])
+
+            // editing features: completion while the line is incomplete, signature help, inlay hints, rename
+            const typing = fixed.replace("let ok: int = x", "let ok: int = x\n    log.println(twice(")
+            s.notify("textDocument/didChange", { textDocument: { uri, version: 3 }, contentChanges: [{ text: typing }] })
+            const sig = await s.request("textDocument/signatureHelp", { textDocument: { uri }, position: { line: 7, character: 22 } })
+            assert.equal(sig.signatures[0].label, "fun twice(n: int) -> int")
+            const members = await s.request("textDocument/completion", { textDocument: { uri }, position: { line: 7, character: 22 } })
+            assert.ok(members.some((c: any) => c.label === "twice"), "names in scope inside the call")
+            s.notify("textDocument/didChange", { textDocument: { uri, version: 4 }, contentChanges: [{ text: fixed }] })
+            const hints = await s.request("textDocument/inlayHint", { textDocument: { uri }, range: { start: { line: 0, character: 0 }, end: { line: 9, character: 0 } } })
+            assert.deepEqual(hints.map((h: any) => h.label), [": int"])
+            const prep = await s.request("textDocument/prepareRename", { textDocument: { uri }, position: { line: 5, character: 8 } })
+            assert.equal(prep.placeholder, "x")
+            const edit = await s.request("textDocument/rename", { textDocument: { uri }, position: { line: 5, character: 8 }, newName: "doubled" })
+            assert.equal(edit.changes[uri].length, 2)
 
             await s.request("shutdown", {})
             s.notify("exit", {})

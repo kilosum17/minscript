@@ -74,7 +74,7 @@ export class PositionMap {
 
 // ---- package analysis -------------------------------------------------------------------------
 
-type FileInfo = {
+export type FileInfo = {
     uri: string
     text: string
     parsed: ParseResult
@@ -97,7 +97,7 @@ export type Analysis = {
     packageOf: Map<string, string>
 }
 
-function fileFor(an: Analysis, uri: string): FileInfo | undefined {
+export function fileFor(an: Analysis, uri: string): FileInfo | undefined {
     return uri === PRELUDE_URI ? prelude() : an.files.get(uri) ?? an.others.get(uri)
 }
 
@@ -242,7 +242,7 @@ function collectNodes(root: A.Node, parent: Map<A.Node, A.Node>): A.Node[] {
 }
 
 /** The smallest node containing the offset; prefers nodes the resolver or checker knows about. */
-function nodeAt(an: Analysis, f: FileInfo, offset: number): A.Node | null {
+export function nodeAt(an: Analysis, f: FileInfo, offset: number): A.Node | null {
     let best: A.Node | null = null
     for (const n of f.nodes) {
         if (n.kind === "File") continue
@@ -261,7 +261,7 @@ function isName(n: A.Node): boolean {
 // ---- symbols ----------------------------------------------------------------------------------
 
 /** What a node names: a symbol (through the resolver), or a member's declaration (through the checker). */
-function target(an: Analysis, n: A.Node): { sym?: Sym, decl?: A.Node, name: string } | null {
+export function target(an: Analysis, n: A.Node): { sym?: Sym, decl?: A.Node, name: string } | null {
     const found = targetOf(an, n)
     if (found !== null) return found
     // `x.method` / `T.method` as the callee of a call: the checker records the target on the call
@@ -314,7 +314,7 @@ function fieldDecl(objTy: Ty | undefined, name: string): A.Field | null {
     return null
 }
 
-function location(an: Analysis, node: A.Node): L.Location | null {
+export function location(an: Analysis, node: A.Node): L.Location | null {
     const uri = an.nodeFile.get(node)
     if (uri === undefined) return null
     const f = fileFor(an, uri)
@@ -323,7 +323,7 @@ function location(an: Analysis, node: A.Node): L.Location | null {
 }
 
 /** For a declaration, the span of its name (so "go to definition" lands on it, not on `pub fun`). */
-function nameSpan(node: A.Node, text: string): { start: number, end: number } | null {
+export function nameSpan(node: A.Node, text: string): { start: number, end: number } | null {
     const name = "name" in node && typeof node.name === "string" ? node.name : null
     if (name === null || node.kind === "Ident" || node.kind === "PBind") return null
     const bytes = new TextEncoder().encode(text)
@@ -367,7 +367,7 @@ export function hover(an: Analysis, uri: string, pos: L.Position): L.Hover | nul
 }
 
 /** `///` lines directly above a declaration. */
-function docComment(an: Analysis, decl: A.Node): string {
+export function docComment(an: Analysis, decl: A.Node): string {
     const uri = an.nodeFile.get(decl)
     const f = uri ? fileFor(an, uri) : undefined
     if (!f) return ""

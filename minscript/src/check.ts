@@ -29,6 +29,17 @@ export type CheckResult = {
     /** The variant each inferred name, `Some`-like name, struct-like variant literal or constructor pattern refers to. */
     variants: Map<A.Node, VariantRef>
     diagnostics: Diagnostic[]
+    /** What `x.` can be followed by, for a value or type of type `t` (editor completion). */
+    membersOf: (t: Ty) => MemberItem[]
+}
+
+/** A member offered after `x.`: `decl` is its declaration (null for auto-generated methods). */
+export type MemberItem = {
+    name: string
+    kind: "field" | "method" | "static" | "variant" | "item"
+    decl: A.Node | null
+    /** The item's symbol, for `pkg.item`. */
+    sym?: Sym
 }
 
 /** The owner of a method: a type or interface, or a primitive (`string`). */
@@ -190,7 +201,10 @@ class Checker {
 
     run(): CheckResult {
         for (const file of this.files) for (const item of file.items) this.checkItem(item)
-        return { types: this.types, symbols: this.symTypes, calls: this.calls, rets: this.rets, members: this.members, variants: this.variants, diagnostics: this.diagnostics }
+        return {
+            types: this.types, symbols: this.symTypes, calls: this.calls, rets: this.rets, members: this.members, variants: this.variants,
+            diagnostics: this.diagnostics, membersOf: (t) => this.membersOf(t),
+        }
     }
 
     // ---- diagnostics and inference variables --------------------------------------------------
@@ -688,6 +702,77 @@ class Checker {
             case "hash": return sig([], T.prim("u64"))
             default: return null
         }
+    }
+
+    /** Every member `x.` can name, for completion: fields, methods (a bounded impl's only when its
+     *  bounds hold), auto-generated methods; statics and variants of a type; a package's pub items. */
+    private membersOf(raw: Ty): MemberItem[] {
+        const out: MemberItem[] = []
+        const seen = new Set<string>()
+        const add = (m: MemberItem) => { if (!seen.has(m.name)) { seen.add(m.name); out.push(m) } }
+        const t = T.strip(raw)
+        if (t.k === "package") {
+            for (const [name, sym] of t.sym?.target?.pkgScope.names ?? []) {
+                if (sym.pub && !name.startsWith("_")) add({ name, kind: "item", decl: sym.decl, sym })
+            }
+            return out
+        }
+        if (t.k === "meta") {
+            const m = T.prune(t.ty)
+            if (m.k !== "named") return out
+            const info = this.info(m.sym)
+            if (info === undefined) return out
+            for (const v of info.variants.values()) add({ name: v.name, kind: "variant", decl: v })
+            for (const e of info.methods) if (e.fun.receiver === null) add({ name: e.fun.name, kind: "static", decl: e.fun })
+            return out
+        }
+        const methods = (entries: MethodEntry[], recv: Ty) => {
+            for (const e of entries) {
+                if (e.fun.receiver === null || e.fun.name.startsWith("_")) continue
+                if (!this.boundsHold(e, recv)) continue
+                add({ name: e.fun.name, kind: "method", decl: e.fun })
+            }
+        }
+        if (t.k === "named") {
+            const info = this.info(t.sym)
+            if (info !== undefined) {
+                if (info.kind === "struct") for (const f of info.fields.values()) add({ name: f.name, kind: "field", decl: f })
+                methods(info.methods, t)
+            }
+        } else if (t.k === "prim") {
+            methods(this.primMethods.get(T.isStringy(t) ? "string" : t.name) ?? [], t)
+        } else if (t.k === "param") {
+            for (const b of this.boundsOf(t.sym)) {
+                const bs = T.strip(b)
+                const info = bs.k === "named" ? this.info(bs.sym) : undefined
+                if (info) methods(info.methods, t)
+            }
+        } else if (t.k === "record") {
+            for (const f of t.fields) add({ name: f.name, kind: "field", decl: null })
+        }
+        if (t.k !== "unknown" && t.k !== "never" && t.k !== "var") {
+            for (const name of ["to_str", "clone", "eq", "hash"]) add({ name, kind: "method", decl: null })
+        }
+        return out
+    }
+
+    /** Whether a method from a bounded impl (`impl[T: Stringer] Vec[T]`) applies to `recv`. */
+    private boundsHold(e: MethodEntry, recv: Ty): boolean {
+        if (e.implTarget === null || e.fromInter !== null || e.implTarget.kind !== "TName") return true
+        const r = T.strip(recv)
+        if (r.k !== "named") return true
+        const target = e.implTarget
+        for (let i = 0; i < target.args.length; i++) {
+            const a = target.args[i]!
+            const g = a.kind === "TName" && a.path.length === 1 ? e.outer.find((s) => s.name === a.path[0]) : undefined
+            const arg = r.args[i]
+            if (g === undefined || arg === undefined) continue
+            for (const b of this.boundsOf(g)) {
+                const bs = T.strip(T.subst(b, new Map([[g, arg]])))
+                if (bs.k === "named" && !this.implements(arg, bs)) return false
+            }
+        }
+        return true
     }
 
     /** Static member of a type: a method without receiver, or a variant. */
