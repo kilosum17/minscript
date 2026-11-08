@@ -20,6 +20,7 @@
     "parse": "node src/cli.ts parse",
     "resolve": "node src/cli.ts resolve",
     "types": "node src/cli.ts types",
+    "ownership": "node src/cli.ts ownership",
     "check": "node src/cli.ts check",
     "hir": "node src/cli.ts hir",
     "js": "node src/cli.ts js",

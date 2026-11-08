@@ -4,6 +4,7 @@
 //   parse <file.ms>…                        the AST dump
 //   resolve --prelude <prelude.ms> <file.ms>…   the resolution dump (each file is its own package)
 //   types --prelude <prelude.ms> <file.ms>…     the checker dump (each file is its own package)
+//   ownership --prelude <prelude.ms> <file.ms>… the ownership diagnostics (each file is its own package)
 package main
 
 import "app.lexer"
@@ -11,14 +12,15 @@ import "app.parser"
 import "app.ast"
 import "app.resolve"
 import "app.check"
+import "app.ownership"
 import "std.env"
 import "std.fs"
 import "std.io"
 
 async fun main() {
     var args = env.args()
-    if args.is_empty() || !(args[0] == "lex" || args[0] == "parse" || args[0] == "resolve" || args[0] == "types") {
-        io.eprintln("usage: ms run stage1 -- lex|parse <file.ms>…  |  resolve|types --prelude <prelude.ms> <file.ms>…")
+    if args.is_empty() || !(args[0] == "lex" || args[0] == "parse" || args[0] == "resolve" || args[0] == "types" || args[0] == "ownership") {
+        io.eprintln("usage: ms run stage1 -- lex|parse <file.ms>…  |  resolve|types|ownership --prelude <prelude.ms> <file.ms>…")
         return
     }
     let command = args[0].clone()
@@ -26,7 +28,7 @@ async fun main() {
     var prelude: resolve.Resolution? = None
     var prelude_file: ast.File? = None
     var first_id = 0
-    if command == "resolve" || command == "types" {
+    if command == "resolve" || command == "types" || command == "ownership" {
         if files.len() < 2 || files[0] != "--prelude" {
             io.eprintln("${command} needs `--prelude <path to std/prelude.ms>`")
             return
@@ -70,10 +72,16 @@ async fun main() {
             let Some(pf) = &prelude_file else { return }
             let Some(pr) = &prelude else { return }
             let checked = check.check_package([parsed.file], res, pf, pr)
-            io.print(check.dump_types(res, checked))
             var all = parsed.diagnostics.clone()
             all.extend(res.diagnostics.clone())
             all.extend(checked.diagnostics.clone())
+            if command == "types" {
+                io.print(check.dump_types(res, checked))
+            } else {
+                let owned = ownership.check_ownership([parsed.file], res, checked)
+                io.print(ownership.dump_ownership(owned))
+                all.extend(owned)
+            }
             report(file, all)
         }
     }

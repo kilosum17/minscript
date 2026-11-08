@@ -92,6 +92,12 @@ fun moved_into_closure() {
     log.println(v.len())                        //~ E_USE_AFTER_MOVE
 }
 
+fun moved_in_recover() {
+    let u = User { name: "a", tags: [] }
+    let r = recover { take(u) }
+    inspect(u)                                  //~ E_USE_AFTER_MOVE
+}
+
 async fun await_twice(p: Promise[int]) {
     let a = await p
     let b = await p                             //~ E_USE_AFTER_MOVE
@@ -120,6 +126,39 @@ fun change_owner_while_borrowed() {
     var words = raw.split(" ")
     raw = "other"                               //~ E_BORROW_CONFLICT
     log.println(words.len())
+}
+
+fun borrowed_value_used_twice() {
+    var raw = " text "
+    var words = raw.split(" ")
+    raw = "other"                               //~ E_BORROW_CONFLICT
+    log.println(words.len())
+    log.println(words.len())
+}
+
+fun borrowed_across_loop_iterations() {
+    var names = ["a", "b"]
+    let view = names.iter()
+    for i in 0..2 {
+        log.println(view)
+        names.push("c")                         //~ E_BORROW_CONFLICT
+    }
+}
+
+fun read_while_borrowed_mutably() {
+    var nums = [1, 2]
+    var each = nums.iter_mut()
+    log.println(nums.len())                     //~ E_BORROW_CONFLICT
+    let _ = each.next()
+}
+
+fun inspect_sub(s: &Sub[int]) {}
+
+async fun iterate_while_borrowed(t: Topic[int]) {
+    var sub = t.subscribe()
+    let peek = &sub
+    for await m in sub {}                       //~ E_BORROW_CONFLICT
+    inspect_sub(peek)
 }
 
 fun push_while_borrowed() {

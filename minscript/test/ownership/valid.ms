@@ -132,3 +132,46 @@ async fun async_calls() -> int {
     let p = send_owned(data)        // owned argument: may run as a task
     a + await p
 }
+
+// ---- Copy types, handles in closures, borrows inside a loop -----------------------------------
+
+type Pt: Copy = { x: int }
+union Dir: Copy = { Up  Down }
+type Cell2 = { v: int }
+impl Copy for Cell2 {}
+
+fun take_pt(p: Pt) {}
+fun take_dir(d: Dir) {}
+fun take_cell(c: Cell2) {}
+fun take_ord(o: Ordering) {}
+
+fun copy_types_dont_move() {
+    let p = Pt { x: 1 }
+    take_pt(p)
+    take_pt(p)
+    let d: Dir = Up
+    take_dir(d)
+    take_dir(d)
+    let c = Cell2 { v: 1 }
+    take_cell(c)
+    take_cell(c)
+    let o: Ordering = Less
+    take_ord(o)
+    take_ord(o)
+}
+
+/// A closure capturing only handles holds no borrow, so it may escape.
+fun shared_counter() -> () -> int {
+    let count = Ref(0)
+    #{ count.get() }
+}
+
+/// A borrow made inside a loop body lives only for that iteration.
+fun borrow_inside_loop() {
+    var names = ["a"]
+    for i in 0..2 {
+        let view = names.iter()
+        log.println(view)
+        names.push("b")
+    }
+}

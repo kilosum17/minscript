@@ -20,7 +20,8 @@
 // - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
 //   test/testing/failing reports its failures as in `report.out`;
 // - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer, parser,
-//   resolver and checker produce exactly stage 0's output (dumps and diagnostics) on every file;
+//   resolver, checker and ownership pass produce exactly stage 0's output (dumps and diagnostics) on
+//   every file;
 // - `ms fmt` (src/fmt.ts): every valid file formats to the same AST, keeps its comments, and formatting
 //   again changes nothing; test/fmt/*.ms format to their `.fmt` snapshot.
 //
@@ -438,6 +439,20 @@ describe("stage 1 (../stage1, the self-hosted compiler)", () => {
         })
         same(r.stdout, checked.map(({ f, p, res, checked }) => `== ${f}\n${dumpTypes(res, checked, [p.file])}`).join(""), "type dumps")
         same(r.stderr, checked.map(({ f, p, res, checked }) => diagnosticLines(f, [...p.diagnostics, ...res.diagnostics, ...checked.diagnostics])).join(""), "diagnostics")
+    })
+    test("its ownership pass gives the same diagnostics as stage 0's on every file", { timeout: 120_000 }, async () => {
+        const list = files()
+        const r = await stage1Run("ownership", ["--prelude", join(root, "..", "std", "prelude.ms"), ...list])
+        assert.equal(r.status, 0, r.stderr)
+        const owned = list.map((f) => {
+            const p = parse(readFileSync(f))
+            const res = resolvePackage([p.file])
+            const checked = checkPackage([p.file], res)
+            return { f, p, res, checked, owned: checkOwnership([p.file], res, checked).diagnostics }
+        })
+        const line = (d: { span: { line: number, col: number }, code: string, message: string }) => `${`${d.span.line}:${d.span.col}`.padEnd(8)}${d.code} ${d.message}\n`
+        same(r.stdout, owned.map(({ f, owned }) => `== ${f}\n${owned.map(line).join("")}`).join(""), "ownership diagnostics")
+        same(r.stderr, owned.map(({ f, p, res, checked, owned }) => diagnosticLines(f, [...p.diagnostics, ...res.diagnostics, ...checked.diagnostics, ...owned])).join(""), "diagnostics")
     })
     test("its parser builds the same AST and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
         const list = files()
