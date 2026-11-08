@@ -450,7 +450,7 @@ impl Checker {
             }
             return if path.len() == 1 { this.variant_from_value(t, path[0]) } else { PVUnknown }
         }
-        let kind = this.syms[sym].kind.clone()
+        var kind = this.syms[sym].kind.clone()
         if kind == "variant" {
             if open_ty {
                 return PVUnknown
@@ -462,23 +462,34 @@ impl Checker {
             let name = this.syms[sym].name.clone()
             return this.variant_from_value(t, name)
         }
-        if kind == "union" && path.len() == 2 {
-            if open_ty {
-                return PVUnknown
+        // `ws.Message.Close`: first the type inside the imported package
+        var head = sym
+        var rest = path.clone()
+        if kind == "package" && path.len() >= 2 {
+            if let Some(scope) = this.syms[sym].target {
+                let Some(item) = this.scopes[scope].names.get(path[1]) else { return PVNone }
+                head = item
+                rest = path.skip(1)
+                kind = this.syms[head].kind.clone()
             }
-            if tag(t) != "named" || named_sym(t) != sym {
-                return PVNone
-            }
-            return this.variant_from_value(t, path[1])
         }
-        if kind == "type" && path.len() == 1 {
+        if kind == "union" && rest.len() == 2 {
             if open_ty {
                 return PVUnknown
             }
-            if tag(t) != "named" || named_sym(t) != sym {
+            if tag(t) != "named" || named_sym(t) != head {
                 return PVNone
             }
-            let Some(ii) = this.info(sym) else { return PVUnknown }
+            return this.variant_from_value(t, rest[1])
+        }
+        if kind == "type" && rest.len() == 1 {
+            if open_ty {
+                return PVUnknown
+            }
+            if tag(t) != "named" || named_sym(t) != head {
+                return PVNone
+            }
+            let Some(ii) = this.info(head) else { return PVUnknown }
             return PVFound(VariantFound { info: ii, t, v: None })
         }
         PVUnknown

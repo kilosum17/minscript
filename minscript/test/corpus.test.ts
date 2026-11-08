@@ -20,8 +20,9 @@
 // - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
 //   test/testing/failing reports its failures as in `report.out`;
 // - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer, parser,
-//   resolver, checker and ownership pass produce exactly stage 0's output (dumps and diagnostics) on
-//   every file;
+//   resolver, checker, ownership pass and lowering produce exactly stage 0's output (dumps and
+//   diagnostics) on every file, and its loader and JS back end compile every runnable program (stage 1
+//   itself included) to exactly stage 0's JavaScript;
 // - `ms fmt` (src/fmt.ts): every valid file formats to the same AST, keeps its comments, and formatting
 //   again changes nothing; test/fmt/*.ms format to their `.fmt` snapshot.
 //
@@ -453,6 +454,45 @@ describe("stage 1 (../stage1, the self-hosted compiler)", () => {
         const line = (d: { span: { line: number, col: number }, code: string, message: string }) => `${`${d.span.line}:${d.span.col}`.padEnd(8)}${d.code} ${d.message}\n`
         same(r.stdout, owned.map(({ f, owned }) => `== ${f}\n${owned.map(line).join("")}`).join(""), "ownership diagnostics")
         same(r.stderr, owned.map(({ f, p, res, checked, owned }) => diagnosticLines(f, [...p.diagnostics, ...res.diagnostics, ...checked.diagnostics, ...owned])).join(""), "diagnostics")
+    })
+    test("its lowering gives the same HIR as stage 0's on every file", { timeout: 120_000 }, async () => {
+        const list = files()
+        const r = await stage1Run("hir", ["--prelude", join(root, "..", "std", "prelude.ms"), ...list])
+        assert.equal(r.status, 0, r.stderr)
+        const lowered = list.map((f) => {
+            const p = parse(readFileSync(f))
+            const res = resolvePackage([p.file])
+            const checked = checkPackage([p.file], res)
+            return { f, p, res, checked, hir: dumpHir(lowerPackage([p.file], res, checked)) }
+        })
+        same(r.stdout, lowered.map(({ f, hir }) => `== ${f}\n${hir}`).join(""), "HIR dumps")
+        same(r.stderr, lowered.map(({ f, p, res, checked }) => diagnosticLines(f, [...p.diagnostics, ...res.diagnostics, ...checked.diagnostics])).join(""), "diagnostics")
+    })
+    test("it compiles every program (itself included) to the same JavaScript as stage 0", { timeout: 300_000 }, async () => {
+        const { spawn } = await import("node:child_process")
+        const ms = join(root, "..", "bin", "ms.js")
+        const std = join(root, "..", "std")
+        const entries = [
+            ...readdirSync(join(root, "run")).filter((f) => f.endsWith(".ms")).map((f) => join(root, "run", f)),
+            ...readdirSync(join(root, "packages")).map((d) => join(root, "packages", d, "main.ms")).filter((f) => existsSync(f)),
+            stage1,
+        ]
+        const stage1Js = (entry: string) => new Promise<{ code: number | null, out: string, err: string }>((resolveRun) => {
+            const child = spawn(process.execPath, [ms, "run", stage1, "--", "js", "--std", std, entry])
+            let out = "", err = ""
+            child.stdout.on("data", (d) => { out += d })
+            child.stderr.on("data", (d) => { err += d })
+            child.on("close", (code) => resolveRun({ code, out, err }))
+        })
+        const results = await Promise.all(entries.map(stage1Js))
+        entries.forEach((entry, i) => {
+            const r = results[i]!
+            assert.equal(r.code, 0, `${entry}: ${r.err}`)
+            // stage 1 is a project whose main is ./src (`ms js ../stage1`)
+            const expected = entry === stage1 ? compileToJs(join(stage1, "src"), { appRoot: join(stage1, "src") }) : compileToJs(entry)
+            assert.deepEqual(expected.diagnostics, [])
+            same(r.out, expected.js!, `JavaScript of ${relative(root, entry)}`)
+        })
     })
     test("its parser builds the same AST and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
         const list = files()

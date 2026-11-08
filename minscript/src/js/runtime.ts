@@ -71,7 +71,14 @@ export function panic(message: string, kind = "User"): never {
 }
 
 /** The MinScript `Panic` value for a caught JS exception (recover, `.catch`). */
+/** `runtime.exit(code)`: ends the program with an exit code (not a panic: `recover` doesn't catch it). */
+export class ExitRequest extends Error {
+    readonly code: number
+    constructor(code: number) { super(`exit(${code})`); this.code = code }
+}
+
 export function panicValue(e: unknown): Any {
+    if (e instanceof ExitRequest) throw e
     const kind = e instanceof Panic ? e.kind : "User"
     const message = e instanceof Error ? e.message : String(e)
     const file = e instanceof Panic ? e.file : "", line = e instanceof Panic ? e.line : 0
@@ -873,6 +880,41 @@ export function setEvaluating(on: boolean): void { evaluatingConfig = on }
 /** The program's command-line arguments (`env.args()`), after the file name. */
 export function setArgs(args: string[]): void { programArgs = args }
 
+/** `runtime.run_module`: writes the module to a temporary file and runs it with `exec.ts` in a child
+ *  process (its own runtime state) sharing this one's stdio; the result is its exit code. */
+async function runModule(js: string, args: string[]): Promise<number> {
+    const [{ spawn }, { mkdtempSync, writeFileSync, rmSync }, { tmpdir }, { join }, { fileURLToPath }] = await Promise.all([
+        import("node:child_process"), import("node:fs"), import("node:os"), import("node:path"), import("node:url"),
+    ])
+    const dir = mkdtempSync(join(tmpdir(), "minscript-module-"))
+    const file = join(dir, "main.mjs")
+    writeFileSync(file, js)
+    const exec = fileURLToPath(new URL("./exec.ts", import.meta.url))
+    try {
+        return await new Promise<number>((resolve) => {
+            // the child shares this process's terminal; when output is captured (tests), its lines go to the capture
+            const child = spawn(process.execPath, [exec, file, ...args], { stdio: captured ? ["inherit", "pipe", "pipe"] : "inherit" })
+            child.on("close", (code) => resolve(code ?? 1))
+            if (!captured) return
+            const relay = (stream: NodeJS.ReadableStream, toErr: boolean) => {
+                let pending = ""
+                stream.setEncoding("utf8")
+                stream.on("data", (chunk: string) => {
+                    pending += chunk
+                    const lines = pending.split("\n")
+                    pending = lines.pop() ?? ""
+                    for (const line of lines) writeLine(line, toErr)
+                })
+                stream.on("end", () => { if (pending !== "") writeLine(pending, toErr) })
+            }
+            relay(child.stdout!, false)
+            relay(child.stderr!, true)
+        })
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
+}
+
 // stdin, line by line (`io.read_line`); stdin only keeps the process alive while someone is waiting
 const stdin = { lines: [] as string[], waiting: [] as ((l: string) => void)[], closed: false, started: false }
 function readLine(): Promise<string> {
@@ -893,6 +935,8 @@ function readLine(): Promise<string> {
 
 let pendingPrint = ""
 const printLine = (text: string) => { output(pendingPrint + text); pendingPrint = "" }
+/** A line of a child program (`runtime.run_module`): to the capture in tests, else to stdout / stderr. */
+const writeLine = (line: string, toErr: boolean) => { if (captured) printLine(line); else (toErr ? process.stderr : process.stdout).write(line + "\n") }
 
 Object.assign(stdTable, {
     // io, log
@@ -911,11 +955,14 @@ Object.assign(stdTable, {
     "time.sleep": (ms: number) => after(ms),
     "time.now": () => BigInt(Date.now()),
     "runtime.yield": () => new Promise((r) => setTimeout(r, 0)),
+    "runtime.run_module": runModule,
+    "runtime.exit": (code: number) => { throw new ExitRequest(code) },
 
     // env
     "env.get": (k: string) => opt(process.env[k]),
     "env.set": (k: string, v: string) => { process.env[k] = v },
     "env.args": () => [...programArgs],
+    "env.cwd": () => process.cwd(),
 
     // math
     "math.abs": (x: Any) => (x < 0 ? -x : x),

@@ -790,15 +790,42 @@ impl Checker {
                 }
                 return TyUnknown
             }
-            let inner = this.member_of(e.id, e.span, o.inner, name, index)
+            let inner = this.member_of(e.id, e.span, o.inner, name, index, exp)
             return if this.is_option(inner) { inner } else { this.option(inner) }
         }
-        let _ = exp
-        this.member_of(e.id, e.span, obj, name, index)
+        this.member_of(e.id, e.span, obj, name, index, exp)
     }
 
-    fun member_of(&mut this, id: int, span: Span, obj_ty: &Ty, name: &str, index: bool) -> Ty {
+    /// An item of an imported package (`json.parse`): it must exist and be `pub`.
+    fun pkg_item(&mut this, pkg: int, name: &str, span: Span) -> int? {
+        let Some(scope) = this.syms[pkg].target else { return None }
+        let path = this.syms[pkg].detail ?? this.syms[pkg].name.clone()
+        let Some(sym) = this.scopes[scope].names.get(name) else {
+            this.error("E_UNKNOWN_MEMBER", "package `${path}` has no item `${name}`", span)
+            return None
+        }
+        if this.syms[sym].is_pub != Some(true) {
+            this.error("E_PRIVATE_ITEM", "`${name}` is private to package `${path}`", span)
+        }
+        Some(sym)
+    }
+
+    /// The package symbol a type stands for when it is a loaded package (-1 otherwise).
+    fun loaded_pkg(&this, t: &Ty) -> int {
+        match t {
+            TyPackage { sym: Some(s), .. } => if this.syms[s].target.is_some() { s } else { -1 }
+            _ => -1
+        }
+    }
+
+    fun member_of(&mut this, id: int, span: Span, obj_ty: &Ty, name: &str, index: bool, exp: Ty?) -> Ty {
         let t = this.strip(obj_ty)
+        let lp = this.loaded_pkg(t)
+        if lp >= 0 && !index {
+            let Some(item) = this.pkg_item(lp, name, span) else { return TyUnknown }
+            this.members[id] = MItem(item)
+            return this.sym_value(item, id, span, exp)
+        }
         match &t {
             TyUnknown | TyVar(_) | TyPackage { .. } | TyNever => return TyUnknown
             TyMeta(inner) => {
@@ -940,6 +967,16 @@ impl Checker {
                 }
             }
             let s = this.prune(recv)
+            let lp = this.loaded_pkg(this.strip(recv))
+            if lp >= 0 && !via_opt {
+                let Some(item) = this.pkg_item(lp, name, callee.span) else { return CalleeRes { c: None, ty: TyUnknown, via_opt } }
+                this.members[callee.id] = MItem(item)
+                if let Some(r) = this.callee_sym(item, callee, explicit, exp.clone(), e) {
+                    return r
+                }
+                let ty = this.sym_value(item, callee.id, callee.span, exp)
+                return CalleeRes { c: None, ty, via_opt }
+            }
             if let TyMeta(inner) = &s {
                 let Some(st) = this.find_static(inner.get(), name, explicit, callee.span) else {
                     let target = this.prune(inner.get())
@@ -965,7 +1002,7 @@ impl Checker {
                 return CalleeRes { c: Some(m), ty, via_opt, on_value: true }
             }
             // a field holding a function
-            let ft = this.member_of(callee.id, callee.span, st, name, false)
+            let ft = this.member_of(callee.id, callee.span, st, name, false, None)
             return CalleeRes { c: None, ty: ft, via_opt }
         }
         if let Ident(name) = &callee.kind {
@@ -1367,7 +1404,7 @@ impl Checker {
                             }
                         }
                     }
-                    if variant.is_none() {
+                    if variant.is_none() && this.loaded_pkg(this.strip(obj)) < 0 {
                         this.check_fields_loosely(items)
                         return TyUnknown            // `models.User { … }`: a package's type, not loaded yet
                     }

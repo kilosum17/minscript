@@ -15,8 +15,9 @@
 // indices. A program has one arena: a package's resolution starts with the prelude's symbols and
 // scopes (same indices) and appends its own (from `first_own`).
 //
-// Not ported yet: imports of packages the loader found (stage 0's `LoadedImport`), which come with
-// the loader. Without them, every import stays opaque, as with stage 0's `ms resolve`.
+// Imports of packages the loader found (`LoadedImport`) bind their items; the program's arena then
+// holds the loaded packages too (each package's resolution starts from the one before it, in
+// dependency order), so an imported package is known by the index of its package scope.
 package resolve
 
 import "app.lexer.{Span, Diagnostic}"
@@ -49,6 +50,10 @@ pub type Sym = {
     pub variants: Vec[VariantInfo] = []
     /// a type: an alias of a structural type (no struct body), which can't have methods
     pub alias: bool = false
+    /// an imported package the loader found: its package scope (stage 0: `target`, its resolution)
+    pub target: int?
+    /// its index in its own package's resolution (stage 0's `Sym.id`: arena index − `first_own`)
+    pub index: int = 0
 }
 
 pub type VariantInfo = r{ name: string, span: Span, id: int }
@@ -64,6 +69,8 @@ pub type Scope = {
     pub closure: int?
     /// file scope: has a glob import of a package that isn't loaded, so unknown names can't be reported
     pub open: bool = false
+    /// file scope: names from loaded glob imports (searched after the package's own items)
+    pub globs: Map[string, int]?
 }
 
 /// A use of a name: the symbol, and how the dump shows the node.
@@ -92,6 +99,22 @@ pub type Resolution = {
     pub pkg_scope: int
     /// the index of this package's first symbol (the ones before belong to the prelude)
     pub first_own: int
+    /// the package's qualified name ("main", "std.json", "app.models")
+    pub package_name: string = ""
+}
+
+/// An import the loader found: the package (its package scope in the arena), and which of its items
+/// the import names.
+pub type LoadedImport = {
+    pub pkg_scope: int
+    /// the package's qualified name ("std.io")
+    pub path: string
+    /// `"std.io.println"` → "println"
+    pub item: string?
+    /// `"std.io.{print, println}"`
+    pub items: Vec[string]?
+    /// `"std.collections.*"`
+    pub glob: bool
 }
 
 /// Options for `resolve_package`.
@@ -231,7 +254,15 @@ fun sigil_opener(letter: &str) -> string {
 /// Resolves the files of one package. `prelude`: the resolved prelude (None when resolving it).
 pub fun resolve_package(files: &Vec[File], prelude: &Resolution?, opts: ResolveOptions) -> Resolution {
     var r = Resolver { is_std: opts.std, pkg_name: opts.package_name }
-    r.init(prelude)
+    r.init(prelude, prelude)
+    r.run(files)
+}
+
+/// Resolves a package of a loaded program: `base` is the arena so far (the resolution of the package
+/// analysed before this one), `imports` the loaded imports by Import id.
+pub fun resolve_loaded(files: &Vec[File], prelude: &Resolution, base: &Resolution, imports: Map[int, LoadedImport], opts: ResolveOptions) -> Resolution {
+    var r = Resolver { is_std: opts.std, pkg_name: opts.package_name, loaded: imports }
+    r.init(Some(prelude.clone()), Some(base.clone()))
     r.run(files)
 }
 
@@ -261,12 +292,14 @@ type Resolver = {
     is_std: bool
     pkg_name: string
     first_own: int = 0
+    /// the imports the loader found, by Import id
+    loaded: Map[int, LoadedImport] = m{}
 
-    fun init(&mut this, prelude: &Resolution?) {
-        // one arena per program: the prelude's symbols and scopes keep their indices
-        if let Some(p) = prelude {
-            this.symbols = p.symbols.clone()
-            this.scopes = p.scopes.clone()
+    fun init(&mut this, prelude: &Resolution?, base: &Resolution?) {
+        // one arena per program: the prelude's (and loaded packages') symbols and scopes keep their indices
+        if let Some(b) = base {
+            this.symbols = b.symbols.clone()
+            this.scopes = b.scopes.clone()
         }
         this.first_own = this.symbols.len()
         this.prelude = this.new_scope("prelude", None)
@@ -352,6 +385,7 @@ type Resolver = {
         Resolution {
             symbols: this.symbols, scopes: this.scopes, refs: this.refs, decls: this.decls, captures: this.captures,
             deferred: this.deferred, open: this.open, diagnostics: this.diagnostics, pkg_scope: this.pkg, first_own: this.first_own,
+            package_name: this.pkg_name.clone(),
         }
     }
 
@@ -368,7 +402,7 @@ type Resolver = {
 
     fun define(&mut this, scope: int, name: &str, kind: &str, decl: int?, span: Span?, mutable: bool) -> int {
         let id = this.symbols.len()
-        this.symbols.push(Sym { id, name: name.to_str(), kind: kind.to_str(), mutable, decl, span, scope, detail: None, owner: None, is_pub: None, pkg: None })
+        this.symbols.push(Sym { id, name: name.to_str(), kind: kind.to_str(), mutable, decl, span, scope, detail: None, owner: None, is_pub: None, pkg: None, target: None, index: id - this.first_own })
         this.scopes[scope].names[name.to_str()] = id
         if let Some(d) = decl {
             this.decls[d] = id
@@ -394,10 +428,24 @@ type Resolver = {
     }
 
     fun lookup(&this, scope: int, name: &str) -> int? {
+        var file: int? = None
         var s: int? = Some(scope)
         for let Some(i) = s {
             if let Some(sym) = this.scopes[i].names.get(name) {
                 return Some(sym)
+            }
+            if this.scopes[i].kind == "file" {
+                file = Some(i)
+            }
+            // glob-imported names come after the package's own items, before the prelude (spec §8.1)
+            if this.scopes[i].kind == "package" {
+                if let Some(f) = file {
+                    if let Some(globs) = &this.scopes[f].globs {
+                        if let Some(g) = globs.get(name) {
+                            return Some(g)
+                        }
+                    }
+                }
             }
             s = this.scopes[i].parent
         }
@@ -502,7 +550,85 @@ type Resolver = {
         }
     }
 
+    /// An item of a loaded package, by name: it must exist and be `pub`.
+    fun exported(&mut this, l: &LoadedImport, name: &str, imp: &Import) -> int? {
+        let Some(sym) = this.scopes[l.pkg_scope].names.get(name) else {
+            this.error("E_UNKNOWN_IMPORT", "package `${l.path}` has no item `${name}`", imp.span)
+            return None
+        }
+        if this.symbols[sym].is_pub != Some(true) {
+            this.error("E_PRIVATE_ITEM", "`${name}` is private to package `${l.path}` (declare it `pub` to import it)", imp.span)
+        }
+        Some(sym)
+    }
+
+    fun bind_loaded(&mut this, file: int, imp: &Import, name: &str, sym: int) {
+        if this.scopes[this.pkg].names.has(name) || this.scopes[file].names.has(name) {
+            this.error("E_DUPLICATE_DECLARATION", "the import binds `${name}`, which is already declared in this package; use `as` to rename it", imp.span)
+            return
+        }
+        this.scopes[file].names[name.to_str()] = sym
+    }
+
+    fun declare_loaded_import(&mut this, file: int, imp: &Import, l: LoadedImport) {
+        if l.glob {
+            var globs = this.scopes[file].globs ?? m{}
+            for name, sym in this.scopes[l.pkg_scope].names.clone() {
+                if this.symbols[sym].is_pub != Some(true) {
+                    continue
+                }
+                let Some(prev) = globs.get(name) else {
+                    globs[name.clone()] = sym
+                    continue
+                }
+                if prev == sym {
+                    continue
+                }
+                let from = if this.symbols[prev].kind == "ambiguous" { this.symbols[prev].detail ?? "" } else { this.symbols[prev].pkg ?? "?" }
+                let scratch = this.new_scope("file", None)
+                let marker = this.define(scratch, name, "ambiguous", None, None, false)
+                this.symbols[marker].detail = Some("${from}, ${l.path}")
+                globs[name.clone()] = marker
+            }
+            this.scopes[file].globs = Some(globs)
+            return
+        }
+        if let Some(items) = &l.items {
+            for name in items.iter() {
+                if let Some(sym) = this.exported(l, name, imp) {
+                    this.bind_loaded(file, imp, name, sym)
+                }
+            }
+            return
+        }
+        if let Some(item) = &l.item {
+            if let Some(sym) = this.exported(l, item, imp) {
+                this.bind_loaded(file, imp, imp.alias ?? item.clone(), sym)
+            }
+            return
+        }
+        var dot = -1
+        var k = 0
+        for k < l.path.len() {
+            if l.path.byte_at(k) == 46 {
+                dot = k
+            }
+            k += 1
+        }
+        let name = imp.alias ?? l.path.substring(dot + 1, l.path.len()).to_str()
+        if this.scopes[this.pkg].names.has(name) || this.scopes[file].names.has(name) {
+            this.error("E_DUPLICATE_DECLARATION", "the import binds `${name}`, which is already declared in this package; use `as` to rename it", imp.span)
+            return
+        }
+        let sym = this.define(file, name, "package", Some(imp.id), Some(imp.span), false)
+        this.symbols[sym].detail = Some(l.path.clone())
+        this.symbols[sym].target = Some(l.pkg_scope)
+    }
+
     fun declare_import(&mut this, file: int, imp: &Import) {
+        if let Some(l) = this.loaded.get(imp.id) {
+            return this.declare_loaded_import(file, imp, l)
+        }
         let path = imp.path.clone()
         if path.ends_with(".*") {
             this.scopes[file].open = true

@@ -1,0 +1,5 @@
+child says hi
+exit 0
+panic: Error: boom
+exit 101
+true

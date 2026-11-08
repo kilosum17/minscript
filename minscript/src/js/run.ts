@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url"
 import "../prelude.ts"
 import { loadProgram, lowerProgram, type FileDiagnostic, type LoadOptions } from "../loader.ts"
 import { emitJs } from "./emit.ts"
-import { closeResources, Panic, resetOutput, setOutput } from "./runtime.ts"
+import { closeResources, ExitRequest, Panic, resetOutput, setOutput } from "./runtime.ts"
 
 export const RUNTIME_URL = new URL("./runtime.ts", import.meta.url).href
 
@@ -61,6 +61,7 @@ export async function runJs(js: string, onOutput?: (line: string) => void): Prom
         }
         return { exitCode: 0, panic: null, value }
     } catch (e) {
+        if (e instanceof ExitRequest) return { exitCode: e.code, panic: null }
         print(`panic: ${describe(e)}`)
         return { exitCode: 101, panic: describe(e) }
     } finally {

@@ -1419,10 +1419,10 @@ Each std package is a folder under [`std/`](../std/), written in MinScript like 
 | `std.time` | `after(ms) -> Promise[void]` (cancel-safe), `async sleep(ms)`, `now() -> i64`, `Instant` (`now`, `elapsed`), `Duration` |
 | `std.json` | `parse[T](text) -> Result[T, json.Error]`, `stringify[T](&T) -> string`, `to_value[T](&T) -> Value`, `from_value[T](&Value) -> Result[T, json.Error]`, `union Value` for documents of unknown shape |
 | `std.fs` | async `read_file` / `read_text` / `write_file` / `write_text` / `stat` / `exists` / `list_dir` / `walk_dir` / `create_dir` / `remove`; failures are `Result[_, fs.Error]` |
-| `std.env` | `get(name) -> string?`, `set`, `args() -> Vec[string]` |
+| `std.env` | `get(name) -> string?`, `set`, `args() -> Vec[string]`, `cwd() -> string` (absolute) |
 | `std.math` | `pi`, `e`, `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `sin`, `cos` |
 | `std.crypto` | `encrypt_aes_gcm` / `decrypt_aes_gcm` (password-based), `sha256`, `random_bytes` |
-| `std.runtime` | `async yield()` (§9.6) |
+| `std.runtime` | `async yield()` (§9.6); `exit(code) -> never` (ends the program with that exit code; not a panic, so `recover` doesn't catch it); `async run_module(js, args) -> int`: runs a program compiled by the JS back end (an ES module exporting `$main`) in a new process, as `ms run` does, and returns its exit code (for compilers written in MinScript, §14.2) |
 | `std.utf8` | `decode(&Slice[u8]) -> string` (invalid sequences → U+FFFD), `decode_range(bytes, start, end)`, `encode(&str) -> Vec[u8]`, `sequence_length(lead: u8)` |
 | `std.net.http` | HTTP/1.1: `async listen(host, port) -> Result[Server, http.Error]` (port 0 picks one, see `Server.port()`), `Server.accept` (cancel-safe) → `Request` (`method`, `path`, `query`, `headers`, `body`, `header(name)`, `json.[T]()`, `respond(body)`, `respond_with(Response)`), `Response` (`status = 200`, `headers`, `body`, `ok()`, `json.[T]()`), `json_response(status, &value)`; client `get`, `post`, `send(Outgoing)` (an HTTP error status is still `Ok`). Header names are lowercase; bodies are text |
 | `build` (`std/build`) | the mod.ms API (§17): `Config`, `Tool`, `Script` (`sh`, `pkg`, `task`), `Args`, `run`, `target` (`Target`, `Os`), `env` |

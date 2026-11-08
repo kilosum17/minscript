@@ -18,7 +18,7 @@ package check
 
 import "app.lexer.{Span, Diagnostic}"
 import "app.ast.*"
-import "app.resolve.{Sym, Resolution}"
+import "app.resolve.{Sym, Scope, Resolution}"
 
 /// The owner of a method: a type or interface, or a primitive (`string`), or "auto".
 pub union Owner = {
@@ -85,6 +85,9 @@ pub type CheckResult = {
     /// the inference variables the types above mention (for `show_ty`)
     pub vars: Vec[VarState]
 }
+
+/// A package this one imports, as the loader analysed it: its files and results.
+pub type CheckedDep = { pub files: Vec[File], pub res: Resolution, pub checked: CheckResult }
 
 // ---- internal structures ------------------------------------------------------------------------
 
@@ -313,6 +316,7 @@ fun index_file(index: &mut Map[int, Decl], file: &File) {
 
 type Checker = {
     syms: Vec[Sym]
+    scopes: Vec[Scope]
     /// use → symbol (the prelude's and the package's)
     refs: Map[int, int]
     /// declaration → symbol
@@ -346,11 +350,23 @@ type Checker = {
 /// Checks the files of one package. `prelude` is the prelude's resolution (and `prelude_file` its
 /// file); `res` is the package's, which shares the prelude's symbol arena.
 pub fun check_package(files: &Vec[File], res: &Resolution, prelude_file: &File, prelude: &Resolution) -> CheckResult {
+    check_loaded(files, res, prelude_file, prelude, [], [], [])
+}
+
+/// Checks a package of a loaded program: `deps[i]` for every `i` in `reach` is a package it can reach
+/// (dependencies first), and `vars` the program's inference variables so far (each package continues
+/// the arena, so the types of a dependency's bindings stay valid here).
+pub fun check_loaded(files: &Vec[File], res: &Resolution, prelude_file: &File, prelude: &Resolution, deps: &Vec[CheckedDep], reach: &Vec[int], vars: Vec[VarState]) -> CheckResult {
     var refs = m{} as Map[int, int]
     var decls = m{} as Map[int, int]
     var deferred = Set.new() as Set[int]
     var open = Set.new() as Set[int]
-    for r in [prelude, res].iter() {
+    var all = [prelude.clone()]
+    for i in reach.iter() {
+        all.push(deps[i].res.clone())
+    }
+    all.push(res.clone())
+    for r in all.iter() {
         for id, rf in r.refs {
             refs[id] = rf.sym
         }
@@ -365,8 +381,13 @@ pub fun check_package(files: &Vec[File], res: &Resolution, prelude_file: &File, 
         }
     }
     var c = Checker {
-        syms: res.symbols.clone(), refs, decls, deferred, open,
+        syms: res.symbols.clone(), scopes: res.scopes.clone(), refs, decls, deferred, open, vars,
         prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(), ctx: blank_ctx(),
+    }
+    for i in reach.iter() {
+        for sym, ty in deps[i].checked.symbols {
+            c.sym_types[sym] = ty.clone()
+        }
     }
     for s in res.symbols.iter() {
         if s.kind != "implicit" {
@@ -380,10 +401,20 @@ pub fun check_package(files: &Vec[File], res: &Resolution, prelude_file: &File, 
         c.implicit_by_owner[owner] = list
     }
     index_file(c.index, prelude_file)
+    for i in reach.iter() {
+        for f in deps[i].files.iter() {
+            index_file(c.index, f)
+        }
+    }
     for f in files.iter() {
         index_file(c.index, f)
     }
     c.register_impls(prelude_file)
+    for i in reach.iter() {
+        for f in deps[i].files.iter() {
+            c.register_impls(f)
+        }
+    }
     for f in files.iter() {
         c.register_impls(f)
     }
@@ -1056,10 +1087,26 @@ impl Checker {
                     return this.self_stack.last() ?? TyUnknown
                 }
                 var sym = this.refs.get(t.id)
-                // `ws.Message`: a type of an imported package (not loaded: opaque)
+                // `ws.Message`: a type of an imported package
                 if let Some(s) = sym {
                     if path.len() > 1 && this.syms[s].kind == "package" {
-                        sym = None
+                        var cur: int? = Some(s)
+                        var k = 1
+                        for k < path.len() {
+                            cur = match cur {
+                                Some(c) => match this.syms[c].target {
+                                    Some(scope) => this.scopes[scope].names.get(path[k])
+                                    None => None
+                                }
+                                None => None
+                            }
+                            k += 1
+                        }
+                        if cur.is_none() && this.syms[s].target.is_some() {
+                            let pkg = this.syms[s].detail ?? this.syms[s].name.clone()
+                            this.error("E_UNDECLARED_TYPE", "package `${pkg}` has no type `${path.skip(1).join(".")}`", t.span)
+                        }
+                        sym = cur
                     }
                 }
                 let Some(s) = sym else { return TyUnknown }
