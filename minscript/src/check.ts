@@ -2056,7 +2056,8 @@ class Checker {
         const branchExp = e.else !== null ? exp : undefined
         const thenTy = this.checkStmts(e.then.stmts, branchExp)
         if (e.else === null) return T.VOID
-        const elseTy = e.else.kind === "Block" ? this.checkStmts(e.else.stmts, branchExp) : this.checkExpr(e.else, branchExp)
+        const elseExp = branchExp ?? this.armHint(thenTy)
+        const elseTy = e.else.kind === "Block" ? this.checkStmts(e.else.stmts, elseExp) : this.checkExpr(e.else, elseExp)
         if (exp !== undefined && !this.isVoid(exp)) {
             if (T.prune(thenTy).k !== "never") this.expectAssign(lastValueNode(e.then), thenTy, exp)
             if (T.prune(elseTy).k !== "never") this.expectAssign(e.else.kind === "Block" ? lastValueNode(e.else) : e.else, elseTy, exp)
@@ -2073,13 +2074,22 @@ class Checker {
             if (arm.pattern !== null && subject !== null) this.bindPattern(arm.pattern, subject)
             if (arm.test !== null) this.checkTruthy(arm.test, this.checkExpr(arm.test, T.BOOL))
             if (arm.guard !== null) this.checkTruthy(arm.guard, this.checkExpr(arm.guard, T.BOOL))
-            const ty = this.checkExpr(arm.body, exp)
+            // without an expected type, the arms so far give one (`List([…])` after a first arm of type Sx)
+            const ty = this.checkExpr(arm.body, exp ?? this.armHint(result))
             if (exp !== undefined && !this.isVoid(exp) && T.prune(ty).k !== "never") this.expectAssign(arm.body, ty, exp)
             else result = this.joinArm(arm.body, result, ty)
         }
         this.checkExhaustive(e, subject)
         if (exp !== undefined && !this.isVoid(exp)) return exp
         return result ?? T.NEVER
+    }
+
+    /** The type earlier branches settled on, as the expected type of the next one: only a named type
+     *  (so an inferred variant there resolves, spec §7.6); literals keep their own inference. */
+    private armHint(t: Ty | null): Ty | undefined {
+        if (t === null) return undefined
+        const p = T.prune(t)
+        return p.k === "named" ? p : undefined
     }
 
     private joinArm(at: { span: Span }, a: Ty | null, b: Ty): Ty {

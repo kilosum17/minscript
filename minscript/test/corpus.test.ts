@@ -19,8 +19,8 @@
 //   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL;
 // - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
 //   test/testing/failing reports its failures as in `report.out`;
-// - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer dumps every
-//   file exactly like stage 0's;
+// - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer and parser
+//   produce exactly stage 0's output (dumps and diagnostics) on every file;
 // - `ms fmt` (src/fmt.ts): every valid file formats to the same AST, keeps its comments, and formatting
 //   again changes nothing; test/fmt/*.ms format to their `.fmt` snapshot.
 //
@@ -398,18 +398,32 @@ describe("stage 1 (../stage1, the self-hosted compiler)", () => {
         const r = await runTests(stage1, { onOutput: (l) => lines.push(l) })
         assert.deepEqual([r.failed, r.broken], [0, 0], lines.join("\n"))
     })
-    test("its lexer dumps every file like stage 0's", { timeout: 60_000 }, async () => {
+    const files = () => [...msFiles(join(root, "..", "std")), ...msFiles(root), ...msFiles(join(stage1, "src"))]
+    const stage1Run = async (command: string, list: string[]) => {
         const { spawnSync } = await import("node:child_process")
-        const files = [...msFiles(join(root, "..", "std")), ...msFiles(root), ...msFiles(join(stage1, "src"))]
         const ms = join(root, "..", "bin", "ms.js")
-        const r = spawnSync(process.execPath, [ms, "run", stage1, "--", "lex", ...files], { encoding: "utf8", maxBuffer: 1 << 28 })
+        return spawnSync(process.execPath, [ms, "run", stage1, "--", command, ...list], { encoding: "utf8", maxBuffer: 1 << 28 })
+    }
+    const same = (actual: string, expected: string, what: string) => {
+        if (actual === expected) return
+        const a = actual.split("\n"), b = expected.split("\n")
+        const i = a.findIndex((l, k) => l !== b[k])
+        assert.fail(`${what}: first difference at line ${i + 1}:\n  stage 1: ${a[i]}\n  stage 0: ${b[i]}`)
+    }
+    const diagnosticLines = (file: string, ds: { span: { line: number, col: number }, code: string, message: string }[]) =>
+        ds.map((d) => `${file}:${d.span.line}:${d.span.col}: error ${d.code}: ${d.message}\n`).join("")
+    test("its lexer dumps every file like stage 0's", { timeout: 60_000 }, async () => {
+        const list = files()
+        const r = await stage1Run("lex", list)
         assert.equal(r.status, 0, r.stderr)
-        const expected = files.map((f) => `== ${f}\n${dumpTokens(lex(readFileSync(f)))}`).join("")
-        const actual = r.stdout
-        if (actual !== expected) {
-            const a = actual.split("\n"), b = expected.split("\n")
-            const i = a.findIndex((l, k) => l !== b[k])
-            assert.fail(`first difference at output line ${i + 1}:\n  stage 1: ${a[i]}\n  stage 0: ${b[i]}`)
-        }
+        same(r.stdout, list.map((f) => `== ${f}\n${dumpTokens(lex(readFileSync(f)))}`).join(""), "token dumps")
+        same(r.stderr, list.map((f) => diagnosticLines(f, lex(readFileSync(f)).diagnostics)).join(""), "diagnostics")
+    })
+    test("its parser builds the same AST and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
+        const list = files()
+        const r = await stage1Run("parse", list)
+        assert.equal(r.status, 0, r.stderr)
+        same(r.stdout, list.map((f) => `== ${f}\n${printFile(parse(readFileSync(f)).file)}`).join(""), "AST dumps")
+        same(r.stderr, list.map((f) => diagnosticLines(f, parse(readFileSync(f)).diagnostics)).join(""), "diagnostics")
     })
 })

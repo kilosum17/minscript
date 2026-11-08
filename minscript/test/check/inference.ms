@@ -131,3 +131,18 @@ async fun tasks() -> int {
     counter.update(#{ c => c += 1 })
     v + got + now + counter.get()
 }
+
+union Shape2 = { Dot  Line(int) }
+
+/// Without an expected type, an arm after the first gets the earlier arms' type (spec §7.6).
+fun later_arms_guided(n: int) -> int {
+    let s = match n {
+        0 => Shape2.Dot
+        _ => Line(n)
+    }
+    let t2 = if n > 1 { Shape2.Dot } else { Line(1) }
+    match s {
+        Dot => 0
+        Line(k) => k
+    }
+}

@@ -94,7 +94,8 @@ function signatureProblem(f: A.FunDecl): string | null {
 /** The generated file: `ms_test_main` runs every test with the MinScript runner. */
 export function harness(t: PackageTests, display: string, reporter: string): string {
     const cases = t.tests.map((x) =>
-        `        ms_testing.Case { name: ${JSON.stringify(x.name)}, run: ${x.async ? "Async" : "Sync"}(#{ ${x.name}() }) },`)
+        // qualified: the package under test may have its own `Sync` / `Async`
+        `        ms_testing.Case { name: ${JSON.stringify(x.name)}, run: ms_testing.TestFn.${x.async ? "Async" : "Sync"}(#{ ${x.name}() }) },`)
     return [
         `package ${t.pkg}`,
         "",

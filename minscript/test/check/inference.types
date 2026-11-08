@@ -89,3 +89,7 @@
 127:14  msg: string
 130:9   counter: Ref[int]
 131:23  c: &mut int
+138:23  n: int
+139:9   s: Shape2
+143:9   t2: Shape2
+146:14  k: int

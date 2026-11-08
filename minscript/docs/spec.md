@@ -798,6 +798,8 @@ fun default_shape() -> Shape { Empty }   // return type is the expected type
 
 ## 8. Declarations and modules
 
+- **Branches guide each other:** without an expected type, a `match` arm or an `else` branch gets the type the earlier branches settled on, when that is a named type: `let s = match n { 0 => Shape.Dot, _ => Line(n) }` resolves `Line` in `Shape`.
+
 ### 8.1 File structure and imports [D]
 
 ```text
@@ -2066,6 +2068,7 @@ The language server formats a document on request (VS Code: *Format Document*, f
 | 8 | **`Option.or` / `Result.or`** take "a value or `#{…}`" (§10.1). The prelude types the fallback loosely (`or[F](fallback: F)`); should there be two methods (`or(v)` / `or_else(#{…})`) so both are checked? | loose for now |
 | 9 | **`Option` / `Result` of Copy are Copy** (like Rust's `Option<i32>`), so `opt.unwrap()` doesn't consume an `int?`. Keep? | yes |
 | 10 | **Implicit captures of Copy values** (`#{ it + n }` with `n: int`) are borrows (§9.4), so returning such a closure needs `#[n]`. Should Copy values be captured by copy implicitly instead, so only non-Copy captures need listing? | no: borrows, as §9.4 says (the fix-it adds `#[n]`) |
+| 12 | **Pattern names that are also types.** An unqualified name in a pattern resolves through the prelude before the scrutinee's type (§6), so a variant named like a prelude type or interface (`Range`, `Index`) or an item in scope silently means that type, and the match reports a type mismatch. Should a variant of the scrutinee's own type win when the scrutinee's type is known? | no: prelude first, as §6 says (rename the variant, or qualify it: `ExprKind.Range`) |
 | 11 | **Mutating closures behind a shared borrow.** `numbers.for_each(#[&mut total]{ total += it })` passes a closure that writes through its `&mut` capture, but `for_each` takes `f: &(T, int) -> void`, a *shared* borrow of the closure. Rust would require `FnMut` (`&mut F`). Should function types distinguish closures that mutate captured state (e.g. `&mut (T) -> U`), so that a mutating closure can't be called re-entrantly, or from two places at once, through shared references? | allowed: function types don't distinguish; calls are sequential, so it is sound today. Re-entrancy (a mutating closure that calls itself through a copy of `f`) and sharing across tasks are not checked |
 
 **Resolved in this revision** (formerly open questions):

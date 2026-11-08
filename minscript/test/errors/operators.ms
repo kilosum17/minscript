@@ -59,3 +59,7 @@ fun short_decl_member() {
 fun let_with_short_decl() {
     let x := 5                                  //~ E_SHORT_DECL_TARGET
 }
+
+fun broken_match_arm(n: int) -> string {
+    match n { 0 => (1 +), 1 => "one", _ => "other" }    //~ E_UNEXPECTED_TOKEN
+}

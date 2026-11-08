@@ -47,7 +47,7 @@ fun format_value(v: &Value) -> string {
 }
 
 /// A float as JavaScript's `String(x)` writes it (the stage-0 dump format): `1` for 1.0.
-fun js_number(x: f64) -> string {
+pub fun js_number(x: f64) -> string {
     let s = "${x}"
     s.strip_suffix(".0").to_str()
 }

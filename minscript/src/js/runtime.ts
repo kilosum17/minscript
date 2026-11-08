@@ -899,7 +899,8 @@ Object.assign(stdTable, {
     "io.println": (args: Any[]) => printLine(args.map(toStr).join(" ")),
     // without a newline: straight to stdout, or (when output is captured, in tests) kept for the next line
     "io.print": (args: Any[]) => { if (captured) pendingPrint += args.map(toStr).join(" "); else process.stdout.write(args.map(toStr).join(" ")) },
-    "io.eprintln": (args: Any[]) => printLine("error: " + args.map(toStr).join(" ")),
+    // standard error (when output is captured, as in tests: the capture, so nothing is lost)
+    "io.eprintln": (args: Any[]) => { const text = args.map(toStr).join(" "); if (captured) printLine(text); else process.stderr.write(text + "\n") },
     "io.read_line": readLine,
     "log.println": (args: Any[]) => printLine(args.map(toStr).join(" ")), "log.print": (args: Any[]) => printLine(args.map(toStr).join(" ")),
     "log.info": (args: Any[]) => printLine(args.map(toStr).join(" ")), "log.debug": (args: Any[]) => printLine(args.map(toStr).join(" ")),

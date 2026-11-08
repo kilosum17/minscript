@@ -45,21 +45,31 @@ compiler internals (each file on its own)
   version                   the toolchain version
 `
 
+/** Exits once stdout and stderr have been written out: on a pipe, Node writes them asynchronously,
+ *  and `process.exit` would cut off what a program printed last. */
+async function exit(code: number): Promise<never> {
+    await new Promise<void>((resolve) => process.stdout.write("", () => resolve()))
+    await new Promise<void>((resolve) => process.stderr.write("", () => resolve()))
+    process.exit(code)
+}
+
 const COMMANDS = new Set(["run", "js", "config", "check", "test", "fmt", "lex", "parse", "resolve", "hir", "help", "version"])
 const [command, ...rest] = process.argv.slice(2)
 
 if (command === undefined || command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(HELP)
-    process.exit(0)
+    await exit(0)
 }
+if (command === undefined) throw new Error("unreachable")     // (narrowing: `await exit()` above doesn't)
+
 if (command === "version" || command === "--version" || command === "-v") {
     console.log(`ms ${VERSION} (node ${process.versions.node})`)
-    process.exit(0)
+    await exit(0)
 }
 
 if (command === "run" || command === "js" || command === "config") {
     const { runProgramCommand } = await import("./project_cli.ts")
-    process.exit(await runProgramCommand(command, rest))
+    await exit(await runProgramCommand(command, rest))
 }
 
 if (command === "check") {
@@ -73,12 +83,12 @@ if (command === "check") {
         if (program.diagnostics.length > 0) failed = true
         else console.log(`${path}: ok (${program.packages.length} package${program.packages.length === 1 ? "" : "s"}, ${program.packages.reduce((n, p) => n + p.files.length, 0)} files)`)
     }
-    process.exit(failed ? 1 : 0)
+    await exit(failed ? 1 : 0)
 }
 
 if (command === "fmt") {
     const { runFmt } = await import("./fmt_cli.ts")
-    process.exit(await runFmt(rest))
+    await exit(await runFmt(rest))
 }
 
 if (command === "test") {
@@ -101,21 +111,21 @@ if (command === "test") {
     }
     if (packages === 0 && broken === 0) console.log(`no tests${filter ? ` matching \`${filter}\`` : ""}`)
     else if (packages > 1 || broken > 0) console.log(`\n${packages} package${packages === 1 ? "" : "s"}: ${failed === 0 && broken === 0 ? "all passed" : `${failed} failed${broken > 0 ? `, ${broken} couldn't run` : ""}`}`)
-    process.exit(failed > 0 || broken > 0 ? 1 : 0)
+    await exit(failed > 0 || broken > 0 ? 1 : 0)
 }
 
 if (!COMMANDS.has(command)) {
     // `ms dev`: a script of the project here
     const { runScriptShorthand } = await import("./project_cli.ts")
     const code = await runScriptShorthand(command, rest)
-    if (code !== null) process.exit(code)
+    if (code !== null) await exit(code)
     console.error(`ms: unknown command \`${command}\`, and no script of that name in a mod.ms here (\`ms help\` lists the commands)`)
-    process.exit(2)
+    await exit(2)
 }
 
 if (rest.length === 0) {
     console.error(`usage: ms ${command} <file.ms>…`)
-    process.exit(2)
+    await exit(2)
 }
 
 let failed = false
@@ -149,4 +159,4 @@ for (const file of rest) {
         failed = true
     }
 }
-process.exit(failed ? 1 : 0)
+await exit(failed ? 1 : 0)

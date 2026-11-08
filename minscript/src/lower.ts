@@ -55,7 +55,6 @@ class Lowerer {
     private readonly deferred: Set<A.Node>
     private readonly implicitByOwner = new Map<A.Node, Sym[]>()
     private readonly funNames = new Map<A.FunDecl, string>()
-    private readonly thisSyms: { span: Span, sym: Sym }[] = []
     private readonly tempScope = new Scope("function", null)
     private tempCount = 0
     private ctx: FnCtx = { ret: T.VOID, retNode: null }
@@ -83,7 +82,6 @@ class Lowerer {
             if (!list.includes(sym)) list.push(sym)
             this.implicitByOwner.set(sym.scope.closure, list)
         }
-        for (const [node, sym] of res.refs) if (sym.kind === "this") this.thisSyms.push({ span: node.span, sym })
         this.nameItems(prelude.file, "std.")
         for (const d of deps) for (const f of d.files) this.nameItems(f, packagePrefix(d.name))
         for (const f of files) this.nameItems(f, packagePrefix(packageName))
@@ -339,7 +337,21 @@ class Lowerer {
     }
 
     private thisSymIn(body: A.Block): Sym | undefined {
-        return this.thisSyms.find((t) => t.span.start >= body.span.start && t.span.end <= body.span.end)?.sym
+        // by identity: the symbol of a `this` node inside this body (spans are per file, so a method in
+        // another file of the package can have the same offsets)
+        const seen = new Set<object>()
+        const stack: unknown[] = [body]
+        while (stack.length > 0) {
+            const x = stack.pop()
+            if (typeof x !== "object" || x === null || seen.has(x)) continue
+            seen.add(x)
+            if ((x as { kind?: string }).kind === "This") {
+                const sym = this.refs.get(x as A.Node)
+                if (sym?.kind === "this") return sym
+            }
+            for (const [k, v] of Object.entries(x)) if (k !== "span" && typeof v === "object" && v !== null) stack.push(v)
+        }
+        return undefined
     }
 
     private lowerFun(f: A.FunDecl, outer: A.GenericParam[] = []): H.Fun {
