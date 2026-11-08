@@ -48,9 +48,12 @@ class Emitter {
     private loops: LoopCtx[] = []
     private labels = 0
 
+    private readonly globals = new Set<string>()
+
     constructor(p: H.Program) {
         this.program = p
-        for (const f of p.funs) this.userFuns.set(f.name, f)
+        for (const f of p.funs) if (!f.builtin) this.userFuns.set(f.name, f)
+        for (const g of p.globals) this.globals.add(g.name)
     }
 
     // ---- module -------------------------------------------------------------------------------
@@ -61,7 +64,7 @@ class Emitter {
             `import * as $rt from ${JSON.stringify(runtimeUrl)}`,
             "",
         ]
-        for (const f of this.program.funs) lines.push(...this.fun(f), "")
+        for (const f of this.program.funs) if (!f.builtin) lines.push(...this.fun(f), "")
         // the type registry: methods for dynamic dispatch, field names for printing
         for (const t of this.program.types) lines.push(this.typeDef(t))
         lines.push("")
@@ -84,7 +87,13 @@ class Emitter {
         switch (t.kind) {
             case "struct": {
                 const floats = t.fields.filter((f) => f.float).map((f) => f.name)
-                return `$rt.defType(${JSON.stringify(t.name)}, "struct", ${JSON.stringify(t.fields.map((f) => f.name))}, ${methods(t.name)}, ${JSON.stringify(t.interfaces)}, ${JSON.stringify(floats)})`
+                const shapes = Object.fromEntries(t.fields.filter((f) => f.shape).map((f) => [f.name, f.shape]))
+                const defaults = t.fields.filter((f) => f.default).map((f) => {
+                    this.resetFn()
+                    const code = this.expr(f.default!)
+                    return `${JSON.stringify(f.name)}: () => { ${this.out.join(" ")} return ${code} }`
+                })
+                return `$rt.defType(${JSON.stringify(t.name)}, "struct", ${JSON.stringify(t.fields.map((f) => f.name))}, ${methods(t.name)}, ${JSON.stringify(t.interfaces)}, ${JSON.stringify(floats)}, ${JSON.stringify(shapes)}, { ${defaults.join(", ")} })`
             }
             case "union": {
                 const fields = Object.fromEntries(t.variants.map((v) => [v.name, v.fields.map((f) => f.name)]))
@@ -152,8 +161,9 @@ class Emitter {
         return name
     }
 
+    /** A compiled function or global is a local identifier; anything else in std is the runtime's. */
     private fnName(name: string): string {
-        if (name.startsWith("std.")) return `$rt.std[${JSON.stringify(name.slice(4))}]`
+        if (name.startsWith("std.") && !this.userFuns.has(name) && !this.globals.has(name)) return `$rt.std[${JSON.stringify(name.slice(4))}]`
         const js = name.replace(/\./g, "$")
         return RESERVED.has(js) ? `${js}_` : js
     }
@@ -455,7 +465,7 @@ class Emitter {
             }
             case "char": return JSON.stringify(e.value)
             case "local": return this.local(e.sym)
-            case "global": return e.name.startsWith("std.") ? `$rt.std[${JSON.stringify(e.name.slice(4))}]` : this.fnName(e.name)
+            case "global": return this.fnName(e.name)
             case "fn": {
                 if (this.isCtorName(e.name)) {
                     const at = e.name.lastIndexOf(".")
@@ -477,7 +487,7 @@ class Emitter {
             case "extern": {
                 if (e.args === null) return `$rt.ext(${JSON.stringify(e.path)})`
                 const args = this.exprs(e.args)
-                if (e.typeArgs) args.push(JSON.stringify(e.typeArgs.map((t) => this.shape(t))))
+                if (e.typeArgs) args.push(JSON.stringify(e.typeArgs.map((t) => ({ s: t }))))
                 return `$rt.ext(${JSON.stringify(e.path)})(${args.join(", ")})`
             }
             case "struct": {
@@ -565,13 +575,6 @@ class Emitter {
         }
     }
 
-    /** What the runtime needs to build a value of a named type from plain data (`json.parse.[User]`). */
-    private shape(name: string): unknown {
-        const t = this.program.types.find((x) => x.name === name)
-        if (t?.kind !== "struct") return { $t: name }
-        return { $t: name, optional: t.fields.filter((f) => f.optional).map((f) => f.name) }
-    }
-
     private elems(list: (H.Expr | H.Spread)[]): string[] {
         const codes = this.exprs(list.map((x) => (x.k === "spread" ? x.expr : x)))
         return list.map((x, i) => (x.k === "spread" ? `...${codes[i]}` : codes[i]!))
@@ -579,6 +582,7 @@ class Emitter {
 
     private call(e: Extract<H.Expr, { k: "call" }>): string {
         const args = this.exprs(e.args)
+        if (e.shapes) args.push(JSON.stringify(e.shapes))     // a builtin's type arguments (`json.parse.[User]`)
         const fn = this.userFuns.get(e.fn)
         const cellParams = fn ? [...(fn.self ? [false] : []), ...fn.params.map((p) => needsCell(p.ty))] : []
         return this.callWithCells(this.fnName(e.fn), args, e.args, cellParams)

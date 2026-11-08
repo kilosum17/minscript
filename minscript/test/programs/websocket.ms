@@ -7,7 +7,7 @@
 //
 // Assumed std.net.ws API:
 //   pub union Message = { Text(string)  Binary(Vec[u8])  Close }          // Clone (auto-derived)
-//   ws.listen(host: string, port: u16) -> Result[Server, ws.Error]
+//   ws.listen(host: string, port: u16) async -> Result[Server, ws.Error]   // resolves once bound
 //   ws.connect(url: string) async -> Result[Connection, ws.Error]
 //   Server.accept(&mut this) async -> Result[Connection, ws.Error]
 //   Connection.split(this) -> t(Reader, Writer)                           // consumes the connection
@@ -76,7 +76,7 @@ async fun run_hub(port: u16, ready: Resolver[Result[void, string]]) {
     // Topic and Signal are handles: passing one clones it implicitly (spec §9.1), so no `.clone()`
     report(online).ignore()
 
-    var server = ws.listen("127.0.0.1", port) or e => {
+    var server = await ws.listen("127.0.0.1", port) or e => {
         ready.resolve(Err("failed to bind port ${port}: ${e}"))
         return
     }

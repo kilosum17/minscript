@@ -13,8 +13,20 @@ import type { Span } from "./token.ts"
 import * as T from "./types.ts"
 import type { Ty } from "./types.ts"
 
-export function lowerPackage(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude = loadPrelude()): H.Program {
-    return new Lowerer(files, res, checked, prelude).run()
+/** A package the lowered one imports (for the names and declarations of its items). */
+export type LowerDep = { files: A.File[], res: Resolution, name: string }
+
+/**
+ * `packageName`: the package being lowered ("main" keeps plain names; others prefix theirs).
+ * `deps`: the packages it can reach, so calls into them get their qualified names.
+ */
+export function lowerPackage(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude = loadPrelude(), packageName = "main", deps: LowerDep[] = []): H.Program {
+    return new Lowerer(files, res, checked, prelude, packageName, deps).run()
+}
+
+/** The qualified prefix of a package's items: none for `main`, `std.` for the prelude, else `<package>.`. */
+export function packagePrefix(name: string): string {
+    return name === "main" ? "" : name === "std" ? "std." : `${name}.`
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -43,10 +55,14 @@ class Lowerer {
     private tempCount = 0
     private ctx: FnCtx = { ret: T.VOID, retNode: null }
 
-    constructor(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude) {
+    private readonly packageName: string
+
+    constructor(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude, packageName: string, deps: LowerDep[]) {
         this.files = files
-        this.refs = new Map([...prelude.res.refs, ...res.refs])
-        this.decls = new Map([...prelude.res.decls, ...res.decls])
+        this.packageName = packageName
+        const all = [prelude.res, ...deps.map((d) => d.res), res]
+        this.refs = new Map(all.flatMap((r) => [...r.refs]))
+        this.decls = new Map(all.flatMap((r) => [...r.decls]))
         this.captures = res.captures
         this.types = checked.types
         this.symTypes = checked.symbols
@@ -63,8 +79,9 @@ class Lowerer {
             this.implicitByOwner.set(sym.scope.closure, list)
         }
         for (const [node, sym] of res.refs) if (sym.kind === "this") this.thisSyms.push({ span: node.span, sym })
-        this.nameItems(prelude.file, true)
-        for (const f of files) this.nameItems(f, false)
+        this.nameItems(prelude.file, "std.")
+        for (const d of deps) for (const f of d.files) this.nameItems(f, packagePrefix(d.name))
+        for (const f of files) this.nameItems(f, packagePrefix(packageName))
     }
 
     run(): H.Program {
@@ -81,8 +98,7 @@ class Lowerer {
         return owner.std ? `std.${owner.name}` : owner.name
     }
 
-    private nameItems(file: A.File, std: boolean): void {
-        const prefix = std ? "std." : ""
+    private nameItems(file: A.File, prefix: string): void {
         const typeName = (t: A.Type): string => (t.kind === "TName" ? t.path.join(".") : "?")
         for (const item of file.items) {
             switch (item.kind) {
@@ -101,8 +117,10 @@ class Lowerer {
         return this.funNames.get(decl) ?? (owner !== undefined ? `${this.ownerName(owner)}.${decl.name}` : decl.name)
     }
 
+    /** The qualified name of a top-level item (`std.Vec`, `std.json.Error`, `User` in main). */
     private typeName(sym: Sym): string {
-        return sym.std ? `std.${sym.name}` : sym.name
+        if (sym.std) return `std.${sym.name}`
+        return `${packagePrefix(sym.pkg ?? this.packageName)}${sym.name}`
     }
 
     /** Interfaces each local type implements (`type X: I` and `impl I for X`), for dynamic dispatch. */
@@ -218,8 +236,42 @@ class Lowerer {
 
     // ---- items --------------------------------------------------------------------------------
 
-    private fieldDefs(fields: A.Field[]): H.FieldDef[] {
-        return fields.map((f) => ({ name: f.name, optional: isOptionType(f.type), ...(isFloatType(f.type) ? { float: true } : {}) }))
+    private fieldDefs(fields: A.Field[], withDefaults = false): H.FieldDef[] {
+        return fields.map((f) => {
+            const shape = this.astShape(f.type)
+            return {
+                name: f.name, optional: isOptionType(f.type), ...(isFloatType(f.type) ? { float: true } : {}), ...(shape ? { shape } : {}),
+                ...(withDefaults && f.default !== null ? { default: this.expr(f.default) } : {}),
+            }
+        })
+    }
+
+    /** The shape of a field's type (null: plain data needs no conversion). */
+    private astShape(t: A.Type): H.Shape | null {
+        if (t.kind === "TOption") return { opt: this.astShape(t.inner) }
+        if (t.kind === "TRef") return this.astShape(t.inner)
+        if (t.kind !== "TName") return null
+        const sym = this.refs.get(t)
+        if (sym === undefined) return null
+        const arg = (i: number) => (t.args[i] ? this.astShape(t.args[i]!) : null)
+        if (sym.std && (sym.name === "Vec" || sym.name === "Slice" || sym.name === "Array")) return { vec: arg(0) }
+        if (sym.std && sym.name === "Option") return { opt: arg(0) }
+        if (sym.std && sym.name === "Map") return { map: arg(1) }
+        if (sym.kind === "type" || sym.kind === "union") return { s: this.typeName(sym) }
+        if (sym.kind === "builtin-type" && (sym.name === "f32" || sym.name === "f64")) return { f: true }
+        if (sym.kind === "builtin-type" && (sym.name === "i64" || sym.name === "u64")) return { i64: true }
+        return null
+    }
+
+    private tyShape(t: Ty): H.Shape | null {
+        const s = T.strip(t)
+        if (s.k === "prim") return T.isFloat(s) ? { f: true } : s.name === "i64" || s.name === "u64" ? { i64: true } : null
+        if (s.k !== "named") return null
+        const arg = (i: number) => (s.args[i] ? this.tyShape(s.args[i]!) : null)
+        if (s.sym.std && (s.sym.name === "Vec" || s.sym.name === "Slice" || s.sym.name === "Array")) return { vec: arg(0) }
+        if (s.sym.std && s.sym.name === "Option") return { opt: arg(0) }
+        if (s.sym.std && s.sym.name === "Map") return { map: arg(1) }
+        return { s: this.typeName(s.sym) }
     }
 
     private lowerItem(item: A.Item, p: H.Program, interfaces: Map<Sym, string[]>): void {
@@ -232,14 +284,14 @@ class Lowerer {
                 const sym = this.decls.get(item)
                 const ty = sym ? T.prune(this.symTypes.get(sym) ?? T.UNKNOWN) : T.UNKNOWN
                 this.ctx = { ret: T.UNKNOWN, retNode: null }
-                p.globals.push({ name: item.name, ty, value: this.coerce(this.expr(item.value), ty) })
+                p.globals.push({ name: `${packagePrefix(this.packageName)}${item.name}`, ty, value: this.coerce(this.expr(item.value), ty) })
                 return
             }
             case "TypeDecl": {
                 const sym = this.decls.get(item)
                 const ifaces = sym ? interfaces.get(sym) ?? [] : []
                 if (item.body.kind === "StructBody") {
-                    p.types.push({ kind: "struct", name: item.name, fields: this.fieldDefs(item.body.fields), interfaces: ifaces })
+                    p.types.push({ kind: "struct", name: sym ? this.typeName(sym) : item.name, fields: this.fieldDefs(item.body.fields, true), interfaces: ifaces })
                     for (const m of item.body.methods) p.funs.push(this.lowerFun(m))
                 }
                 return
@@ -247,7 +299,7 @@ class Lowerer {
             case "UnionDecl": {
                 const sym = this.decls.get(item)
                 p.types.push({
-                    kind: "union", name: item.name, interfaces: sym ? interfaces.get(sym) ?? [] : [],
+                    kind: "union", name: sym ? this.typeName(sym) : item.name, interfaces: sym ? interfaces.get(sym) ?? [] : [],
                     variants: item.variants.map((v) => ({
                         name: v.name,
                         positional: v.fields === null,
@@ -283,7 +335,7 @@ class Lowerer {
         const ret = this.retTy(f)
         this.ctx = { ret, retNode: f.ret }
         const body = f.body ? this.body(f.body, ret) : null
-        return { name: this.funName(f), params, self, ret, async: f.async, body, extern: null, span: f.span }
+        return { name: this.funName(f), params, self, ret, async: f.async, body, extern: null, span: f.span, ...(isBuiltinBody(f) ? { builtin: true } : {}) }
     }
 
     /** A function or closure body: the tail value is coerced to the result type. */
@@ -598,13 +650,21 @@ class Lowerer {
         switch (sym.kind) {
             case "local": case "param": case "closure-param": case "implicit": case "this":
                 return { k: "local", ty, span, sym }
+            default: return this.symValue(sym, e, ty)
+        }
+    }
+
+    /** A top-level item used as a value (directly, or as `pkg.item`). */
+    private symValue(sym: Sym, e: A.Node, ty: Ty): H.Expr {
+        const span = e.span
+        switch (sym.kind) {
             case "fun": case "extern-fun": {
                 const decl = sym.decl
                 return decl?.kind === "FunDecl" ? { k: "fn", ty, span, name: this.funName(decl) } : this.unsupported("function", e, ty)
             }
-            case "global": return { k: "global", ty, span, name: sym.std ? `std.${sym.name}` : sym.name }
+            case "global": return { k: "global", ty, span, name: this.typeName(sym) }
             case "package": case "import": return { k: "extern", ty, span, path: sym.detail ?? sym.name, args: null }
-            default: return this.unsupported(`\`${e.name}\` used as a value`, e, ty)
+            default: return this.unsupported(`\`${sym.name}\` used as a value`, e, ty)
         }
     }
 
@@ -818,6 +878,7 @@ class Lowerer {
         const span = e.span
         const name = String(e.name)
         const target = this.members.get(e)
+        if (target?.kind === "item") return this.symValue(target.sym, e, ty)
         const path = this.externPath(e)
         if (path !== null) return { k: "extern", ty, span, path, args: null }
         switch (target?.kind) {
@@ -834,7 +895,8 @@ class Lowerer {
         if (e.kind === "Ident") {
             const sym = this.refs.get(e)
             if (sym === undefined && (this.open.has(e) || (this.deferred.has(e) && !this.variants.has(e)))) return e.name
-            return sym && (sym.kind === "package" || sym.kind === "import") ? (sym.detail ?? sym.name) : null
+            // a loaded package's members resolve to its items; only packages without signatures stay symbolic
+            return sym && (sym.kind === "package" || sym.kind === "import") && !sym.target ? (sym.detail ?? sym.name) : null
         }
         if (e.kind === "Member" && typeof e.name === "string") {
             const base = this.externPath(e.object)
@@ -883,7 +945,11 @@ class Lowerer {
         }
 
         switch (target.kind) {
-            case "fun": return { k: "call", ty, span, fn: this.funName(target.decl), args: args(target.decl) }
+            case "fun": {
+                const call: H.Expr & { k: "call" } = { k: "call", ty, span, fn: this.funName(target.decl), args: args(target.decl) }
+                if (isBuiltinBody(target.decl) && target.decl.generics.length > 0 && info?.typeArgs) call.shapes = info.typeArgs.map((t) => this.tyShape(t))
+                return call
+            }
             case "static": return { k: "call", ty, span, fn: this.funName(target.decl, target.owner), args: args(target.decl) }
             case "variant": {
                 const a = args(null)
@@ -1108,6 +1174,14 @@ class Lowerer {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+/** A std function implemented by the runtime: its body is just `_builtin()`. */
+function isBuiltinBody(f: A.FunDecl): boolean {
+    const stmts = f.body?.stmts ?? []
+    if (stmts.length !== 1 || stmts[0]!.kind !== "ExprStmt") return false
+    const e = stmts[0]!.expr
+    return e.kind === "Call" && e.callee.kind === "Ident" && e.callee.name === "_builtin"
+}
 
 function isFloatType(t: A.Type): boolean {
     return t.kind === "TName" && t.path.length === 1 && (t.path[0] === "f64" || t.path[0] === "f32")

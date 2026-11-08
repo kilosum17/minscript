@@ -60,6 +60,7 @@ Pipeline:
 | Inter-task communication | — | channels deferred | **`Topic` (broadcast), `Queue` (one consumer), `Signal` (state)**, one-shot `Promise.new()` |
 | Closing / deadlocks | — | — | auto-close on last-handle drop; runtime `Deadlock` panic (catchable) + lint `L_SELF_WAIT` |
 | Handle types | — | — | **cloned implicitly** (`Ref`, `Topic`, `Queue`, `Signal`, …): no `.clone()` at call sites |
+| std packages | — | — | **written in MinScript** like the prelude (`std/<pkg>/*.ms`, bodies `_builtin()`), loaded with the program (§8.1, §10.4) |
 | Subscriptions | — | — | `Sub[T]` (short for subscription) |
 | Variant construction | qualified (`Msg.Text(…)`) | qualified | **inferred from the expected type**: `send(Text("hi"))` |
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
@@ -830,6 +831,17 @@ import pub "./log"                // re-export
   - Each package is type-checked and compiled **independently**, in dependency order. Packages with no dependency between them compile in parallel, and an unchanged package's compiled interface is reused from the cache.
   - To break a cycle, move the shared types into a third package, or depend on an `inter` instead of the concrete type.
   - Files inside one package may refer to each other freely, in any order.
+- **Privacy:** importing or using a non-`pub` item of another package is `E_PRIVATE_ITEM`. Inside a package every item is visible.
+- **Keyword names:** a `pub fun` may be named after a keyword, since other packages call it as `pkg.name` (`runtime.yield`). Inside its own package it can only be referred to through such a path.
+
+**Loading** (`src/loader.ts`): `ms run`, `ms js` and the language server load the entry file and, depth first, every package it imports:
+- The entry file declares `package main`: it is a package of its own, so a folder of example programs works without `mod.ms`. An entry file of another package brings the rest of its folder.
+- `"std.x.y"` is the folder `std/x/y/`; `"app.x"` is the folder `x/` under the program's root (for now the entry file's folder; `mod.ms` will set it, §17); `"./x"` and `"../x"` are relative to the importing file. A path whose last segment isn't a folder names an item of the parent package (`"std.io.println"`).
+- A path that is none of these names an external dependency. Dependencies aren't fetched yet, so their members stay `unknown` (§9.12).
+- A path that points nowhere, or an item a package doesn't have, is `E_UNKNOWN_IMPORT`.
+- Packages are analysed in dependency order. Each pass sees the results of every package it can reach, so a call into another package is checked against its real signature.
+- Items are named `<package>.<item>` (`std.json.parse`, `app.models.User`) except in `main`, which keeps plain names.
+- In a std package, a function whose body is only `_builtin()` is provided by each back end's runtime. Every other std function (and method) is ordinary MinScript, compiled with the program.
 
 ### 8.2 Top-level items [D]
 
@@ -903,7 +915,8 @@ Name resolution binds every name to its declaration, without types. It is implem
   - `"std.json"` binds `json` (a package).
   - `"std.io.println"` binds the item `println`.
   - `"pkg.{a, b}"` binds `a` and `b`, and `as` renames.
-  - A glob import (`"pkg.*"`) makes the file *open*: until packages are loaded, unknown names in that file are deferred, not reported.
+  - A glob import (`"pkg.*"`) of a loaded package binds its `pub` items, below the package's own items (local declarations shadow them).
+  - A glob of a package that isn't loaded (an external dependency) makes the file *open*: unknown names in that file are deferred, not reported.
 - **Patterns:** lowercase names bind. Uppercase or qualified names are constructors. In an or-pattern, every alternative must bind the same names (`E_INCONSISTENT_OR_BINDINGS`). `Union.Variant` for a union of this package must name a real variant (`E_UNKNOWN_VARIANT`).
 - **Implicit parameters:**
   - `it` / `it1` (the same symbol) … `itN` belong to the innermost header-less closure or unnamed `or`.
@@ -1256,11 +1269,11 @@ Generic calls get fresh inference variables, bound by unification with the argum
   - Other types, and a `match` without a subject, need `_ =>`.
 - **Methods named after keywords:** a method may be named after a keyword (`fun or`), since it is only ever called after `.` (§1.4).
 
-**Gradual typing for std:**
-- Packages other than the prelude have no signatures yet, so their members have the type `unknown`.
+**Gradual typing:**
+- std packages and the program's own packages are loaded with their signatures (§8.1), so calls into them are fully checked.
+- Members of an external dependency (not fetched yet), and of any package checked on its own (`ms check file.ms` checks one file as one package), have the type `unknown`.
 - `unknown` is compatible with everything and never produces a diagnostic. It also flows into inference variables, so no "can't infer" errors follow from it.
-- The same applies to names from glob imports.
-- When std packages get real signatures (written in MinScript, like the prelude), these checks tighten automatically.
+- The same applies to names from glob imports of such packages.
 
 **Borrows** (`&T`, `&mut T`) are part of types but don't affect compatibility here: call sites never write `&` (§9.2). Whether each borrow is *valid* is checked by the ownership pass (§9.13).
 
@@ -1381,6 +1394,25 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 - `json.parse.[T](s) -> Result[T, json.Error]`
 - `"42".to_int() -> Result[int, ParseError]`
 
+### 10.4 std packages [D]
+
+Each std package is a folder under [`std/`](../std/), written in MinScript like the prelude: types and their methods are ordinary code, and functions only the runtime can provide have the body `_builtin()` (§8.1). Every std package must load, resolve and type-check cleanly (the corpus test checks it).
+
+| Package | Contents |
+|---|---|
+| `std.io` | `print`, `println`, `eprintln` (`...args: &Stringer`), `async read_line() -> string` (`""` at the end of input) |
+| `std.log` | the prelude's `log` functions as a package |
+| `std.time` | `after(ms) -> Promise[void]` (cancel-safe), `async sleep(ms)`, `now() -> i64`, `Instant` (`now`, `elapsed`), `Duration` |
+| `std.json` | `parse[T](text) -> Result[T, json.Error]`, `stringify[T](&T) -> string`, `union Value` for documents of unknown shape |
+| `std.fs` | async `read_file` / `read_text` / `write_file` / `write_text` / `stat` / `exists` / `list_dir` / `walk_dir` / `create_dir` / `remove`; failures are `Result[_, fs.Error]` |
+| `std.env` | `get(name) -> string?`, `set`, `args() -> Vec[string]` |
+| `std.math` | `pi`, `e`, `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `sin`, `cos` |
+| `std.crypto` | `encrypt_aes_gcm` / `decrypt_aes_gcm` (password-based), `sha256`, `random_bytes` |
+| `std.runtime` | `async yield()` (§9.6) |
+| `std.net.ws` | WebSockets: `async listen(host, port) -> Result[Server, ws.Error]` (resolves once bound; port 0 picks one, see `Server.port()`), `async connect(url)`, `Server.accept`, `Connection.split(this) -> t(Reader, Writer)`, `Reader.receive` (cancel-safe), `Writer.send` (`Writer` is a handle, §9.1), `union Message = { Text(string)  Binary(Vec[u8])  Close }` |
+
+**JSON mapping** (`json.parse.[T]` / `stringify`): a struct is an object (a missing field takes its default, an optional field may be missing or `null`, any other missing field is an error); `Option` is the value or `null`; `Vec` is an array; `Map[string, V]` is an object; a union variant is `"Name"` without a payload and `{ "Name": [payload…] }` with one; `i64` / `u64` are numbers.
+
 ---
 
 ## 11. Diagnostics
@@ -1419,6 +1451,8 @@ So `path.strip_suffix(".enc")` needs no `.or(path)`.
 | `E_NOT_DYN_SAFE` | generic / `Self`-returning method called on a dynamic value |
 | `E_ORPHAN_IMPL` | `impl X for T` where neither `X` nor `T` is local |
 | `E_IMPORT_CYCLE` | packages import each other, directly or indirectly (§8.1) |
+| `E_UNKNOWN_IMPORT` | an import path that names no package, or an item the package doesn't have (§8.1) |
+| `E_PRIVATE_ITEM` | importing or using an item of another package that isn't `pub` (§8.1) |
 | `E_HANDLE_IMPL` | `impl Handle for T` outside std / `extern` (§9.1) |
 | `E_UNDECLARED_NAME` | a name that isn't declared in any enclosing scope (§8.7) |
 | `E_UNDECLARED_TYPE` | a type name that isn't declared |
@@ -1658,8 +1692,9 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 | int → `i64` / `u64` | an explicit `widen` |
 | subject-less `match` | an `if` / `else if` chain |
 
-- **Names:** user items keep their names (`main`, `User.new`), and std items are prefixed (`std.Vec.push`).
-- **Unknown members:** members of std packages without signatures stay symbolic (`extern:json.parse`), and so do variants of their types.
+- **Names:** items of `main` keep their names (`main`, `User.new`); prelude items are prefixed `std.` (`std.Vec.push`), and items of other packages by the package (`std.json.parse`, `app.models.User.new`).
+- **Programs:** `lowerProgram` (`src/loader.ts`) merges the HIR of every loaded package, dependencies first. A std function whose body is `_builtin()` is marked `builtin`: the back end provides it. A call to a generic builtin carries the *shapes* of its type arguments (`json.parse.[User]`), and struct definitions carry their field shapes and defaults, so the runtime can build values from plain data.
+- **Unknown members:** members of packages that aren't loaded (external dependencies) stay symbolic (`extern:acme.http.get`), and so do variants of their types.
 - **Checks:** `.hir` snapshots show the lowering (`test/hir/`). A validator (`src/hir_check.ts`) checks that every valid corpus file lowers to well-formed HIR: every local is bound before use, every label exists, and nothing is unsupported.
 
 ### 14.2 JS back end [D]
@@ -1691,7 +1726,7 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
   - a refutable pattern that fails disables its arm;
   - losing waits are cancelled, and std waits give back a value they already took (`Sub.next`, `Watcher.next`, `time.after`), which keeps them cancel-safe (§4.9).
 - **Floats** print as `2.0`, not `2`. Where the type is known (interpolation, `&Stringer` arguments, struct fields and variant payloads), the generated code uses the float-aware `to_str`.
-- **Unloaded std packages:** members without signatures are looked up at run time (`$rt.ext("std.json.parse")`). A small set is provided: `std.io.println`, `std.json` (`parse.[T]` builds the named struct), `std.time.after` / `sleep` / `now`, `std.env.get`, `std.runtime.yield`, and `std.math`. Anything else panics with "not available on the JS back end yet".
+- **std packages:** builtin functions are runtime entries named by package (`$rt.std["json.parse"]`, `$rt.std["net.ws.Writer.send"]`); the rest of a std package is compiled like user code. Node provides the platform: `node:fs/promises`, `node:crypto` (AES-256-GCM with an scrypt key), `node:readline` on stdin, and for `std.net.ws` a small RFC 6455 server over `node:http` plus Node's global `WebSocket` as the client. Servers and sockets still open when `main` returns are closed. Members of packages that aren't loaded are looked up at run time (`$rt.ext(…)`) and panic with "not available on the JS back end yet".
 
 **Panics and deadlock** (§9.8, §9.10):
 - A panic escaping `main` prints `panic: …` and exits with status 101.
@@ -1707,7 +1742,9 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 - a panic's `file` / `line`;
 - raw pointers and `extern` functions;
 - copies of `Copy` aggregates share the JS object (harmless unless one is mutated);
-- floats nested in collections print without `.0`.
+- floats nested in collections print without `.0`;
+- `std.net.ws`: no TLS (`wss://`), no subprotocols or extensions, and the server doesn't enforce frame size limits;
+- `json.parse` of a field whose type is an alias (`Role = "A" | "B"`) doesn't check the value.
 
 ---
 
@@ -1940,6 +1977,7 @@ section[T](name: string) -> Result[T, json.Error]
 | 8 | **`Option.or` / `Result.or`** take "a value or `#{…}`" (§10.1). The prelude types the fallback loosely (`or[F](fallback: F)`); should there be two methods (`or(v)` / `or_else(#{…})`) so both are checked? | loose for now |
 | 9 | **`Option` / `Result` of Copy are Copy** (like Rust's `Option<i32>`), so `opt.unwrap()` doesn't consume an `int?`. Keep? | yes |
 | 10 | **Implicit captures of Copy values** (`#{ it + n }` with `n: int`) are borrows (§9.4), so returning such a closure needs `#[n]`. Should Copy values be captured by copy implicitly instead, so only non-Copy captures need listing? | no: borrows, as §9.4 says (the fix-it adds `#[n]`) |
+| 11 | **Mutating closures behind a shared borrow.** `numbers.for_each(#[&mut total]{ total += it })` passes a closure that writes through its `&mut` capture, but `for_each` takes `f: &(T, int) -> void`, a *shared* borrow of the closure. Rust would require `FnMut` (`&mut F`). Should function types distinguish closures that mutate captured state (e.g. `&mut (T) -> U`), so that a mutating closure can't be called re-entrantly, or from two places at once, through shared references? | allowed: function types don't distinguish; calls are sequential, so it is sound today. Re-entrancy (a mutating closure that calls itself through a copy of `f`) and sharing across tasks are not checked |
 
 **Resolved in this revision** (formerly open questions):
 - **Handles clone implicitly**: `Ref`, `Topic`, `Queue`, `Signal` and std handles have no `.clone()` at call sites (§9.1). `Subscription` is renamed `Sub[T]`.

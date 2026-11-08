@@ -2,12 +2,14 @@
 // `lex` prints the token dump (src/dump.ts); `parse` prints the AST as S-expressions (src/sexpr.ts);
 // `resolve` prints what each name refers to (src/resolve_dump.ts); `check` type-checks, runs the
 // ownership pass, and prints only diagnostics; `hir` prints the lowered program (src/hir_dump.ts);
-// `js` prints the generated JS; `run` compiles and runs the program.
-// Each file is its own package.
+// `js` prints the generated JS; `run` compiles and runs the program (with its imported packages,
+// src/loader.ts; arguments after the file go to `env.args()`).
+// For the other commands, each file is its own package.
 // Exits with status 1 if any file has diagnostics.
 
 import "./prelude.ts"
 import { readFileSync } from "node:fs"
+import { relative } from "node:path"
 import { dumpTokens } from "./dump.ts"
 import { lex } from "./lexer.ts"
 import { parse } from "./parser.ts"
@@ -28,13 +30,15 @@ if (command === "run" || command === "js") {
         console.error(`usage: node src/cli.ts ${command} <file.ms>`)
         process.exit(2)
     }
-    const compiled = compileToJs(readFileSync(file))
-    for (const d of compiled.diagnostics) console.error(`${file}:${d.span.line}:${d.span.col}: ${d.severity} ${d.code}: ${d.message}`)
+    const compiled = compileToJs(file)
+    for (const d of compiled.diagnostics) console.error(`${relative(process.cwd(), d.file)}:${d.span.line}:${d.span.col}: ${d.severity} ${d.code}: ${d.message}`)
     if (compiled.js === null) process.exit(1)
     if (command === "js") {
         process.stdout.write(compiled.js)
         process.exit(0)
     }
+    const { setArgs } = await import("./js/runtime.ts")
+    setArgs(files.slice(1))
     const result = await runJs(compiled.js)
     process.exit(result.exitCode)
 }

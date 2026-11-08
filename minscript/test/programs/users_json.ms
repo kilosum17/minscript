@@ -75,7 +75,7 @@ fun main() {
 
     let res = json.parse.[User](raw)                     // Result[User, json.Error]
     if res {
-        println("parsed ok")
+        println("parsed ok",res)
     }
     let user = res or e => {
         println("bad json: ${e}")

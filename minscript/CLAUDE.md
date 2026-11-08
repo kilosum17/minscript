@@ -1,6 +1,6 @@
 # MinScript
 
-MinScript is a language that aims for TypeScript-style concision, Rust-style ownership (with no lifetime annotations) and Go-style simplicity. This folder is the spec-first restart. The deterministic, hand-written TypeScript lexer (`src/lexer.ts`) and the recursive-descent + Pratt parser (`src/parser.ts`) name resolution (`src/resolve.ts`, single package) a first type checker (`src/check.ts`, spec §9.12) a first ownership pass (`src/ownership.ts`, spec §9.13) lowering to HIR (`src/lower.ts`, spec §14.1) and a first JS back end (`src/js/`, spec §14.2: `npm run run -- file.ms`) are done. Next candidates: real std signatures (to replace `unknown`), multi-package loading, and the JS gaps listed in §14.2.
+MinScript is a language that aims for TypeScript-style concision, Rust-style ownership (with no lifetime annotations) and Go-style simplicity. This folder is the spec-first restart. The deterministic, hand-written TypeScript lexer (`src/lexer.ts`) and the recursive-descent + Pratt parser (`src/parser.ts`) name resolution (`src/resolve.ts`, single package) a first type checker (`src/check.ts`, spec §9.12) a first ownership pass (`src/ownership.ts`, spec §9.13) lowering to HIR (`src/lower.ts`, spec §14.1) a first JS back end (`src/js/`, spec §14.2: `npm run run -- file.ms`), package loading (`src/loader.ts`, spec §8.1) and the first std packages (`std/*/`, spec §10.4) are done. Next candidates: `mod.ms` and external dependencies, more std, and the JS gaps listed in §14.2.
 
 ## Boundaries
 
@@ -12,9 +12,10 @@ MinScript is a language that aims for TypeScript-style concision, Rust-style own
 - `docs/spec-v1.rs`, `spec-v2.rs`, `merge_1.rs`, `notes_1.md`, `docs/history/samples/`: superseded and old-syntax material. Keep it for history, and don't update it.
 - `src/`: the compiler in TypeScript, run directly by Node ≥ 23.6 (type stripping). There are no runtime dependencies, and the only dev dependencies are `typescript` and `@types/node`.
   - Write erasable TS only: no `enum`, `namespace` or parameter properties. Import with `.ts` extensions.
-  - `token.ts`, `diagnostic.ts`, `lexer.ts`, `dump.ts` (token dump / `.tokens` format), `ast.ts`, `parser.ts`, `sexpr.ts` (AST dump / `.ast` format), `resolve.ts`, `resolve_dump.ts` (`.refs` format), `std_stub.ts`, `prelude.ts`, `types.ts`, `check.ts`, `check_dump.ts` (`.types` format), `ownership.ts`, `hir.ts`, `lower.ts`, `hir_dump.ts` (`.hir` format), `hir_check.ts` (HIR validator), `cli.ts`, and `js/` (`emit.ts` HIR → JS, `runtime.ts` the runtime, `run.ts` compile + run).
+  - `token.ts`, `diagnostic.ts`, `lexer.ts`, `dump.ts` (token dump / `.tokens` format), `ast.ts`, `parser.ts`, `sexpr.ts` (AST dump / `.ast` format), `resolve.ts`, `resolve_dump.ts` (`.refs` format), `std_stub.ts`, `prelude.ts`, `types.ts`, `check.ts`, `check_dump.ts` (`.types` format), `ownership.ts`, `hir.ts`, `lower.ts`, `hir_dump.ts` (`.hir` format), `hir_check.ts` (HIR validator), `loader.ts` (loads a program's packages and runs every pass on each, in dependency order), `cli.ts`, and `js/` (`emit.ts` HIR → JS, `runtime.ts` the runtime, `run.ts` compile + run).
   - The prelude is MinScript: `std/prelude.ms` (bodies are `_builtin()`). Add prelude APIs there, not in TypeScript; it must parse, resolve and type-check cleanly.
-  - Std packages other than the prelude have no signatures yet: their members are `unknown` (gradual, never reported). Don't add workarounds for that in the checker. Unit tests sit next to the code as `*.test.ts` (node:test).
+  - Std packages are folders under `std/` (`std/net/ws/ws.ms` is `std.net.ws`), written in MinScript. A function whose body is only `_builtin()` is provided by the runtime under its package name (`$rt.std["json.parse"]`, `$rt.std["net.ws.Writer.send"]`); everything else in std is compiled. A new builtin needs a runtime entry, and every std package must load cleanly (corpus test).
+  - `run`, `js` and the language server go through the loader; `check`, `hir`, `resolve` treat each file as its own package, so imported members are `unknown` there (gradual, never reported). Don't add workarounds for that in the checker. Unit tests sit next to the code as `*.test.ts` (node:test).
   - Commands: `npm test`, `npm run test:update` (rewrites `.tokens` / `.ast` snapshots, so review the diff), `npm run typecheck`, `npm run lex -- file.ms`, `npm run parse -- file.ms`, `npm run resolve -- file.ms`, `npm run check -- file.ms`, `npm run hir -- file.ms`, `npm run js -- file.ms`, `npm run run -- file.ms`.
   - Passes don't modify the AST: the resolver (and later the type checker) return side tables keyed by AST node; lowering will build a new tree (HIR).
   - Keep spec §1, §5.4, §8.7, §9.12, §9.13, §11, §12 and §14 in sync with the passes.
@@ -30,6 +31,7 @@ MinScript is a language that aims for TypeScript-style concision, Rust-style own
   - `lexer/`, `parser/`: one feature per file. Expected-output snapshots (`.tokens` / `.ast`) come later, once the lexer and parser can generate them.
   - `errors/`: one case per function, with `//~ CODE` on the line where the diagnostic is expected.
   - `programs/`: realistic programs that must parse with zero diagnostics.
+  - `packages/`: programs of several packages; each `main.ms` is loaded with its imports. With `//~` annotations in any of its files they must match; otherwise it runs and prints its `main.out`.
 
 ## Writing MinScript code (samples, tests, spec examples)
 

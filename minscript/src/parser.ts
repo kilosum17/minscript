@@ -372,7 +372,8 @@ class Parser {
     private parseFun(start: Token, pub: boolean, isAsync: boolean, mode: "item" | "sig", member = false): A.FunDecl {
         this.expect("fun")
         let name: string
-        if (member && isKeyword(this.cur.kind) && !RESERVED_KEYWORDS.has(this.cur.kind)) {
+        // a method, or a `pub fun` (called as `pkg.name`), may be named after a keyword: `fun or`, `runtime.yield`
+        if ((member && isKeyword(this.cur.kind) && !RESERVED_KEYWORDS.has(this.cur.kind)) || (pub && isKeyword(this.cur.kind))) {
             name = this.advance().kind
         } else {
             name = this.identName("a function name")

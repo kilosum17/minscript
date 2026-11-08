@@ -8,28 +8,20 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import "../prelude.ts"
-import { checkPackage } from "../check.ts"
-import type { Diagnostic } from "../diagnostic.ts"
-import { lowerPackage } from "../lower.ts"
-import { checkOwnership } from "../ownership.ts"
-import { parse } from "../parser.ts"
-import { resolvePackage } from "../resolve.ts"
+import { loadProgram, lowerProgram, type FileDiagnostic, type LoadOptions } from "../loader.ts"
 import { emitJs } from "./emit.ts"
-import { Panic, resetOutput, setOutput } from "./runtime.ts"
+import { closeResources, Panic, resetOutput, setOutput } from "./runtime.ts"
 
 const RUNTIME_URL = new URL("./runtime.ts", import.meta.url).href
 
-export type Compiled = { js: string | null, diagnostics: Diagnostic[] }
+export type Compiled = { js: string | null, diagnostics: FileDiagnostic[] }
 
-/** Runs every pass; returns the JS module, or the diagnostics that stopped compilation. */
-export function compileToJs(source: string | Uint8Array): Compiled {
-    const parsed = parse(source)
-    const res = resolvePackage([parsed.file])
-    const checked = checkPackage([parsed.file], res)
-    const owned = checkOwnership([parsed.file], res, checked)
-    const diagnostics = [...parsed.diagnostics, ...res.diagnostics, ...checked.diagnostics, ...owned.diagnostics]
-    if (diagnostics.length > 0) return { js: null, diagnostics }
-    return { js: emitJs(lowerPackage([parsed.file], res, checked), RUNTIME_URL), diagnostics }
+/** Loads the program (the entry file and every package it imports), runs every pass on every package,
+ *  and returns one JS module, or the diagnostics that stopped compilation. */
+export function compileToJs(entry: string, opts: LoadOptions = {}): Compiled {
+    const program = loadProgram(entry, opts)
+    if (program.diagnostics.length > 0) return { js: null, diagnostics: program.diagnostics }
+    return { js: emitJs(lowerProgram(program), RUNTIME_URL), diagnostics: [] }
 }
 
 /** Writes a compiled module to the temp directory and imports it, without running `main`. */
@@ -70,6 +62,7 @@ export async function runJs(js: string, onOutput?: (line: string) => void): Prom
     } finally {
         process.off("unhandledRejection", onRejection)
         process.removeAllListeners("beforeExit")
+        closeResources()             // servers and sockets the program left open (tasks can't be cancelled on JS yet)
         if (onOutput) resetOutput()
     }
 }

@@ -139,6 +139,37 @@ fun main() {
     })
 })
 
+describe("imported packages (test/packages/app)", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { pathToFileURL } = await import("node:url")
+    const main = new URL("../../test/packages/app/main.ms", import.meta.url)
+    const uri = pathToFileURL(main.pathname).href
+    const src = readFileSync(main, "utf8")
+    const an = analyze([{ uri, text: src }], uri)
+    const at = (needle: string) => {
+        const before = src.slice(0, src.indexOf(needle))
+        return { line: before.split("\n").length - 1, character: before.length - before.lastIndexOf("\n") - 1 }
+    }
+    test("the program checks cleanly against its packages and real std signatures", () => {
+        assert.deepEqual(an.diagnostics.get(uri), [])
+    })
+    test("hover and definition reach into other packages", () => {
+        const h = hoverText(an, uri, at("describe(u)"))!
+        assert.match(h, /fun describe\(u: &User\) -> string/)
+        assert.match(h, /One line about a user/)
+        assert.match(h, /package app\.models/)
+        const d = definition(an, uri, at("describe(u)"))
+        assert.match(d[0]!.uri, /test\/packages\/app\/models\/user\.ms$/)
+        assert.match(hoverText(an, uri, at("stringify"))!, /fun stringify\[T\]\(value: &T\) -> string[\s\S]*package std\.json/)
+    })
+    test("an unsaved edit to an imported file is used", () => {
+        const util = pathToFileURL(new URL("../../test/packages/app/util/util.ms", import.meta.url).pathname).href
+        const edited = analyze([{ uri, text: src }, { uri: util, text: "package util\n\npub fun sum(xs: Vec[int]) -> string { \"\" }\npub fun shout(s: &str) -> string { s.to_upper() }\n" }], uri)
+        assert.deepEqual(edited.diagnostics.get(uri), [])        // sum() now returns a string: still fine in a template
+        assert.match(hoverText(edited, uri, at("sum("))!, /-> string/)
+    })
+})
+
 describe("robustness", () => {
     test("queries anywhere in the corpus (and in half-typed prefixes) never throw", async () => {
         const { readFileSync, readdirSync } = await import("node:fs")

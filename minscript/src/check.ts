@@ -51,6 +51,7 @@ export type MemberTarget =
     | { kind: "method", decl: A.FunDecl | null, owner: Owner, dyn: boolean }     // a method used as a value
     | { kind: "static", decl: A.FunDecl, owner: Owner }
     | { kind: "variant", union: Sym, variant: string }
+    | { kind: "item", sym: Sym }                                                // `json.parse`, `math.pi`: an item of an imported package
     | { kind: "unknown" }
 
 export type CallInfo = {
@@ -61,10 +62,15 @@ export type CallInfo = {
     receiver: A.Receiver | null
     /** The callee is an `async fun`: the call starts a task and returns a Promise. */
     async: boolean
+    /** The callee's own generics, as instantiated (`json.parse.[User]`: [User]); a builtin may need them. */
+    typeArgs?: Ty[]
 }
 
-export function checkPackage(files: A.File[], res: Resolution, prelude: Prelude = loadPrelude()): CheckResult {
-    return new Checker(files, res, prelude).run()
+/** A package this one imports: its files and results (checked before this one). */
+export type CheckedDep = { files: A.File[], res: Resolution, checked: CheckResult }
+
+export function checkPackage(files: A.File[], res: Resolution, prelude: Prelude = loadPrelude(), deps: CheckedDep[] = []): CheckResult {
+    return new Checker(files, res, prelude, deps).run()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -149,12 +155,14 @@ class Checker {
     private ctx: FnCtx = { ret: T.UNKNOWN, async: false, thisTy: null, loops: [], isClosure: false }
     private selfStack: Ty[] = []
 
-    constructor(files: A.File[], res: Resolution, prelude: Prelude) {
+    constructor(files: A.File[], res: Resolution, prelude: Prelude, deps: CheckedDep[]) {
         this.files = files
-        this.refs = new Map([...prelude.res.refs, ...res.refs])
-        this.decls = new Map([...prelude.res.decls, ...res.decls])
-        this.deferred = new Set([...prelude.res.deferred, ...res.deferred])
-        this.open = new Set([...prelude.res.open, ...res.open])
+        const all = [prelude.res, ...deps.map((d) => d.res), res]
+        this.refs = new Map(all.flatMap((r) => [...r.refs]))
+        this.decls = new Map(all.flatMap((r) => [...r.decls]))
+        this.deferred = new Set(all.flatMap((r) => r.deferred))
+        this.open = new Set(all.flatMap((r) => [...r.open]))
+        for (const d of deps) for (const [sym, ty] of d.checked.symbols) this.symTypes.set(sym, ty)
         this.preludeNames = prelude.res.pkgScope.names
         for (const sym of [...prelude.res.symbols, ...res.symbols]) {
             if (sym.kind !== "implicit" || sym.scope.closure === null) continue
@@ -162,7 +170,7 @@ class Checker {
             if (!list.includes(sym)) list.push(sym)
             this.implicitByOwner.set(sym.scope.closure, list)
         }
-        for (const file of [prelude.file, ...files]) {
+        for (const file of [prelude.file, ...deps.flatMap((d) => d.files), ...files]) {
             for (const item of file.items) if (item.kind === "ImplDecl") this.registerImpl(item)
         }
     }
@@ -491,7 +499,14 @@ class Checker {
         switch (t.kind) {
             case "TName": {
                 if (t.path[0] === "Self" && t.path.length === 1) return this.selfStack[this.selfStack.length - 1] ?? T.UNKNOWN
-                const sym = this.refs.get(t)
+                let sym = this.refs.get(t)
+                // `ws.Message`: a type of an imported package
+                if (sym !== undefined && t.path.length > 1 && sym.kind === "package") {
+                    let cur: Sym | undefined = sym
+                    for (const seg of t.path.slice(1)) cur = cur?.target?.pkgScope.names.get(seg)
+                    if (cur === undefined && sym.target) this.error("E_UNDECLARED_TYPE", `package \`${sym.detail ?? sym.name}\` has no type \`${t.path.slice(1).join(".")}\``, t)
+                    sym = cur
+                }
                 if (sym === undefined || t.path.length > 1 && (sym.kind === "package" || sym.kind === "import")) return T.UNKNOWN
                 const args = t.args.map((a) => this.toTy(a, depth))
                 switch (sym.kind) {
@@ -1098,8 +1113,8 @@ class Checker {
                 const v = this.variantType(info, t, decl)
                 return isCallable(v) ? this.fnType(v) : v
             }
-            case "package": case "import": return { k: "package", name: sym.name }
-            case "prelude-type": case "prelude-value": return T.UNKNOWN
+            case "package": case "import": return { k: "package", name: sym.name, sym }
+            case "prelude-type": case "prelude-value": case "ambiguous": return T.UNKNOWN
         }
     }
 
@@ -1385,6 +1400,12 @@ class Checker {
 
     private memberOf(e: A.Expr, objTy: Ty, name: string | number, _exp?: Ty): Ty {
         const t = T.strip(objTy)
+        if (t.k === "package" && t.sym?.target && typeof name === "string") {
+            const item = this.pkgItem(t, name, e)
+            if (item === null) return T.UNKNOWN
+            this.members.set(e, { kind: "item", sym: item })
+            return this.symValue(item, e, _exp)
+        }
         switch (t.k) {
             case "unknown": case "var": case "package": case "never": return T.UNKNOWN
             case "meta": {
@@ -1452,6 +1473,19 @@ class Checker {
         return T.UNKNOWN
     }
 
+    /** An item of an imported package (`json.parse`): it must exist and be `pub`. */
+    private pkgItem(t: Ty & { k: "package" }, name: string, at: { span: Span }): Sym | null {
+        const scope = t.sym?.target?.pkgScope
+        const sym = scope?.names.get(name)
+        const path = t.sym?.detail ?? t.name
+        if (sym === undefined) {
+            this.error("E_UNKNOWN_MEMBER", `package \`${path}\` has no item \`${name}\``, at)
+            return null
+        }
+        if (!sym.pub) this.error("E_PRIVATE_ITEM", `\`${name}\` is private to package \`${path}\``, at)
+        return sym
+    }
+
     private checkGenericValue(e: Extract<A.Expr, { kind: "GenericApply" }>): Ty {
         const args = e.args.map((a) => this.toTy(a))
         const target = e.target
@@ -1494,6 +1528,13 @@ class Checker {
                 recv = o?.inner ?? T.UNKNOWN
             }
             const s = T.prune(recv)
+            const ps = T.strip(recv)
+            if (ps.k === "package" && ps.sym?.target && !viaOpt) {
+                const item = this.pkgItem(ps, callee.name, callee)
+                if (item === null) return { c: null, ty: T.UNKNOWN, viaOpt }
+                this.members.set(callee, { kind: "item", sym: item })
+                return this.calleeSym(item, callee, explicit, exp, e) ?? { c: null, ty: this.symValue(item, callee, exp), viaOpt }
+            }
             if (s.k === "meta") {
                 const st = this.findStatic(s.ty, callee.name, explicit, callee)
                 if (st === null) {
@@ -1529,6 +1570,19 @@ class Checker {
                 const v = this.variantType(found.info, found.t, found.v)
                 return { c: isCallable(v) ? v : null, ty: isCallable(v) ? this.fnType(v) : v, viaOpt: false }
             }
+            if (sym !== undefined) {
+                const r = this.calleeSym(sym, callee, explicit, exp, e)
+                if (r !== null) return r
+            }
+        }
+
+        const t = this.checkExpr(callee)
+        return { c: null, ty: t, viaOpt: false }
+    }
+
+    /** Calling a name that resolved to `sym` (directly, or as `pkg.name`): a function, variant or type. */
+    private calleeSym(sym: Sym, callee: A.Expr, explicit: Ty[] | null, exp: Ty | undefined, e: Extract<A.Expr, { kind: "Call" }>): { c: Callable | null, ty: Ty, viaOpt: boolean, onValue?: boolean } | null {
+        {
             if (sym?.kind === "fun" || sym?.kind === "extern-fun") {
                 const f = this.funType(sym, explicit, callee)
                 if (f) {
@@ -1558,9 +1612,7 @@ class Checker {
                 return { c: null, ty: T.UNKNOWN, viaOpt: false }
             }
         }
-
-        const t = this.checkExpr(callee)
-        return { c: null, ty: t, viaOpt: false }
+        return null
     }
 
     private checkCall(e: Extract<A.Expr, { kind: "Call" }>, exp?: Ty): Ty {
@@ -1583,7 +1635,7 @@ class Checker {
         // so it must not decide a generic result: `log.println(xs.fold(0, …))`)
         if (exp !== undefined && !this.isInterface(exp)) this.tryAssign(callable.ret, exp)
         this.applyArgs(e, callable)
-        this.calls.set(e, { target: this.callTarget(e, callable, onValue ?? false), args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async })
+        this.calls.set(e, { target: this.callTarget(e, callable, onValue ?? false), args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async, typeArgs: callable.bounds.map((b) => b.v) })
         for (const b of callable.bounds) {
             for (const bound of b.bounds) {
                 const v = T.prune(b.v)
@@ -1744,7 +1796,8 @@ class Checker {
                     variant = { info, t: x?.k === "named" && x.sym === t.sym ? x : t, v }
                 }
             }
-            if (variant === null) {
+            const os = T.strip(obj)
+            if (variant === null && !(os.k === "package" && os.sym?.target)) {
                 this.checkFieldsLoosely(e.fields)
                 return T.UNKNOWN            // `models.User { … }`: a package's type, not loaded yet
             }
@@ -2052,15 +2105,24 @@ class Checker {
             if (t.k !== "named" || t.sym !== sym.owner) return null
             return fromValue(sym.name)
         }
-        if (sym.kind === "union" && path.length === 2) {
-            if (t.k === "unknown" || t.k === "var") return "unknown"
-            if (t.k !== "named" || t.sym !== sym) return null
-            return fromValue(path[1]!)
+        // `ws.Message.Close`: first the type inside the imported package
+        let head: Sym = sym
+        let rest = path
+        if (sym.kind === "package" && sym.target && path.length >= 2) {
+            const item = sym.target.pkgScope.names.get(path[1]!)
+            if (item === undefined) return null
+            head = item
+            rest = path.slice(1)
         }
-        if (sym.kind === "type" && path.length === 1) {
+        if (head.kind === "union" && rest.length === 2) {
             if (t.k === "unknown" || t.k === "var") return "unknown"
-            if (t.k !== "named" || t.sym !== sym) return null
-            return { info: this.info(sym)!, t, v: null }
+            if (t.k !== "named" || t.sym !== head) return null
+            return fromValue(rest[1]!)
+        }
+        if (head.kind === "type" && rest.length === 1) {
+            if (t.k === "unknown" || t.k === "var") return "unknown"
+            if (t.k !== "named" || t.sym !== head) return null
+            return { info: this.info(head)!, t, v: null }
         }
         return "unknown"
     }

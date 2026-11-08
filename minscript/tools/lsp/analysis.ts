@@ -5,11 +5,13 @@
 // Positions: the compiler's spans are UTF-8 byte offsets; LSP positions are 0-based lines and UTF-16
 // columns. `PositionMap` converts between them.
 
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
+import { dirname } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type * as L from "vscode-languageserver"
 import type * as A from "../../src/ast.ts"
 import { checkPackage, type CheckResult } from "../../src/check.ts"
+import { loadProgram } from "../../src/loader.ts"
 import type { Diagnostic } from "../../src/diagnostic.ts"
 import { checkOwnership } from "../../src/ownership.ts"
 import { parse, type ParseResult } from "../../src/parser.ts"
@@ -88,8 +90,15 @@ export type Analysis = {
     checked: CheckResult
     /** LSP diagnostics per file URI (every file of the package has an entry, possibly empty). */
     diagnostics: Map<string, L.Diagnostic[]>
-    /** Which file each AST node (of the package and the prelude) belongs to. */
+    /** Which file each AST node (of the package, the packages it imports, and the prelude) belongs to. */
     nodeFile: Map<A.Node, string>
+    /** The files of imported packages (for definitions and doc comments there), and their package names. */
+    others: Map<string, FileInfo>
+    packageOf: Map<string, string>
+}
+
+function fileFor(an: Analysis, uri: string): FileInfo | undefined {
+    return uri === PRELUDE_URI ? prelude() : an.files.get(uri) ?? an.others.get(uri)
 }
 
 const PRELUDE_URI = pathToFileURL(fileURLToPath(new URL("../../std/prelude.ms", import.meta.url))).href
@@ -115,8 +124,57 @@ export function packageName(text: string): string | null {
     return m ? m[1]! : null
 }
 
-/** Runs every pass on one package. `primary` is the file being edited (it wins ambiguous diagnostics). */
+/**
+ * Runs every pass on the package of `primary` and on everything it imports (src/loader.ts). `docs` are
+ * the open editors: they override the files on disk. A document that isn't a file (untitled) is
+ * analysed alone, without its imports.
+ */
 export function analyze(docs: Doc[], primary: string): Analysis {
+    if (!primary.startsWith("file:")) return analyzeAlone(docs.filter((d) => d.uri === primary), primary)
+    const open = new Map<string, string>()
+    for (const d of docs) if (d.uri.startsWith("file:")) open.set(fileURLToPath(d.uri), d.text)
+    const program = loadProgram(fileURLToPath(primary), {
+        read: (p) => { const t = open.get(p); if (t !== undefined) return t; try { return readFileSync(p, "utf8") } catch { return null } },
+        list: (dir) => {
+            let names: string[] = []
+            try { names = readdirSync(dir).filter((f) => f.endsWith(".ms")) } catch { /* only open editors */ }
+            for (const p of open.keys()) if (dirname(p) === dir && p.endsWith(".ms")) names.push(p.slice(dir.length + 1))
+            return names
+        },
+    })
+    const main = program.main
+    const files = new Map<string, FileInfo>()
+    for (const f of main.files) { const uri = pathToFileURL(f.path).href; files.set(uri, fileInfo(uri, f.text, f.parsed)) }
+    const others = new Map<string, FileInfo>()
+    const packageOf = new Map<string, string>()
+    for (const pkg of program.packages) {
+        if (pkg === main) continue
+        for (const f of pkg.files) {
+            const uri = pathToFileURL(f.path).href
+            others.set(uri, fileInfo(uri, f.text, f.parsed))
+            packageOf.set(uri, pkg.name)
+        }
+    }
+
+    const mainPaths = new Set(main.files.map((f) => f.path))
+    const mine = program.diagnostics.filter((d) => mainPaths.has(d.file))
+    const parseErrors = mine.some((d) => d.pass === "parse")
+    const diagnostics = new Map<string, L.Diagnostic[]>()
+    for (const f of files.values()) diagnostics.set(f.uri, [])
+    for (const d of mine) {
+        // type and ownership errors on half-parsed code are mostly noise: show them once the syntax is valid
+        if (parseErrors && (d.pass === "check" || d.pass === "ownership")) continue
+        const f = files.get(pathToFileURL(d.file).href)!
+        diagnostics.get(f.uri)!.push(toLsp(d, f.map))
+    }
+
+    const nodeFile = new Map<A.Node, string>()
+    for (const f of [prelude(), ...others.values(), ...files.values()]) for (const n of f.nodes) nodeFile.set(n, f.uri)
+    return { files, res: main.res!, checked: main.checked!, diagnostics, nodeFile, others, packageOf }
+}
+
+/** One document on its own (not a file on disk): no imports are loaded. */
+function analyzeAlone(docs: Doc[], primary: string): Analysis {
     const files = new Map<string, FileInfo>()
     for (const d of docs) files.set(d.uri, fileInfo(d.uri, d.text, parse(d.text)))
     const asts = [...files.values()].map((f) => f.parsed.file)
@@ -124,19 +182,16 @@ export function analyze(docs: Doc[], primary: string): Analysis {
     const checked = checkPackage(asts, res)
     const parseErrors = [...files.values()].some((f) => f.parsed.diagnostics.length > 0)
     const semantic: Diagnostic[] = [...res.diagnostics]
-    // type and ownership errors on half-parsed code are mostly noise: show them once the syntax is valid
     if (!parseErrors) semantic.push(...checked.diagnostics, ...checkOwnership(asts, res, checked).diagnostics)
-
     const diagnostics = new Map<string, L.Diagnostic[]>()
     for (const f of files.values()) diagnostics.set(f.uri, f.parsed.diagnostics.map((d) => toLsp(d, f.map)))
     for (const d of semantic) {
         const f = attribute(d.span, files, primary)
         diagnostics.get(f.uri)!.push(toLsp(d, f.map))
     }
-
     const nodeFile = new Map<A.Node, string>()
     for (const f of [prelude(), ...files.values()]) for (const n of f.nodes) nodeFile.set(n, f.uri)
-    return { files, res, checked, diagnostics, nodeFile }
+    return { files, res, checked, diagnostics, nodeFile, others: new Map(), packageOf: new Map() }
 }
 
 /** Which file a resolver / checker diagnostic belongs to: the one with a node at exactly that span. */
@@ -202,7 +257,7 @@ function target(an: Analysis, n: A.Node): { sym?: Sym, decl?: A.Node, name: stri
     if (found !== null) return found
     // `x.method` / `T.method` as the callee of a call: the checker records the target on the call
     const uri = an.nodeFile.get(n)
-    const f = uri ? an.files.get(uri) : undefined
+    const f = uri ? fileFor(an, uri) : undefined
     let p = f?.parent.get(n)
     if (p?.kind === "GenericApply" && p.target === n) p = f?.parent.get(p)
     if (p?.kind === "Call" && (p.callee === n || (p.callee.kind === "GenericApply" && p.callee.target === n))) {
@@ -253,7 +308,7 @@ function fieldDecl(objTy: Ty | undefined, name: string): A.Field | null {
 function location(an: Analysis, node: A.Node): L.Location | null {
     const uri = an.nodeFile.get(node)
     if (uri === undefined) return null
-    const f = uri === PRELUDE_URI ? prelude() : an.files.get(uri)
+    const f = fileFor(an, uri)
     if (!f) return null
     return { uri, range: f.map.range(nameSpan(node, f.text) ?? node.span) }
 }
@@ -294,6 +349,7 @@ export function hover(an: Analysis, uri: string, pos: L.Position): L.Hover | nul
     }
     if (code === null) return null
     if (t?.sym?.std || (decl && an.nodeFile.get(decl) === PRELUDE_URI)) note = "\n\n*prelude*"
+    else if (decl && an.packageOf.has(an.nodeFile.get(decl) ?? "")) note = `\n\n*package ${an.packageOf.get(an.nodeFile.get(decl)!)}*`
     const docs = decl ? docComment(an, decl) : ""
     return {
         contents: { kind: "markdown", value: "```minscript\n" + code + "\n```" + (docs ? `\n\n${docs}` : "") + note },
@@ -304,7 +360,7 @@ export function hover(an: Analysis, uri: string, pos: L.Position): L.Hover | nul
 /** `///` lines directly above a declaration. */
 function docComment(an: Analysis, decl: A.Node): string {
     const uri = an.nodeFile.get(decl)
-    const f = uri ? an.files.get(uri) : undefined
+    const f = uri ? fileFor(an, uri) : undefined
     if (!f) return ""
     const lines: string[] = []
     let line = decl.span.line - 1

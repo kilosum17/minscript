@@ -13,6 +13,7 @@ The syntax under test is defined by [docs/spec.md](../docs/spec.md) (v0.2). The 
 | `ownership/` | moves, mutability, scoped values, escaping closures, borrows across spawn | `//~` annotations (`valid.ms` must have none) |
 | `hir/` | lowering: one case per desugaring | a `*.hir` snapshot of the lowered program |
 | `run/` | programs run on the JS back end | a `*.out` snapshot of what they print (programs in `programs/` with a `.out` file run too) |
+| `packages/` | programs of several packages (`app.x`, `./x`, std), loaded by `src/loader.ts` from each `main.ms` | `//~` annotations in any file of the program; without any, a `main.out` snapshot of the run |
 
 ## Conventions
 

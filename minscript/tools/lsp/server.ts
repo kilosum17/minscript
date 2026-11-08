@@ -1,13 +1,13 @@
 // The MinScript language server (LSP over stdio). Run with Node ≥ 23.6: `node tools/lsp/server.ts --stdio`.
 // The VS Code extension (tools/vscode) starts it; any LSP client can.
 //
-// A package is every `.ms` file in a folder that declares the same `package` (open editors override
-// the files on disk). Each change re-runs every pass on the changed file's package (debounced), and
-// publishes diagnostics for all of its files.
+// A package is every `.ms` file in a folder that declares the same `package` (a `main` file is a
+// package of its own). Each change re-runs every pass on the changed file's package and everything
+// it imports (src/loader.ts; open editors override the files on disk), debounced, and publishes
+// diagnostics for all of the package's files.
 
-import { readdirSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 import lsp from "vscode-languageserver/node.js"
 import { TextDocument } from "vscode-languageserver-textdocument"
 import { analyze, definition, documentSymbols, hover, packageName, references, type Analysis, type Doc } from "./analysis.ts"
@@ -25,24 +25,9 @@ function packageKey(uri: string, text: string): string {
     return `${dirname(fileURLToPath(uri))}|${packageName(text) ?? ""}`
 }
 
-/** The files of a document's package: open documents first, then the rest of the folder from disk. */
-function packageDocs(uri: string, text: string): Doc[] {
-    if (!uri.startsWith("file:")) return [{ uri, text }]
-    const name = packageName(text)
-    const dir = dirname(fileURLToPath(uri))
-    const docs: Doc[] = [{ uri, text }]
-    let entries: string[] = []
-    try { entries = readdirSync(dir) } catch { /* the folder may be gone */ }
-    for (const entry of entries) {
-        if (!entry.endsWith(".ms")) continue
-        const other = pathToFileURL(join(dir, entry)).href
-        if (other === uri) continue
-        const open = documents.get(other)
-        let content: string
-        try { content = open ? open.getText() : readFileSync(join(dir, entry), "utf8") } catch { continue }
-        if (packageName(content) === name) docs.push({ uri: other, text: content })
-    }
-    return docs
+/** Every open editor (they override the files on disk; the loader reads the rest from disk). */
+function openDocs(): Doc[] {
+    return documents.all().map((d) => ({ uri: d.uri, text: d.getText() }))
 }
 
 function analyzeNow(uri: string): Analysis | null {
@@ -52,7 +37,7 @@ function analyzeNow(uri: string): Analysis | null {
     const key = packageKey(uri, text)
     let an: Analysis
     try {
-        an = analyze(packageDocs(uri, text), uri)
+        an = analyze(openDocs(), uri)
     } catch (e) {
         connection.console.error(`MinScript: analysis failed for ${uri}: ${e instanceof Error ? e.stack : String(e)}`)
         return null

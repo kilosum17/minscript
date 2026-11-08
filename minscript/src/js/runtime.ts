@@ -10,13 +10,17 @@
 // Not yet on JS (spec §14.2): overflow checks, exact wrapping of i8…u32, cooperative cancel of tasks.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import * as cryptoModule from "node:crypto"
+import * as fsPromises from "node:fs/promises"
+
 type Any = any
 
 // ---- output -----------------------------------------------------------------------------------
 
 let output: (line: string) => void = (line) => { console.log(line) }
-export function setOutput(fn: (line: string) => void): void { output = fn }
-export function resetOutput(): void { output = (line) => { console.log(line) } }
+let captured = false
+export function setOutput(fn: (line: string) => void): void { output = fn; captured = true }
+export function resetOutput(): void { output = (line) => { console.log(line) }; captured = false }
 
 // ---- panics -----------------------------------------------------------------------------------
 
@@ -66,13 +70,13 @@ export function idx(o: Any, i: number): Any {
 
 // ---- type registry (filled in by generated code) ----------------------------------------------
 
-type TypeInfo = { kind: "struct" | "union", fields: Any, methods: Record<string, Function>, interfaces: string[], floats: Set<string> }
+type TypeInfo = { kind: "struct" | "union", fields: Any, methods: Record<string, Function>, interfaces: string[], floats: Set<string>, shapes: Record<string, Shape>, defaults: Record<string, () => Any> }
 const types = new Map<string, TypeInfo>()
 const interDefaults = new Map<string, Record<string, Function>>()
 
 /** `floats`: fields printed as floats (`r` for a struct, `Circle.r` / `Rect.0` for a variant). */
-export function defType(name: string, kind: "struct" | "union", fields: Any, methods: Record<string, Function>, interfaces: string[], floats: string[] = []): void {
-    types.set(name, { kind, fields, methods, interfaces, floats: new Set(floats) })
+export function defType(name: string, kind: "struct" | "union", fields: Any, methods: Record<string, Function>, interfaces: string[], floats: string[] = [], shapes: Record<string, Shape> = {}, defaults: Record<string, () => Any> = {}): void {
+    types.set(name, { kind, fields, methods, interfaces, floats: new Set(floats), shapes, defaults })
 }
 
 export function defInter(name: string, defaults: Record<string, Function>): void {
@@ -540,13 +544,13 @@ export function after(ms: number): Cancellable {
 export function dyn(recv: Any, method: string, args: Any[]): Any {
     if (recv !== null && typeof recv === "object" && typeof recv.$t === "string") {
         const t = recv.$t as string
-        if (t.startsWith("std.")) {
-            const f = std[`${t.slice(4)}.${method}`]
-            if (f) return f(recv, ...args)
-        }
         const info = types.get(t)
         const own = info?.methods[method]
         if (own) return own(recv, ...args)
+        if (t.startsWith("std.")) {
+            const key = `${t.slice(4)}.${method}`
+            if (key in stdTable) return stdTable[key](recv, ...args)
+        }
         for (const i of info?.interfaces ?? []) {
             const d = interDefaults.get(i)?.[method]
             if (d) return d(recv, ...args)
@@ -581,7 +585,7 @@ function log(prefix: string) {
 }
 
 /** Std functions by name (`"Vec.push"`); generated code calls `$rt.std[name]`. */
-export const std: Record<string, Function> & Record<string, Any> = new Proxy({
+const stdTable: Record<string, Any> = {
     _builtin: () => panic("builtin called"),
     panic: (msg: string) => panic(msg),
     assert: (cond: boolean, msg: string) => { if (!cond) panic(msg, "User") },
@@ -712,45 +716,351 @@ export const std: Record<string, Function> & Record<string, Any> = new Proxy({
     "Watcher.next": (w: Watcher) => w.next(),
     "Iterator.next": (it: Iter) => it.next(), "Iterator.map": (it: Iter, f: Function) => it.map(f),
     "Iterator.filter": (it: Iter, f: Function) => it.filter(f), "Iterator.collect": (it: Iter) => it.collect(),
-}, {
+}
+
+export const std: Record<string, Function> & Record<string, Any> = new Proxy(stdTable, {
     get(target: Any, name: string | symbol) {
         if (typeof name === "symbol" || name in target) return target[name]
+        // methods every value has (`string.clone`, `Vec.eq`): the structural defaults
+        const method = name.slice(name.lastIndexOf(".") + 1)
+        if (method === "clone") return clone
+        if (method === "to_str") return toStr
+        if (method === "eq") return eq
         return (..._args: Any[]) => panic(`\`${String(name)}\` is not available on the JS back end yet`)
     },
 })
 
-// ---- std packages without signatures (`extern:std.json.parse`) -------------------------------
+// ---- std packages (std/*/*.ms: functions whose body is `_builtin()`) ----------------------------
 
-const externs: Record<string, Any> = {
-    "std.io.println": (...a: Any[]) => output(a.map(toStr).join(" ")),
-    "std.io.print": (...a: Any[]) => output(a.map(toStr).join(" ")),
-    "std.io.eprintln": (...a: Any[]) => output("error: " + a.map(toStr).join(" ")),
-    "std.json.stringify": (v: Any) => JSON.stringify(toJson(v)),
-    "std.json.parse": (s: string, shapes?: { $t: string, optional?: string[] }[]) => {
-        let v: Any
-        try { v = JSON.parse(s) } catch (e) { return Err(e instanceof Error ? e.message : String(e)) }
-        const shape = shapes?.[0]
-        return Ok(shape ? fromJson(v, shape) : v)
-    },
-    "std.time.after": after,
-    "std.time.sleep": (ms: number) => after(ms),
-    "std.time.now": () => Date.now(),
-    "std.runtime.yield": () => new Promise((r) => setTimeout(r, 0)),
-    "std.env.get": (k: string) => opt(process.env[k]),
-    "std.math.sqrt": Math.sqrt, "std.math.abs": Math.abs, "std.math.pow": Math.pow, "std.math.floor": Math.floor,
-    "std.math.ceil": Math.ceil, "std.math.round": Math.round, "std.math.max": Math.max, "std.math.min": Math.min,
-    "std.math.pi": Math.PI,
+const stdErr = (pkg: string, message: string, extra: Record<string, Any> = {}) => ({ $t: `std.${pkg}.Error`, ...extra, message })
+const fsErr = (path: string, e: unknown) => Err(stdErr("fs", e instanceof Error ? (e as NodeJS.ErrnoException).code ?? e.message : String(e), { path }))
+
+let programArgs: string[] = []
+/** The program's command-line arguments (`env.args()`), after the file name. */
+export function setArgs(args: string[]): void { programArgs = args }
+
+// stdin, line by line (`io.read_line`); stdin only keeps the process alive while someone is waiting
+const stdin = { lines: [] as string[], waiting: [] as ((l: string) => void)[], closed: false, started: false }
+function readLine(): Promise<string> {
+    if (!stdin.started) {
+        stdin.started = true
+        import("node:readline").then(({ createInterface }) => {
+            const rl = createInterface({ input: process.stdin, terminal: false })
+            rl.on("line", (l) => { const w = stdin.waiting.shift(); if (w) w(l); else stdin.lines.push(l); if (stdin.waiting.length === 0) process.stdin.unref() })
+            rl.on("close", () => { stdin.closed = true; for (const w of stdin.waiting.splice(0)) w("") })
+        })
+    }
+    const l = stdin.lines.shift()
+    if (l !== undefined) return Promise.resolve(l)
+    if (stdin.closed) return Promise.resolve("")
+    process.stdin.ref()
+    return new Promise((r) => stdin.waiting.push(r))
 }
 
-/** Plain JSON data → a struct (`json.parse.[User]`): tags it, and turns optional fields into Options. */
-function fromJson(v: Any, shape: { $t: string, optional?: string[] }): Any {
-    if (v === null || typeof v !== "object" || Array.isArray(v)) return v
-    const out: Any = { $t: shape.$t }
-    const info = types.get(shape.$t)
-    const fields: string[] = info?.kind === "struct" ? info.fields : Object.keys(v)
-    for (const f of fields) {
-        const x = v[f]
-        out[f] = shape.optional?.includes(f) ? (x === null || x === undefined ? None : Some(x)) : x
+let pendingPrint = ""
+const printLine = (text: string) => { output(pendingPrint + text); pendingPrint = "" }
+
+Object.assign(stdTable, {
+    // io, log
+    "io.println": (args: Any[]) => printLine(args.map(toStr).join(" ")),
+    // without a newline: straight to stdout, or (when output is captured, in tests) kept for the next line
+    "io.print": (args: Any[]) => { if (captured) pendingPrint += args.map(toStr).join(" "); else process.stdout.write(args.map(toStr).join(" ")) },
+    "io.eprintln": (args: Any[]) => printLine("error: " + args.map(toStr).join(" ")),
+    "io.read_line": readLine,
+    "log.println": (args: Any[]) => printLine(args.map(toStr).join(" ")), "log.print": (args: Any[]) => printLine(args.map(toStr).join(" ")),
+    "log.info": (args: Any[]) => printLine(args.map(toStr).join(" ")), "log.debug": (args: Any[]) => printLine(args.map(toStr).join(" ")),
+    "log.warn": (args: Any[]) => printLine("warn: " + args.map(toStr).join(" ")), "log.error": (args: Any[]) => printLine("error: " + args.map(toStr).join(" ")),
+
+    // time, runtime
+    "time.after": after,
+    "time.sleep": (ms: number) => after(ms),
+    "time.now": () => BigInt(Date.now()),
+    "runtime.yield": () => new Promise((r) => setTimeout(r, 0)),
+
+    // env
+    "env.get": (k: string) => opt(process.env[k]),
+    "env.set": (k: string, v: string) => { process.env[k] = v },
+    "env.args": () => [...programArgs],
+
+    // math
+    "math.abs": (x: Any) => (x < 0 ? -x : x),
+    "math.min": (a: Any, b: Any) => (b < a ? b : a), "math.max": (a: Any, b: Any) => (b > a ? b : a),
+    "math.sqrt": Math.sqrt, "math.pow": Math.pow, "math.floor": Math.floor, "math.ceil": Math.ceil,
+    "math.round": Math.round, "math.sin": Math.sin, "math.cos": Math.cos,
+
+    // json
+    "json.parse": (text: string, shapes?: (Shape | null)[]) => {
+        let v: Any
+        try { v = JSON.parse(text) } catch (e) { return Err(stdErr("json", e instanceof Error ? e.message : String(e))) }
+        try { return Ok(fromJson(v, shapes?.[0] ?? null, "")) } catch (e) {
+            if (e instanceof JsonShapeError) return Err(stdErr("json", e.message))
+            throw e
+        }
+    },
+    "json.stringify": (v: Any) => JSON.stringify(toJson(v)),
+
+    // fs (every operation is async)
+    "fs.read_file": async (path: string) => { try { return Ok([...await fsp().readFile(path)]) } catch (e) { return fsErr(path, e) } },
+    "fs.read_text": async (path: string) => { try { return Ok(await fsp().readFile(path, "utf8")) } catch (e) { return fsErr(path, e) } },
+    "fs.write_file": async (path: string, data: number[]) => { try { await fsp().writeFile(path, Uint8Array.from(data)); return Ok(undefined) } catch (e) { return fsErr(path, e) } },
+    "fs.write_text": async (path: string, text: string) => { try { await fsp().writeFile(path, text); return Ok(undefined) } catch (e) { return fsErr(path, e) } },
+    "fs.stat": async (path: string) => {
+        try {
+            const st = await fsp().stat(path)
+            return Ok({ $t: "std.fs.Stat", size: BigInt(st.size), dir: st.isDirectory(), modified: BigInt(Math.floor(st.mtimeMs)) })
+        } catch (e) { return fsErr(path, e) }
+    },
+    "fs.exists": async (path: string) => { try { await fsp().stat(path); return true } catch { return false } },
+    "fs.list_dir": async (path: string) => { try { return Ok((await fsp().readdir(path)).sort()) } catch (e) { return fsErr(path, e) } },
+    "fs.walk_dir": async (path: string) => {
+        try {
+            const entries = await fsp().readdir(path, { recursive: true, withFileTypes: true })
+            return Ok(entries.filter((d) => d.isFile()).map((d) => `${d.parentPath}/${d.name}`.replace(/\/+/g, "/")).sort())
+        } catch (e) { return fsErr(path, e) }
+    },
+    "fs.create_dir": async (path: string) => { try { await fsp().mkdir(path, { recursive: true }); return Ok(undefined) } catch (e) { return fsErr(path, e) } },
+    "fs.remove": async (path: string) => { try { await fsp().rm(path, { recursive: true }); return Ok(undefined) } catch (e) { return fsErr(path, e) } },
+
+    // crypto: AES-256-GCM, key from scrypt(password, salt); output = salt(16) | nonce(12) | tag(16) | ciphertext
+    "crypto.encrypt_aes_gcm": (data: number[], password: string) => {
+        const c = nodeCrypto()
+        const salt = c.randomBytes(16), nonce = c.randomBytes(12)
+        const cipher = c.createCipheriv("aes-256-gcm", c.scryptSync(password, salt, 32), nonce)
+        const body = Buffer.concat([cipher.update(Uint8Array.from(data)), cipher.final()])
+        return [...Buffer.concat([salt, nonce, cipher.getAuthTag(), body])]
+    },
+    "crypto.decrypt_aes_gcm": (data: number[], password: string) => {
+        const c = nodeCrypto()
+        const buf = Buffer.from(Uint8Array.from(data))
+        if (buf.length < 44) return Err("data too short to be encrypted")
+        try {
+            const decipher = c.createDecipheriv("aes-256-gcm", c.scryptSync(password, buf.subarray(0, 16), 32), buf.subarray(16, 28))
+            decipher.setAuthTag(buf.subarray(28, 44))
+            return Ok([...Buffer.concat([decipher.update(buf.subarray(44)), decipher.final()])])
+        } catch {
+            return Err("wrong password, or the data is corrupted")
+        }
+    },
+    "crypto.sha256": (data: number[]) => nodeCrypto().createHash("sha256").update(Uint8Array.from(data)).digest("hex"),
+    "crypto.random_bytes": (n: number) => [...nodeCrypto().randomBytes(n)],
+})
+
+const fsp = () => fsPromises
+const nodeCrypto = () => cryptoModule
+
+// ---- std.net.ws: WebSockets (RFC 6455) ----------------------------------------------------------
+// The server is a small implementation over node:http; the client is Node's global WebSocket.
+
+const WS = "std.net.ws"
+const wsErr = (message: string) => Err(stdErr("net.ws", message))
+const wsMsg = (variant: "Text" | "Binary" | "Close", ...f: Any[]) => ({ $t: `${WS}.Message`, $v: variant, $f: f })
+
+/** Resources a program opened (servers, sockets): closed when the program ends. */
+const openResources = new Set<{ close(): void }>()
+export function closeResources(): void {
+    for (const r of [...openResources]) { try { r.close() } catch { /* already closed */ } }
+    openResources.clear()
+}
+
+/** A queue whose `take` is cancel-safe: a value that loses a `select` goes back to the front. */
+class Inbox {
+    items: Any[] = []
+    waiters: ((v: Any) => void)[] = []
+    closedWith: Any = null
+    push(v: Any): void {
+        const w = this.waiters.shift()
+        if (w) w(v); else this.items.push(v)
+    }
+    close(final: Any): void {
+        if (this.closedWith !== null) return
+        this.closedWith = final
+        for (const w of this.waiters.splice(0)) w(final)
+    }
+    take(): Cancellable {
+        if (this.items.length > 0) {
+            const v = this.items.shift()
+            const p = Promise.resolve(v) as Cancellable
+            p.$cancel = () => { this.items.unshift(v) }
+            return p
+        }
+        if (this.closedWith !== null) return Promise.resolve(this.closedWith) as Cancellable
+        const { promise, resolve } = waiter<Any>(
+            (r) => { this.waiters = this.waiters.filter((w) => w !== r) },
+            (v) => { if (v !== this.closedWith) this.items.unshift(v) },
+        )
+        this.waiters.push(resolve)
+        return promise
+    }
+}
+
+type WsConn = { inbox: Inbox, send(msg: Any): Promise<Any>, close(): void }
+
+function serverConn(socket: import("node:net").Socket): WsConn {
+    const inbox = new Inbox()
+    let buf = Buffer.alloc(0)
+    let fragments: Buffer[] = []
+    let fragOpcode = 0
+    let open = true
+    const frame = (opcode: number, payload: Buffer) => {
+        const len = payload.length
+        const head = len < 126 ? Buffer.from([0x80 | opcode, len])
+            : len < 65536 ? Buffer.from([0x80 | opcode, 126, len >> 8, len & 255])
+            : Buffer.concat([Buffer.from([0x80 | opcode, 127]), (() => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(len)); return b })()])
+        return Buffer.concat([head, payload])
+    }
+    const conn: WsConn = {
+        inbox,
+        send: (msg: Any) => {
+            if (!open || socket.destroyed) return Promise.resolve(wsErr("connection closed"))
+            if (msg.$v === "Close") { conn.close(); return Promise.resolve(Ok(undefined)) }
+            const data = msg.$v === "Text" ? Buffer.from(msg.$f[0], "utf8") : Buffer.from(Uint8Array.from(msg.$f[0]))
+            return new Promise((r) => socket.write(frame(msg.$v === "Text" ? 1 : 2, data), (e) => r(e ? wsErr(e.message) : Ok(undefined))))
+        },
+        close: () => {
+            if (!open) return
+            open = false
+            if (!socket.destroyed) socket.end(frame(8, Buffer.alloc(0)))
+            inbox.close(Ok(wsMsg("Close")))
+            openResources.delete(conn)
+        },
+    }
+    openResources.add(conn)
+    socket.on("data", (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk])
+        for (;;) {
+            if (buf.length < 2) return
+            const fin = (buf[0]! & 0x80) !== 0, opcode = buf[0]! & 0x0f, masked = (buf[1]! & 0x80) !== 0
+            let len = buf[1]! & 0x7f, at = 2
+            if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); at = 4 }
+            else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); at = 10 }
+            const maskAt = at
+            if (masked) at += 4
+            if (buf.length < at + len) return
+            const payload = Buffer.from(buf.subarray(at, at + len))
+            if (masked) for (let i = 0; i < payload.length; i++) payload[i]! ^= buf[maskAt + (i & 3)]!
+            buf = buf.subarray(at + len)
+            if (opcode === 8) { conn.close(); return }
+            if (opcode === 9) { socket.write(frame(10, payload)); continue }
+            if (opcode === 10) continue
+            if (opcode !== 0) { fragOpcode = opcode; fragments = [] }
+            fragments.push(payload)
+            if (!fin) continue
+            const data = Buffer.concat(fragments)
+            fragments = []
+            inbox.push(Ok(fragOpcode === 1 ? wsMsg("Text", data.toString("utf8")) : wsMsg("Binary", [...data])))
+        }
+    })
+    socket.on("close", () => { open = false; inbox.close(Ok(wsMsg("Close"))); openResources.delete(conn) })
+    socket.on("error", () => { open = false; inbox.close(wsErr("connection reset")) })
+    return conn
+}
+
+function clientConn(url: string): Promise<Any> {
+    return new Promise((resolve) => {
+        let sock: Any
+        try { sock = new (globalThis as Any).WebSocket(url) } catch (e) { resolve(wsErr(e instanceof Error ? e.message : String(e))); return }
+        sock.binaryType = "arraybuffer"
+        const inbox = new Inbox()
+        let opened = false
+        const conn: WsConn = {
+            inbox,
+            send: async (msg: Any) => {
+                if (sock.readyState !== 1) return wsErr("connection closed")
+                if (msg.$v === "Close") { conn.close(); return Ok(undefined) }
+                sock.send(msg.$v === "Text" ? msg.$f[0] : Uint8Array.from(msg.$f[0]))
+                return Ok(undefined)
+            },
+            close: () => { try { sock.close() } catch { /* closed */ } inbox.close(Ok(wsMsg("Close"))); openResources.delete(conn) },
+        }
+        sock.onopen = () => { opened = true; openResources.add(conn); resolve(Ok({ $t: `${WS}.Connection`, conn })) }
+        sock.onmessage = (e: Any) => inbox.push(Ok(typeof e.data === "string" ? wsMsg("Text", e.data) : wsMsg("Binary", [...new Uint8Array(e.data)])))
+        sock.onclose = () => { inbox.close(Ok(wsMsg("Close"))); openResources.delete(conn) }
+        sock.onerror = () => { if (!opened) resolve(wsErr(`could not connect to ${url}`)); else inbox.close(wsErr("connection error")) }
+    })
+}
+
+let httpModule: typeof import("node:http") | null = null
+const http = async () => (httpModule ??= await import("node:http"))
+
+Object.assign(stdTable, {
+    "net.ws.listen": async (host: string, port: number) => {
+        const h = await http()
+        const accepted = new Inbox()
+        const srv = h.createServer((_req, res) => { res.writeHead(426).end("WebSocket only") })
+        const server = { $t: `${WS}.Server`, accepted, port: () => (srv.address() as import("node:net").AddressInfo).port, close: () => { srv.close(); accepted.close(wsErr("server closed")); openResources.delete(server) } }
+        srv.on("upgrade", (req, socket) => {
+            const key = req.headers["sec-websocket-key"]
+            if (typeof key !== "string") { socket.destroy(); return }
+            const accept = cryptoModule.createHash("sha1").update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64")
+            socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+            accepted.push(Ok({ $t: `${WS}.Connection`, conn: serverConn(socket as import("node:net").Socket) }))
+        })
+        return await new Promise((resolve) => {
+            srv.once("error", (e) => resolve(wsErr(`cannot listen on ${host}:${port}: ${e.message}`)))
+            srv.listen(port, host, () => { openResources.add(server); resolve(Ok(server)) })
+        })
+    },
+    "net.ws.connect": (url: string) => clientConn(url),
+    "net.ws.Server.accept": (s: Any) => s.accepted.take(),
+    "net.ws.Server.close": (s: Any) => { s.close() },
+    "net.ws.Server.port": (s: Any) => s.port(),
+    "net.ws.Connection.split": (c: Any) => [{ $t: `${WS}.Reader`, conn: c.conn }, { $t: `${WS}.Writer`, conn: c.conn }],
+    "net.ws.Reader.receive": (r: Any) => r.conn.inbox.take(),
+    "net.ws.Writer.send": (w: Any, msg: Any) => w.conn.send(msg),
+})
+
+// ---- JSON ↔ values ------------------------------------------------------------------------------
+
+/** The structure of a type (src/hir.ts `Shape`), so plain JSON data can become MinScript values. */
+type Shape = { s: string } | { vec: Shape | null } | { opt: Shape | null } | { map: Shape | null } | { f: true } | { i64: true }
+
+class JsonShapeError extends Error {}
+
+const jsonValue = (v: Any): Any => {
+    const V = (variant: string, ...f: Any[]) => ({ $t: "std.json.Value", $v: variant, $f: f })
+    if (v === null) return V("Null")
+    if (typeof v === "boolean") return V("Bool", v)
+    if (typeof v === "number") return V("Number", v)
+    if (typeof v === "string") return V("Str", v)
+    if (Array.isArray(v)) return V("Array", v.map(jsonValue))
+    const m = new MsMap()
+    for (const [k, x] of Object.entries(v)) m.set(k, jsonValue(x))
+    return V("Object", m)
+}
+
+/** Plain JSON data → a value of the given shape (`json.parse.[User]`): tags structs, makes Options. */
+function fromJson(v: Any, shape: Shape | null, at: string): Any {
+    const where = at === "" ? "" : ` at \`${at}\``
+    if (shape !== null && "opt" in shape) return v === null || v === undefined ? None : Some(fromJson(v, shape.opt, at))
+    if (v === undefined) throw new JsonShapeError(`missing field${where}`)
+    if (shape === null) return v
+    if ("f" in shape) { if (typeof v !== "number") throw new JsonShapeError(`expected a number${where}`); return v }
+    if ("i64" in shape) { if (typeof v !== "number") throw new JsonShapeError(`expected a number${where}`); return BigInt(Math.trunc(v)) }
+    if ("vec" in shape) {
+        if (!Array.isArray(v)) throw new JsonShapeError(`expected an array${where}`)
+        return v.map((x, i) => fromJson(x, shape.vec, `${at}[${i}]`))
+    }
+    if ("map" in shape) {
+        if (v === null || typeof v !== "object" || Array.isArray(v)) throw new JsonShapeError(`expected an object${where}`)
+        const m = new MsMap()
+        for (const [k, x] of Object.entries(v)) m.set(k, fromJson(x, shape.map, at === "" ? k : `${at}.${k}`))
+        return m
+    }
+    if (shape.s === "std.json.Value") return jsonValue(v)
+    const info = types.get(shape.s)
+    if (info === undefined) return v          // an alias (`Role = "Admin" | …`) or a type without fields
+    if (info?.kind === "union") {
+        // `"Unit"` or `{ "Variant": [fields…] }` (what `stringify` writes)
+        const [name, payload] = typeof v === "string" ? [v, []] : v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 ? Object.entries(v)[0]! : [null, null]
+        if (name === null || !(name in info.fields)) throw new JsonShapeError(`expected a variant of \`${shape.s}\`${where}`)
+        return { $t: shape.s, $v: name, $f: Array.isArray(payload) ? payload : [payload] }
+    }
+    if (v === null || typeof v !== "object" || Array.isArray(v)) throw new JsonShapeError(`expected an object${where}`)
+    if (info?.kind !== "struct") return { $t: shape.s, ...v }
+    const out: Any = { $t: shape.s }
+    for (const f of info.fields as string[]) {
+        const d = info.defaults[f]
+        out[f] = v[f] === undefined && d ? d() : fromJson(v[f], info.shapes[f] ?? null, at === "" ? f : `${at}.${f}`)
     }
     return out
 }
@@ -761,11 +1071,20 @@ function toJson(v: Any): Any {
     if (v === null || typeof v !== "object") return v
     if (Array.isArray(v)) return v.map(toJson)
     if (v instanceof MsMap) return Object.fromEntries([...v.entries()].map(([k, x]) => [toStr(k), toJson(x)]))
-    if (v.$v !== undefined) return v.$v === "None" ? null : v.$v === "Some" ? toJson(v.$f[0]) : { [v.$v]: v.$f.map(toJson) }
+    if (v.$t === "std.json.Value") return v.$v === "Null" ? null : v.$v === "Array" ? v.$f[0].map(toJson) : toJson(v.$f[0])
+    if (v.$v !== undefined) {
+        if (v.$v === "None") return null
+        if (v.$v === "Some") return toJson(v.$f[0])
+        return v.$f.length === 0 ? v.$v : { [v.$v]: v.$f.map(toJson) }
+    }
     const out: Any = {}
     for (const k of Object.keys(v)) if (k !== "$t") out[k] = toJson(v[k])
     return out
 }
+
+// ---- external packages (opaque: `extern:acme.http.get`) ------------------------------------------
+
+const externs: Record<string, Any> = {}
 
 export function ext(path: string): Any {
     const f = externs[path]

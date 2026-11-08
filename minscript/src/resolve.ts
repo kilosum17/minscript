@@ -28,6 +28,7 @@ export type SymbolKind =
     | "import"          // an imported item, or an import whose target isn't known yet
     | "builtin-type" | "prelude-type" | "prelude-value"
     | "variant"         // a union variant exported by the prelude (`Some`, `Ok`, `Less`)
+    | "ambiguous"       // a name exported by two glob imports (E_AMBIGUOUS_IMPORT where it is used)
 
 export type Sym = {
     id: number
@@ -40,6 +41,9 @@ export type Sym = {
     detail?: string             // e.g. the import path
     std?: boolean               // declared by the prelude (std/prelude.ms)
     owner?: Sym                 // variant: its union
+    pub?: boolean               // a top-level item declared `pub`
+    pkg?: string                // a top-level item: the qualified name of its package ("main", "std.json", "app.models")
+    target?: Resolution         // an imported package: its resolution
 }
 
 export type Resolution = {
@@ -65,6 +69,19 @@ export type ResolveOptions = {
     prelude?: Resolution | null
     /** Resolving std itself: exempt from the orphan rule (std owns the built-in types). */
     std?: boolean
+    /** The qualified name of the package being resolved; recorded on its items. Default "main". */
+    packageName?: string
+    /** Imports whose packages were loaded (src/loader.ts). Imports not listed stay opaque. */
+    imports?: Map<A.Import, LoadedImport>
+}
+
+/** An import the loader found: the package, and which of its items the import names. */
+export type LoadedImport = {
+    pkg: Resolution
+    path: string                // the package's qualified name ("std.io")
+    item: string | null         // `"std.io.println"` → "println"
+    items: string[] | null      // `"std.io.{print, println}"`
+    glob: boolean               // `"std.collections.*"`
 }
 
 /** Unions of the prelude whose variants are visible without qualification (spec §10.1). */
@@ -80,8 +97,10 @@ export class Scope {
     provider = false
     /** closure scope: the Closure node; `or` scope: the Or node (owner of the implicit `it`) */
     closure: A.Node | null = null
-    /** file scope: has a glob import, so unknown names can't be reported */
+    /** file scope: has a glob import of a package that isn't loaded, so unknown names can't be reported */
     open = false
+    /** file scope: names from loaded glob imports (searched after the package's own items) */
+    globs: Map<string, Sym> | null = null
     constructor(kind: ScopeKind, parent: Scope | null) {
         this.kind = kind
         this.parent = parent
@@ -98,7 +117,7 @@ const isUpper = (s: string) => s.charCodeAt(0) >= 0x41 && s.charCodeAt(0) <= 0x5
 
 export function resolvePackage(files: A.File[], opts: ResolveOptions = {}): Resolution {
     const prelude = opts.prelude === undefined ? defaultPrelude() : opts.prelude
-    return new Resolver(prelude, opts.std ?? false).run(files)
+    return new Resolver(prelude, opts.std ?? false, opts.packageName ?? "main", opts.imports ?? new Map()).run(files)
 }
 
 /** The default prelude resolver, installed by src/prelude.ts (avoids an import cycle). */
@@ -129,9 +148,13 @@ class Resolver {
     /** local type symbol → its members, for duplicate checks */
     private readonly members = new Map<Sym, MemberSource[]>()
     private readonly isStd: boolean
+    private readonly pkgName: string
+    private readonly loaded: Map<A.Import, LoadedImport>
 
-    constructor(prelude: Resolution | null, isStd: boolean) {
+    constructor(prelude: Resolution | null, isStd: boolean, pkgName: string, loaded: Map<A.Import, LoadedImport>) {
         this.isStd = isStd
+        this.pkgName = pkgName
+        this.loaded = loaded
         for (const name of BUILTIN_TYPES) this.define(this.prelude, name, "builtin-type", null, null)
         if (prelude !== null) {
             for (const [name, sym] of prelude.pkgScope.names) {
@@ -200,11 +223,25 @@ class Resolver {
     }
 
     private lookup(scope: Scope, name: string): Sym | undefined {
+        let file: Scope | null = null
         for (let s: Scope | null = scope; s !== null; s = s.parent) {
             const sym = s.names.get(name)
             if (sym !== undefined) return sym
+            if (s.kind === "file") file = s
+            // glob-imported names come after the package's own items, before the prelude (spec §8.1)
+            if (s.kind === "package" && file?.globs) {
+                const g = file.globs.get(name)
+                if (g !== undefined) return g
+            }
         }
         return undefined
+    }
+
+    /** E_AMBIGUOUS_IMPORT for a use of a name two globs export; true if it was ambiguous. */
+    private ambiguous(sym: Sym | undefined, at: Span): boolean {
+        if (sym?.kind !== "ambiguous") return false
+        this.error("E_AMBIGUOUS_IMPORT", `\`${sym.name}\` is exported by more than one glob import (${sym.detail}): import it explicitly, e.g. \`import "${sym.detail?.split(", ")[0]}.${sym.name}"\``, at)
+        return true
     }
 
     private isOpen(scope: Scope): boolean {
@@ -234,7 +271,9 @@ class Resolver {
                 this.error("E_DUPLICATE_DECLARATION", `\`${name}\` is declared more than once in this package${where}`, span)
                 return
             }
-            this.define(this.pkg, name, kind, node, span)
+            const sym = this.define(this.pkg, name, kind, node, span)
+            sym.pkg = this.pkgName
+            sym.pub = "pub" in node && node.pub === true
         }
         switch (item.kind) {
             case "FunDecl": top(item.name, "fun", item, item.span); break
@@ -247,7 +286,63 @@ class Resolver {
         }
     }
 
+    /** An item of a loaded package, by name: it must exist and be `pub`. */
+    private exported(l: LoadedImport, name: string, imp: A.Import): Sym | undefined {
+        const sym = l.pkg.pkgScope.names.get(name)
+        if (sym === undefined) {
+            this.error("E_UNKNOWN_IMPORT", `package \`${l.path}\` has no item \`${name}\``, imp.span)
+            return undefined
+        }
+        if (!sym.pub) this.error("E_PRIVATE_ITEM", `\`${name}\` is private to package \`${l.path}\` (declare it \`pub\` to import it)`, imp.span)
+        return sym
+    }
+
+    private declareLoadedImport(file: Scope, imp: A.Import, l: LoadedImport): void {
+        const bindSym = (name: string, sym: Sym) => {
+            if (this.pkg.names.has(name) || file.names.has(name)) {
+                this.error("E_DUPLICATE_DECLARATION", `the import binds \`${name}\`, which is already declared in this package; use \`as\` to rename it`, imp.span)
+                return
+            }
+            file.names.set(name, sym)
+        }
+        if (l.glob) {
+            file.globs ??= new Map()
+            for (const [name, sym] of l.pkg.pkgScope.names) {
+                if (!sym.pub) continue
+                const prev = file.globs.get(name)
+                if (prev === undefined || prev === sym) { file.globs.set(name, sym); continue }
+                const from = prev.kind === "ambiguous" ? prev.detail! : prev.pkg ?? "?"
+                const marker = this.define(new Scope("file", null), name, "ambiguous", null, null)
+                marker.detail = `${from}, ${l.path}`
+                file.globs.set(name, marker)
+            }
+            return
+        }
+        if (l.items !== null) {
+            for (const name of l.items) {
+                const sym = this.exported(l, name, imp)
+                if (sym) bindSym(name, sym)
+            }
+            return
+        }
+        if (l.item !== null) {
+            const sym = this.exported(l, l.item, imp)
+            if (sym) bindSym(imp.alias ?? l.item, sym)
+            return
+        }
+        const name = imp.alias ?? l.path.slice(l.path.lastIndexOf(".") + 1)
+        if (this.pkg.names.has(name) || file.names.has(name)) {
+            this.error("E_DUPLICATE_DECLARATION", `the import binds \`${name}\`, which is already declared in this package; use \`as\` to rename it`, imp.span)
+            return
+        }
+        const sym = this.define(file, name, "package", imp, imp.span)
+        sym.detail = l.path
+        sym.target = l.pkg
+    }
+
     private declareImport(file: Scope, imp: A.Import): void {
+        const loaded = this.loaded.get(imp)
+        if (loaded !== undefined) return this.declareLoadedImport(file, imp, loaded)
         const path = imp.path
         const bindOne = (name: string, kind: SymbolKind) => {
             const name2 = imp.alias ?? name
@@ -470,6 +565,7 @@ class Resolver {
                     else if (this.typeCtx.self !== null) this.refs.set(t, this.typeCtx.self)
                 } else {
                     const sym = this.lookup(scope, head)
+                    if (this.ambiguous(sym, t.span)) { for (const a of t.args) this.resolveType(scope, a); return }
                     if (sym === undefined) {
                         if (this.isOpen(scope)) this.deferred.push(t)
                         else this.error("E_UNDECLARED_TYPE", `unknown type \`${head}\``, t.span)
@@ -496,6 +592,7 @@ class Resolver {
             case "TFn": for (const p of t.params) this.resolveType(scope, p); return this.resolveType(scope, t.ret)
             case "TTypeOf": {
                 const sym = this.lookup(scope, t.path[0]!)
+                if (this.ambiguous(sym, t.span)) return
                 if (sym === undefined) {
                     if (this.isOpen(scope)) this.deferred.push(t)
                     else this.error("E_UNDECLARED_NAME", `unknown name \`${t.path[0]!}\``, t.span)
@@ -609,6 +706,7 @@ class Resolver {
             return
         }
         const sym = this.lookup(scope, head)
+        if (this.ambiguous(sym, node.span)) return
         if (sym === undefined) {
             // `Cash`, `Close`: variants of the scrutinee's type (spec §6)
             if (path.length === 1 || isUpper(head) || this.isOpen(scope)) this.deferred.push(node)
@@ -636,6 +734,7 @@ class Resolver {
         }
         if (name === "_") return
         const sym = this.lookup(scope, name)
+        if (this.ambiguous(sym, node.span)) return
         if (sym !== undefined) return this.use(node, sym, scope)
         if (isUpper(name) || this.isOpen(scope)) {
             this.deferred.push(node)
@@ -864,5 +963,6 @@ export function describeKind(kind: SymbolKind): string {
         case "prelude-type": return "prelude type"
         case "prelude-value": return "prelude value"
         case "variant": return "variant"
+        case "ambiguous": return "ambiguous name"
     }
 }

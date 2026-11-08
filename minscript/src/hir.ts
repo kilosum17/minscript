@@ -22,7 +22,11 @@ export type Program = {
     globals: Global[]
 }
 
-export type FieldDef = { name: string, optional: boolean, float?: boolean }   // float: printed as `1.0`
+// float: printed as `1.0`; shape / default: for builtins that build the struct from data (`json.parse`)
+export type FieldDef = { name: string, optional: boolean, float?: boolean, shape?: Shape, default?: Expr }
+
+/** The structure of a type, for builtins that build values from plain data (`json.parse.[User]`). */
+export type Shape = { s: string } | { vec: Shape | null } | { opt: Shape | null } | { map: Shape | null } | { f: true } | { i64: true }
 
 export type TypeDef =
     | { kind: "struct", name: string, fields: FieldDef[], interfaces: string[] }
@@ -39,6 +43,7 @@ export type Fun = {
     async: boolean
     body: Block | null            // null: extern
     extern: string | null         // the ABI of an extern function
+    builtin?: boolean             // a std function whose body is `_builtin()`: provided by the back end's runtime
     span: Span
 }
 
@@ -60,7 +65,7 @@ export type Expr =
     | E<"local", { sym: Sym }>
     | E<"global", { name: string }>
     | E<"fn", { name: string }>                                          // a function (or variant constructor) as a value
-    | E<"call", { fn: string, args: Expr[] }>                          // a resolved function; methods take the receiver first
+    | E<"call", { fn: string, args: Expr[], shapes?: (Shape | null)[] }>   // shapes: a builtin's type arguments                          // a resolved function; methods take the receiver first
     | E<"dyncall", { recv: Expr, method: string, args: Expr[] }>       // dispatch on the receiver: interfaces, bounds, auto methods, unknown types
     | E<"callvalue", { callee: Expr, args: Expr[] }>                   // calling a closure or function value
     | E<"extern", { path: string, args: Expr[] | null, typeArgs?: string[] }>   // a member of a std package without signatures yet (`json.parse`); `.[T]` names

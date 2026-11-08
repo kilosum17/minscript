@@ -1,0 +1,5 @@
+echo: HELLO
+echo: MINSCRIPT
+echo: BYE
+binary: 3 bytes
+done

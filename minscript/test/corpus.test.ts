@@ -11,7 +11,10 @@
 // - test/hir/*.ms:     pass every check, and the lowered program matches the `.hir` snapshot;
 // - every valid file (programs, hir, check/inference, ownership/valid, resolve/scopes) lowers to HIR
 //   that passes `validateHir` (all locals bound, labels valid, nothing unsupported);
-// - test/run/*.ms, and programs with a `.out` file, run on the JS back end and print their `.out`.
+// - test/run/*.ms, and programs with a `.out` file, run on the JS back end and print their `.out`;
+// - test/packages/**/main.ms: programs of several packages (src/loader.ts). Diagnostics in any file of
+//   the program must match its `//~` annotations; one without annotations must run and print its `.out`;
+// - every std package (std/*/…) loads, resolves and type-checks cleanly.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -30,6 +33,7 @@ import { dumpTypes } from "../src/check_dump.ts"
 import { validateHir } from "../src/hir_check.ts"
 import { dumpHir } from "../src/hir_dump.ts"
 import { compileToJs, loadJs, runJs } from "../src/js/run.ts"
+import { loadProgram, STD_DIR } from "../src/loader.ts"
 import { lowerPackage } from "../src/lower.ts"
 import { checkOwnership } from "../src/ownership.ts"
 import { loadPrelude } from "../src/prelude.ts"
@@ -216,7 +220,7 @@ describe("running on the JS back end (test/run, programs with .out)", () => {
     const programs = msFiles(join(root, "programs")).filter((f) => existsSync(f.replace(/\.ms$/, ".out")))
     for (const file of [...msFiles(join(root, "run")), ...programs]) {
         test(rel(file), async () => {
-            const compiled = compileToJs(readFileSync(file))
+            const compiled = compileToJs(file)
             assert.deepEqual(fmt(compiled.diagnostics), [], "must compile cleanly")
             const lines: string[] = []
             const result = await runJs(compiled.js!, (line) => lines.push(line))
@@ -233,10 +237,46 @@ describe("every valid file compiles to JS that loads", () => {
     ]
     for (const file of valid) {
         test(rel(file), async () => {
-            const compiled = compileToJs(readFileSync(file))
+            const compiled = compileToJs(file)
             assert.deepEqual(fmt(compiled.diagnostics), [], "must compile cleanly")
             const mod = await loadJs(compiled.js!)
             assert.equal(typeof mod.$main, "function")
+        })
+    }
+})
+
+describe("std packages load cleanly (std/)", () => {
+    for (const file of msFiles(STD_DIR).filter((f) => !f.endsWith("prelude.ms"))) {
+        test(relative(STD_DIR, file), () => {
+            const p = loadProgram(file)
+            assert.deepEqual(p.diagnostics.map((d) => `${relative(STD_DIR, d.file)}:${d.span.line}:${d.span.col} ${d.code} ${d.message}`), [])
+        })
+    }
+})
+
+describe("programs of several packages (test/packages)", () => {
+    const entries = msFiles(join(root, "packages")).filter((f) => f.endsWith("/main.ms"))
+    for (const entry of entries) {
+        test(rel(entry), async () => {
+            const program = loadProgram(entry)
+            const expected: string[] = []
+            for (const pkg of program.packages) {
+                if (pkg.dir.startsWith(STD_DIR)) continue
+                for (const f of pkg.files) {
+                    f.text.split("\n").forEach((line, i) => {
+                        const m = /\/\/~((?:\s+[A-Z_]+)+)\s*$/.exec(line)
+                        if (m) for (const code of m[1]!.trim().split(/\s+/)) expected.push(`${rel(f.path)}:${i + 1} ${code}`)
+                    })
+                }
+            }
+            const actual = program.diagnostics.map((d) => `${rel(d.file)}:${d.span.line} ${d.code}`)
+            assert.deepEqual(actual.sort(), expected.sort(), program.diagnostics.map((d) => `${rel(d.file)}:${d.span.line} ${d.code} ${d.message}`).join("\n"))
+            if (expected.length > 0) return
+            const compiled = compileToJs(entry)
+            const lines: string[] = []
+            const result = await runJs(compiled.js!, (line) => lines.push(line))
+            assert.equal(result.panic, null, `panicked:\n${lines.join("\n")}`)
+            snapshot(entry, ".out", lines.join("\n") + "\n")
         })
     }
 })

@@ -28,7 +28,7 @@ export type Ty =
     | { k: "lit", value: string | bigint | boolean }     // a literal type: `"Admin"`, `404`
     | { k: "union", members: Ty[] }                      // literal union: `"A" | "B"`
     | { k: "meta", ty: Ty }                              // a type used as a value: `User.new`, `Payment.Cash`
-    | { k: "package", name: string }                     // an imported package used as a value: `json`
+    | { k: "package", name: string, sym?: Sym }          // an imported package used as a value: `json` (sym.target: its resolution)
 
 export type RecordField = { name: string, ty: Ty, optional: boolean }
 
