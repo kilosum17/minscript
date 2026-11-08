@@ -58,6 +58,8 @@ export type LoadOptions = {
     appRoot?: string
     /** `path:` dependencies from mod.ms: import root name → folder (`"utils"` → /work/utils). */
     deps?: Map<string, string>
+    /** The folder whose `*_test.ms` files are included (`ms test`, the editor). Others' tests never are. */
+    testDir?: string
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -156,18 +158,26 @@ class Loader {
         if (name === "main") {
             main = { name: "main", dir: dirname(entry), files: [{ path: entry, text, parsed }], links: new Map() }
         } else {
-            main = this.packageAt(dirname(entry), name, entry, { path: entry, text, parsed })
+            // the name it has when imported (`std.json`, `app.models`); outside every root, the declared name
+            const q = qualifiedName(dirname(entry), this.appRoot, this.opts.deps)
+            main = this.packageAt(dirname(entry), q.startsWith("local.") ? name : q, entry, { path: entry, text, parsed })
         }
         this.visit(main)
         for (const p of this.ordered) this.analyse(p)
         return { main, packages: this.ordered, diagnostics: this.diagnostics }
     }
 
+    /** A folder's `.ms` files, without `*_test.ms` unless it is the folder under test. */
+    private sourceFiles(dir: string): string[] {
+        const all = [...new Set(this.list(dir))].sort()
+        return dir === this.opts.testDir ? all : all.filter((f) => !f.endsWith("_test.ms"))
+    }
+
     /** A folder entry: its `package main` files are the main package. */
     private loadFolder(dir: string): Program {
         this.appRoot = this.opts.appRoot ?? dir
         const files: SourceFile[] = []
-        for (const f of [...new Set(this.list(dir))].sort()) {
+        for (const f of this.sourceFiles(dir)) {
             const path = join(dir, f)
             const text = this.read(path)
             if (text === null) continue
@@ -188,7 +198,7 @@ class Loader {
     /** All `.ms` files of a folder (for the entry package: those declaring the same package). */
     private packageAt(dir: string, name: string, entry?: string, entryFile?: SourceFile): Package {
         const files: SourceFile[] = entryFile ? [entryFile] : []
-        for (const f of [...new Set(this.list(dir))].sort()) {
+        for (const f of this.sourceFiles(dir)) {
             const path = join(dir, f)
             if (path === entry) continue
             const text = this.read(path)

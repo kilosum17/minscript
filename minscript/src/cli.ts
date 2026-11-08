@@ -32,6 +32,8 @@ programs and projects
   run [<path>] [-- args…]   run a program: a file, a folder, or a project (default: list the scripts)
   run <script> [-- args…]   run a script from mod.ms (also: ms <script>, when it isn't a command)
   check [<path>…]           type-check and ownership-check a program with its imports (default: .)
+  test [<path>…] [--run <name>] [--reporter spec|dots]
+                            run the test_ functions of *_test.ms files at or under each path (default: .)
   js <path>                 print the generated JavaScript
   config [<path>]           print the evaluated mod.ms as JSON
 
@@ -42,7 +44,7 @@ compiler internals (each file on its own)
   version                   the toolchain version
 `
 
-const COMMANDS = new Set(["run", "js", "config", "check", "lex", "parse", "resolve", "hir", "help", "version"])
+const COMMANDS = new Set(["run", "js", "config", "check", "test", "lex", "parse", "resolve", "hir", "help", "version"])
 const [command, ...rest] = process.argv.slice(2)
 
 if (command === undefined || command === "help" || command === "--help" || command === "-h") {
@@ -71,6 +73,29 @@ if (command === "check") {
         else console.log(`${path}: ok (${program.packages.length} package${program.packages.length === 1 ? "" : "s"}, ${program.packages.reduce((n, p) => n + p.files.length, 0)} files)`)
     }
     process.exit(failed ? 1 : 0)
+}
+
+if (command === "test") {
+    const { runTests } = await import("./test_runner.ts")
+    const { printDiagnostics } = await import("./project_cli.ts")
+    const paths: string[] = []
+    let filter: string | undefined, reporter: string | undefined
+    for (let i = 0; i < rest.length; i++) {
+        const a = rest[i]!
+        if (a === "--run") filter = rest[++i]
+        else if (a === "--reporter") reporter = rest[++i]
+        else if (a === "--parallel") { /* accepted; tests run one at a time for now (spec §17.7) */ }
+        else paths.push(a)
+    }
+    let failed = 0, broken = 0, packages = 0
+    for (const path of paths.length > 0 ? paths : ["."]) {
+        const r = await runTests(path, { filter, reporter })
+        printDiagnostics(r.diagnostics)
+        failed += r.failed; broken += r.broken; packages += r.packages
+    }
+    if (packages === 0 && broken === 0) console.log(`no tests${filter ? ` matching \`${filter}\`` : ""}`)
+    else if (packages > 1 || broken > 0) console.log(`\n${packages} package${packages === 1 ? "" : "s"}: ${failed === 0 && broken === 0 ? "all passed" : `${failed} failed${broken > 0 ? `, ${broken} couldn't run` : ""}`}`)
+    process.exit(failed > 0 || broken > 0 ? 1 : 0)
 }
 
 if (!COMMANDS.has(command)) {

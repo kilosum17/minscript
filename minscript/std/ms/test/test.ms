@@ -1,11 +1,13 @@
 package test
 
-// The test runner's settings in mod.ms (spec §17.4): `c.tools([test.setup(_{ parallel: true })])`.
+// The test runner's settings in mod.ms (§17.4): `c.tools([test.setup(_{ reporter: "dots" })])`.
+// The runner itself is `std.testing.run_all` (it imports nothing, so every package can be tested).
 
 import "build.{Config, Tool, sh}"
 
 pub type Options = {
     pub parallel: bool = false
+    /// "spec" (one line per test) or "dots".
     pub reporter: string = "spec"
 }
 

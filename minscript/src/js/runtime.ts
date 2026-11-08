@@ -582,7 +582,7 @@ const ordering = (n: number) => ({ $t: "std.Ordering", $v: n < 0 ? "Less" : n > 
 const fromOrdering = (o: Any) => (o.$v === "Less" ? -1 : o.$v === "Greater" ? 1 : 0)
 
 function log(prefix: string) {
-    return (_self: Any, args: Any[]) => output(prefix + args.map(toStr).join(" "))
+    return (_self: Any, args: Any[]) => printLine(prefix + args.map(toStr).join(" "))
 }
 
 /** Std functions by name (`"Vec.push"`); generated code calls `$rt.std[name]`. */
@@ -591,7 +591,7 @@ const stdTable: Record<string, Any> = {
     panic: (msg: string) => panic(msg),
     assert: (cond: boolean, msg: string) => { if (!cond) panic(msg, "User") },
     log: { $t: "std.Log" },
-    "Log.println": log(""), "Log.print": log(""), "Log.info": log(""), "Log.debug": log(""),
+    "Log.println": log(""), "Log.print": (_self: Any, args: Any[]) => { stdTable["io.print"](args) }, "Log.info": log(""), "Log.debug": log(""),
     "Log.warn": log("warn: "), "Log.error": log("error: "),
 
     // Option / Result
@@ -809,6 +809,8 @@ Object.assign(stdTable, {
             throw e
         }
     },
+
+    "testing.clock": () => BigInt(Date.now()),
 
     // build (mod.ms)
     "build.current_target": () => {

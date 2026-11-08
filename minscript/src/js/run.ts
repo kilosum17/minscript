@@ -18,10 +18,12 @@ export type Compiled = { js: string | null, diagnostics: FileDiagnostic[] }
 
 /** Loads the program (the entry file and every package it imports), runs every pass on every package,
  *  and returns one JS module, or the diagnostics that stopped compilation. */
-export function compileToJs(entry: string, opts: LoadOptions = {}): Compiled {
+/** `entryFn`: the function the module's `$main` calls, by name, or from the entry package's name. */
+export function compileToJs(entry: string, opts: LoadOptions = {}, entryFn: string | ((pkg: string) => string) = "main"): Compiled {
     const program = loadProgram(entry, opts)
     if (program.diagnostics.length > 0) return { js: null, diagnostics: program.diagnostics }
-    return { js: emitJs(lowerProgram(program), RUNTIME_URL), diagnostics: [] }
+    const fn = typeof entryFn === "string" ? entryFn : entryFn(program.main.name)
+    return { js: emitJs(lowerProgram(program), RUNTIME_URL, fn), diagnostics: [] }
 }
 
 /** Writes a compiled module to the temp directory and imports it, without running `main`. */
@@ -33,7 +35,8 @@ export async function loadJs(js: string): Promise<{ $main: () => Promise<unknown
     return await import(pathToFileURL(file).href) as { $main: () => Promise<unknown> }
 }
 
-export type RunResult = { exitCode: number, panic: string | null }
+/** `value`: what `$main` returned (`ms test`'s generated main returns the number of failures). */
+export type RunResult = { exitCode: number, panic: string | null, value?: unknown }
 
 /** Imports a compiled module and awaits its `main`. A panic that escapes `main` gives exit code 101. */
 export async function runJs(js: string, onOutput?: (line: string) => void): Promise<RunResult> {
@@ -50,12 +53,13 @@ export async function runJs(js: string, onOutput?: (line: string) => void): Prom
             const check = () => resolve("deadlock")
             process.once("beforeExit", check)
         })
-        const outcome = await Promise.race([mod.$main().then(() => "done" as const), deadlock])
+        let value: unknown
+        const outcome = await Promise.race([mod.$main().then((v) => { value = v; return "done" as const }), deadlock])
         if (outcome === "deadlock") {
             print("panic: Deadlock: `main` is waiting, and no task, timer or I/O can wake it")
             return { exitCode: 101, panic: "Deadlock" }
         }
-        return { exitCode: 0, panic: null }
+        return { exitCode: 0, panic: null, value }
     } catch (e) {
         print(`panic: ${describe(e)}`)
         return { exitCode: 101, panic: describe(e) }

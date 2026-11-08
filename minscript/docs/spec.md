@@ -1415,6 +1415,7 @@ Each std package is a folder under [`std/`](../std/), written in MinScript like 
 | `std.runtime` | `async yield()` (§9.6) |
 | `build` (`std/build`) | the mod.ms API (§17): `Config`, `Tool`, `Script` (`sh`, `pkg`, `task`), `Args`, `run`, `target` (`Target`, `Os`), `env` |
 | `ms.fmt`, `ms.test` (`std/ms/…`) | first-party tools' `Options` and `setup(o) -> Tool` (§17.4); `ms.test` also adds a `test` script |
+| `std.testing` | assertions (`assert_eq`, `assert_ne`, `assert_true`, `assert_ok`, `assert_err`, `assert_some`, `fail`) and the test runner `run_all` (§17.7); it imports nothing |
 | `std.net.ws` | WebSockets: `async listen(host, port) -> Result[Server, ws.Error]` (resolves once bound; port 0 picks one, see `Server.port()`), `async connect(url)`, `Server.accept`, `Connection.split(this) -> t(Reader, Writer)`, `Reader.receive` (cancel-safe), `Writer.send` (`Writer` is a handle, §9.1), `union Message = { Text(string)  Binary(Vec[u8])  Close }` |
 
 **JSON mapping** (`json.parse.[T]` / `stringify`): a struct is an object (a missing field takes its default, an optional field may be missing or `null`, any other missing field is an error); `Option` is the value or `null`; `Vec` is an array; `Map[string, V]` is an object; a union variant is `"Name"` without a payload and `{ "Name": [payload…] }` with one; `i64` / `u64` are numbers.
@@ -1505,6 +1506,7 @@ Each std package is a folder under [`std/`](../std/), written in MinScript like 
 | `E_SCRIPT_IN_EVAL` | `run(…)` (a script) called while `mod.ms` is being evaluated; reported when evaluating (§17.3) |
 | `E_NO_MAIN` | a program folder (a project's `main`) with no `package main` file (§17.6) |
 | `E_IMPORT_MAIN` | an import of a folder of `package main` files (§8.1) |
+| `E_TEST_SIGNATURE` | a `test_` function in a `*_test.ms` file that takes parameters, returns a value, or is generic (§17.7) |
 
 **Lints** (warnings; each can be turned on or off in the `lint` section of `mod.ms`):
 
@@ -1980,7 +1982,38 @@ section[T](name: string) -> Result[T, json.Error]
 **Implementation status** (`src/project.ts`, `ms run` / `ms config` in `src/project_cli.ts`):
 - `config()` is compiled with its imports (`build`, `ms.*` tools) and run on the JS back end; the result is read back. Tools from other packages (`"acme.lint@^1.2"`) aren't fetched, so calling them panics while evaluating.
 - Not yet: the sandbox of §17.5 (evaluation can do anything a program can, except `run`), the evaluation cache (the language server re-evaluates when the text of `mod.ms` changes), `E_SECTION_CONFLICT`, `mod.lock`, registry and `git:` dependencies, and `dev_deps` loading.
-- The command is `bin/ms.js` (`npm link` in `minscript/` puts `ms` on the PATH): `ms run`, `ms check`, `ms js`, `ms config`, `ms <script>`, and the compiler-internal `lex` / `parse` / `resolve` / `hir`. `ms help` lists them. `ms build`, `ms test` and `ms fmt` don't exist yet.
+- The command is `bin/ms.js` (`npm link` in `minscript/` puts `ms` on the PATH): `ms run`, `ms check`, `ms js`, `ms config`, `ms <script>`, and the compiler-internal `lex` / `parse` / `resolve` / `hir`. `ms help` lists them. `ms build` and `ms fmt` don't exist yet.
+
+### 17.7 Testing: `ms test` [D]
+
+```rust
+// src/models/item_test.ms: a test file is part of its package (it sees private items)
+package models
+
+import "std.testing.{assert_eq, assert_ok}"
+
+fun test_price() {
+    assert_eq(Item { name: "pen", cents: 150 }.cents, 150)
+}
+
+async fun test_load() {                       // async tests are awaited
+    let items = assert_ok(await load("fixtures/items.json"))
+    assert_eq(items.len(), 3)
+}
+```
+
+```bash
+ms test                      # every package at or under the current folder
+ms test std src/models       # some folders
+ms test --run price          # only tests whose name contains "price"
+ms test --reporter dots
+```
+
+- **Test files** are `*_test.ms`, in the folder of the package they test, and declare that package. They are compiled only while their package is being tested: every other build (`ms run`, `ms check`, imports from other packages) leaves them out. The language server includes them for the package being edited.
+- **Tests** are the top-level functions whose name starts with `test_`. They take no parameters and return nothing (`E_TEST_SIGNATURE`); they may be `async`. A test fails by panicking, usually through a `std.testing` assertion (`assert_eq` shows both values). The other tests still run.
+- **The runner is MinScript:** for each package, `ms test` adds a generated file to it, with a `main` that passes every test to `std.testing.run_all`. That function runs each test inside `recover`, times it, prints the report, and returns the number of failures; `ms test` exits with status 1 if any test failed or a package didn't compile. Because `std.testing` imports nothing, every package can be tested from the inside, std's own included (`std/json/json_test.ms`).
+- **Settings:** `reporter` comes from the `test` section of mod.ms (`ms.test.setup(_{ reporter: "dots" })`), and the command line overrides it. `parallel` is accepted but tests run one at a time for now.
+- Not yet: parallel runs, benchmarks, and tests of a package from outside it (Go's `package x_test`).
 
 ---
 

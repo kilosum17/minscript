@@ -16,7 +16,9 @@
 //   the program must match its `//~` annotations; one without annotations must run and print its `.out`;
 // - every std package (std/*/…) loads, resolves and type-checks cleanly;
 // - test/projects/*: projects (src/project.ts). Each one's mod.ms evaluates (its `config.json` snapshot)
-//   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL.
+//   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL;
+// - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
+//   test/testing/failing reports its failures as in `report.out`.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -37,6 +39,7 @@ import { dumpHir } from "../src/hir_dump.ts"
 import { compileToJs, loadJs, runJs } from "../src/js/run.ts"
 import { loadProgram, STD_DIR } from "../src/loader.ts"
 import { configJson, openProject, programOptions } from "../src/project.ts"
+import { runTests } from "../src/test_runner.ts"
 import { resetOutput, setOutput } from "../src/js/runtime.ts"
 import { lowerPackage } from "../src/lower.ts"
 import { checkOwnership } from "../src/ownership.ts"
@@ -250,7 +253,7 @@ describe("every valid file compiles to JS that loads", () => {
 })
 
 describe("std packages load cleanly (std/)", () => {
-    for (const file of msFiles(STD_DIR).filter((f) => !f.endsWith("prelude.ms"))) {
+    for (const file of msFiles(STD_DIR).filter((f) => !f.endsWith("prelude.ms") && !f.endsWith("_test.ms"))) {
         test(relative(STD_DIR, file), () => {
             const p = loadProgram(file)
             assert.deepEqual(p.diagnostics.map((d) => `${relative(STD_DIR, d.file)}:${d.span.line}:${d.span.col} ${d.code} ${d.message}`), [])
@@ -311,5 +314,31 @@ describe("projects (test/projects)", () => {
         const p = await openProject(join(dir, "script_in_eval"))
         assert.equal(p.config, null)
         assert.match(p.errors.join("\n"), /E_SCRIPT_IN_EVAL/)
+    })
+})
+
+describe("ms test", () => {
+    const quiet = (lines: string[]) => (line: string) => lines.push(line)
+    test("std's tests (written in MinScript) pass", async () => {
+        const lines: string[] = []
+        const r = await runTests(STD_DIR, { onOutput: quiet(lines) })
+        assert.ok(r.packages >= 2, "std has tests")
+        assert.deepEqual([r.failed, r.broken, fmt(r.diagnostics)], [0, 0, []], lines.join("\n"))
+    })
+    test("test/projects: main and non-main packages, sync and async tests", async () => {
+        const lines: string[] = []
+        const r = await runTests(join(root, "projects"), { onOutput: quiet(lines) })
+        assert.deepEqual([r.packages, r.failed, r.broken], [2, 0, 0], lines.join("\n"))
+    })
+    test("test/testing/failing: failures are reported and the other tests still run", async () => {
+        const lines: string[] = []
+        const r = await runTests(join(root, "testing", "failing"), { onOutput: quiet(lines) })
+        assert.deepEqual([r.packages, r.failed, r.broken], [1, 3, 0])
+        snapshot(join(root, "testing", "failing", "report.ms"), ".out", lines.map((l) => l.replace(/\(\d+ ms\)/, "(… ms)")).join("\n") + "\n")
+    })
+    test("--run filters by name", async () => {
+        const lines: string[] = []
+        const r = await runTests(join(root, "testing", "failing"), { onOutput: quiet(lines), filter: "passes" })
+        assert.deepEqual([r.failed, lines.filter((l) => /^(ok|FAIL) /.test(l)).length], [0, 1])
     })
 })

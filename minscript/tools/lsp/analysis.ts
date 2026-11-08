@@ -142,6 +142,7 @@ export function analyze(docs: Doc[], primary: string, project: ProjectInfo | nul
     const wholeMain = project !== null && dirname(path) === project.mainDir && (packageName(text) ?? "main") === "main"
     const program = loadProgram(wholeMain ? project.mainDir : path, {
         ...(project ? { appRoot: project.mainDir, deps: project.deps } : {}),
+        testDir: dirname(path),             // the package being edited includes its *_test.ms files
         read: (p) => { const t = open.get(p); if (t !== undefined) return t; try { return readFileSync(p, "utf8") } catch { return null } },
         list: (dir) => {
             let names: string[] = []
