@@ -27,7 +27,10 @@ pub let MOD_FILE = "mod.ms"
 /// Where the toolchain's own files are: std (with the prelude) and the runtime the generated JavaScript imports.
 pub type Toolchain = {
     pub std_dir: string
+    /// The runtime the modules this toolchain runs import (an absolute `file://` URL).
     pub runtime_url: string
+    /// The runtime `js` writes into its output (`--runtime`, which may be relative to where the module will be).
+    pub output_runtime_url: string
     pub cwd: string
 }
 
@@ -372,6 +375,11 @@ pub type Compiled = { pub js: string?, pub diagnostics: Vec[FileDiagnostic] }
 /// returns one JS module, or the diagnostics that stopped compilation. `entry_fn` is the function the
 /// module's `$main` calls; with `in_package`, it is named in the entry package (`mod.config`).
 pub async fun compile_to_js(tc: &Toolchain, entry: &str, opts: LoadOptions, entry_fn: &str, in_package: bool) -> Compiled {
+    await compile_with(tc, entry, opts, entry_fn, in_package, tc.runtime_url)
+}
+
+/// `compile_to_js`, importing the runtime from `runtime_url`.
+pub async fun compile_with(tc: &Toolchain, entry: &str, opts: LoadOptions, entry_fn: &str, in_package: bool, runtime_url: &str) -> Compiled {
     let loaded = await load_program(entry, tc.std_dir, opts)
     let program = loaded or e => {
         return Compiled { js: None, diagnostics: [FileDiagnostic { file: entry.to_str(), code: "E_LOAD", message: e, span: r{ start: 0, end: 0, line: 1, col: 1 }, pass: "load" }] }
@@ -383,5 +391,5 @@ pub async fun compile_to_js(tc: &Toolchain, entry: &str, opts: LoadOptions, entr
     let fn_name = if in_package && pkg != "main" { "${pkg}.${entry_fn}" } else { entry_fn.to_str() }
     var lowered = lower_program(program)
     hir.compute_witnesses(lowered)
-    Compiled { js: Some(js.emit_js(lowered, program.syms(), program.vars(), tc.runtime_url, fn_name)), diagnostics: [] }
+    Compiled { js: Some(js.emit_js(lowered, program.syms(), program.vars(), runtime_url, fn_name)), diagnostics: [] }
 }

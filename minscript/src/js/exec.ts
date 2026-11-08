@@ -4,7 +4,7 @@
 // int result is written to that file (`runtime.run_module_result`).
 
 import { readFileSync, writeFileSync } from "node:fs"
-import { runJs } from "./run.ts"
+import { runJs } from "./host.ts"
 import { setArgs } from "./runtime.ts"
 
 const [file, ...args] = process.argv.slice(2)

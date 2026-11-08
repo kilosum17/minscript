@@ -1,6 +1,6 @@
 # stage1: the self-hosted MinScript compiler
 
-The MinScript compiler, written in MinScript. It replaces the TypeScript compiler in `../minscript/` (stage 0) one pass at a time; stage 0 compiles and runs it until stage 1 can compile itself.
+The MinScript compiler, written in MinScript. It replaces the TypeScript compiler in `../minscript/` (stage 0). It is self-hosting: `bin/ms1.js` (the `ms1` command) runs the committed seed `seed/stage1.mjs`, which is stage 1 compiled by stage 1, with the shared runtime (`../minscript/src/js/runtime.ts` and `host.ts`, which import only Node) and std (`../minscript/std`); stage 0's compiler isn't loaded. Stage 0 stays as the reference the difftest compares against.
 
 ## Rules
 
@@ -12,7 +12,9 @@ The MinScript compiler, written in MinScript. It replaces the TypeScript compile
 
 ## Layout
 
-- `mod.ms`: the project (`main` is `./src`); scripts: `difftest`.
+- `mod.ms`: the project (`main` is `./src`); scripts: `difftest`, `reseed`.
+- `bin/ms1.js`: the `ms1` command (same commands as `ms`; std from `MS_STD`, default `../minscript/std`; `MS1_SEED` runs another build). `seed/stage1.mjs`: the seed. It imports the runtime by a path relative to `seed/`, so it runs in place.
+- `tools/seed.sh` (`ms1 run reseed`): the current seed compiles `src/`, and the result must compile `src/` to itself (a fixpoint) before it replaces the seed. Rebuild the seed after changing stage 1 when you want `ms1` to have the change; it isn't needed for the difftest, which compiles the sources with stage 0 once per run.
 - `src/main.ms`: the CLI. Per file (each its own package): `lex|parse <file.ms>…`, `resolve|types|ownership|hir --prelude <prelude.ms> <file.ms>…`; programs and projects, as stage 0's `ms` (`--std <std dir>` or `$MS_STD`, `--runtime <url>`): `run [<path>|<script>] [-- args…]`, `check`, `test`, `js`, `config`, and `<script>` as the command. Dumps on stdout, diagnostics on stderr, as stage 0's commands of the same names.
 - `src/lexer/` (← `token.ts`, `lexer.ts`, `dump.ts`): `token.ms` (tokens, keyword and punctuator tables), `lexer.ms`, `dump.ms` (the `.tokens` dump), `lexer_test.ms`.
 - `src/ast/` (← `ast.ts`, `sexpr.ts`): `ast.ms` (the AST), `sexpr.ms` (the `.ast` dump).
@@ -59,6 +61,9 @@ The MinScript compiler, written in MinScript. It replaces the TypeScript compile
 ## Commands (from `stage1/`)
 
 ```bash
+node bin/ms1.js check .           # stage 1 checking itself, run from the seed (no stage 0 compiler)
+node bin/ms1.js run reseed        # rebuild the seed with itself (a fixpoint check)
+node bin/ms1.js run ../minscript/test/projects/basic   # any `ms` command: run, check, test, js, config, scripts
 ms check .                        # type-check and ownership-check stage 1
 ms test                           # its unit tests
 ms run difftest                   # stage 0 vs stage 1 on every file

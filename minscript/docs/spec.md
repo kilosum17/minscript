@@ -1726,7 +1726,7 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 
 ### 14.2 JS back end [D]
 
-`src/js/emit.ts` turns HIR into an ES module, `src/js/runtime.ts` is the runtime it imports, and `ms run file.ms` (`src/js/run.ts`) compiles and runs a program on Node.
+`src/js/emit.ts` turns HIR into an ES module, `src/js/runtime.ts` is the runtime it imports, and `ms run file.ms` (`src/js/run.ts`) compiles and runs a program on Node. Running a compiled module needs only the runtime and `src/js/host.ts` (panics, deadlocks, exit codes; `src/js/exec.ts` runs one in its own process), not the compiler: the self-hosted compiler (`../stage1`, run by `bin/ms1.js` from its committed seed, stage 1 compiled by stage 1) uses them the same way.
 
 **Representation:**
 

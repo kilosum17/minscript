@@ -9,6 +9,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 out=$(mktemp -d)
+# stage 1 is compiled once (by stage 0, from the current sources) and run with the runtime's host
+ms js . > "$out/stage1.mjs" || { echo "stage 0 can't compile stage 1"; exit 1; }
+s1="node $(pwd)/../minscript/src/js/exec.ts $out/stage1.mjs"
 files=$(find ../minscript/std ../minscript/test src -name '*.ms' | sort)
 count=$(echo "$files" | wc -l)
 status=0
@@ -30,12 +33,12 @@ compare() {   # compare <pass> <stage-0 command> <stage-1 command>
     fi
 }
 
-compare lexer "ms lex" "ms run . -- lex"
-compare parser "ms parse" "ms run . -- parse"
-compare resolver "ms resolve" "ms run . -- resolve --prelude ../minscript/std/prelude.ms"
-compare checker "ms types" "ms run . -- types --prelude ../minscript/std/prelude.ms"
-compare ownership "ms ownership" "ms run . -- ownership --prelude ../minscript/std/prelude.ms"
-compare lowering "ms hir" "ms run . -- hir --prelude ../minscript/std/prelude.ms"
+compare lexer "ms lex" "$s1 lex"
+compare parser "ms parse" "$s1 parse"
+compare resolver "ms resolve" "$s1 resolve --prelude ../minscript/std/prelude.ms"
+compare checker "ms types" "$s1 types --prelude ../minscript/std/prelude.ms"
+compare ownership "ms ownership" "$s1 ownership --prelude ../minscript/std/prelude.ms"
+compare lowering "ms hir" "$s1 hir --prelude ../minscript/std/prelude.ms"
 
 # Whole programs (the loader, every pass on every package, the JS back end): `ms check`, `ms js` and
 # `ms run` on every runnable entry, stage 1 itself included (stage 1 compiling stage 1).
@@ -58,9 +61,9 @@ compare_programs() {   # compare_programs <pass> <stage-0 command> <stage-1 comm
         status=1
     fi
 }
-compare_programs check-programs "ms check" "ms run . -- check --std ../minscript/std"
-compare_programs js-programs "ms js" "ms run . -- js --std ../minscript/std"
-compare_programs run-programs "ms run" "ms run . -- run --std ../minscript/std"
+compare_programs check-programs "ms check" "$s1 check --std ../minscript/std"
+compare_programs js-programs "ms js" "$s1 js --std ../minscript/std"
+compare_programs run-programs "ms run" "$s1 run --std ../minscript/std"
 # Projects and the commands around them (src/project/): `ms config`, scripts, `ms test`, each typed in
 # the folder it is about (scripts and `ms test` look for the project there). Test timings are
 # normalized. Stage 1 finds std through MS_STD, so a script's own `--` arguments reach it untouched.
@@ -88,7 +91,7 @@ commands=(
 for entry in "${commands[@]}"; do
     dir=${entry%%|*} cmd=${entry#*|}
     for s in 0 1; do
-        if [ $s -eq 0 ]; then run="ms $cmd"; else run="ms run $stage1 -- $cmd"; fi
+        if [ $s -eq 0 ]; then run="ms $cmd"; else run="$s1 $cmd"; fi
         { echo "== ($dir) $cmd"; (cd "$dir" && eval "timeout 600 $run" 2>&1 | sed -E 's/\([0-9]+ ms\)/(… ms)/'; echo "exit ${PIPESTATUS[0]}"); } >> "$out/projects.$s.all"
     done
 done

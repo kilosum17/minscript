@@ -505,6 +505,14 @@ describe("stage 1 (../stage1, the self-hosted compiler)", () => {
         assert.equal(js.status, 0, js.stderr)
         same(js.stdout, compileToJs(p.mainDir, programOptions(p)).js!, "JavaScript of test/projects/basic")
     })
+    test("its seed (stage 1 compiled by stage 1, bin/ms1.js) compiles stage 1 to the same JavaScript as stage 0", { timeout: 180_000 }, async () => {
+        const seed = join(stage1, "seed", "stage1.mjs")
+        if (!existsSync(seed)) return
+        const { spawnSync } = await import("node:child_process")
+        const r = spawnSync(process.execPath, [join(stage1, "bin", "ms1.js"), "js", stage1], { encoding: "utf8", maxBuffer: 1 << 28 })
+        assert.equal(r.status, 0, r.stderr)
+        same(r.stdout, compileToJs(join(stage1, "src"), { appRoot: join(stage1, "src") }).js!, "JavaScript of stage 1, by the seed")
+    })
     test("its parser builds the same AST and diagnostics as stage 0's on every file", { timeout: 60_000 }, async () => {
         const list = files()
         const r = await stage1Run("parse", list)

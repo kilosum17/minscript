@@ -153,7 +153,8 @@ async fun run_program(tc: &Toolchain, command: &str, path: &str, args: &Vec[stri
     }
     let Some(found) = await entry_for(tc, path) else { return 1 }
     let t(entry, opts) = found
-    let compiled = await compile_to_js(tc, entry, opts, "main", false)
+    let runtime_url = if command == "js" { tc.output_runtime_url.clone() } else { tc.runtime_url.clone() }
+    let compiled = await compile_with(tc, entry, opts, "main", false, runtime_url)
     print_diagnostics(tc, compiled.diagnostics)
     let Some(code) = compiled.js else { return 1 }
     if command == "js" {
@@ -229,10 +230,11 @@ pub async fun check_command(tc: &Toolchain, paths: &Vec[string]) -> int {
 }
 
 /// The toolchain options every program command takes (`--std <dir>`, `--runtime <url>`, before any
-/// `--`), and the remaining arguments. `--std` defaults to `$MS_STD`.
+/// `--`), and the remaining arguments. `--std` defaults to `$MS_STD`. `--runtime` is for the output of
+/// `js` only: the modules the toolchain runs itself import `<std>/../src/js/runtime.ts`.
 pub fun toolchain_options(argv: &Vec[string]) -> Result[t(Toolchain, Vec[string]), string] {
     var std_dir = env.get("MS_STD") ?? ""
-    var runtime_url = ""
+    var output_url = ""
     var rest = [] as Vec[string]
     var i = 0
     for i < argv.len() {
@@ -244,7 +246,7 @@ pub fun toolchain_options(argv: &Vec[string]) -> Result[t(Toolchain, Vec[string]
             if argv[i] == "--std" {
                 std_dir = argv[i + 1].clone()
             } else {
-                runtime_url = argv[i + 1].clone()
+                output_url = argv[i + 1].clone()
             }
             i += 2
             continue
@@ -257,8 +259,7 @@ pub fun toolchain_options(argv: &Vec[string]) -> Result[t(Toolchain, Vec[string]
     }
     let cwd = env.cwd()
     let std = resolve_from(cwd, std_dir)
-    if runtime_url.is_empty() {
-        runtime_url = "file://${resolve_from(std, "../src/js/runtime.ts")}"
-    }
-    Ok(t(Toolchain { std_dir: std, runtime_url, cwd }, rest))
+    let runtime_url = "file://${resolve_from(std, "../src/js/runtime.ts")}"
+    let output_runtime_url = if output_url.is_empty() { runtime_url.clone() } else { output_url }
+    Ok(t(Toolchain { std_dir: std, runtime_url, output_runtime_url, cwd }, rest))
 }
