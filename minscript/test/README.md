@@ -12,6 +12,7 @@ The syntax under test is defined by [docs/spec.md](../docs/spec.md) (v0.2). The 
 | `check/` | type checking: inference, coercions, calls, patterns, checker errors | `//~` annotations, plus a `*.types` snapshot of every binding's inferred type |
 | `ownership/` | moves, mutability, scoped values, escaping closures, borrows across spawn | `//~` annotations (`valid.ms` must have none) |
 | `hir/` | lowering: one case per desugaring | a `*.hir` snapshot of the lowered program |
+| `run/` | programs run on the JS back end | a `*.out` snapshot of what they print (programs in `programs/` with a `.out` file run too) |
 
 ## Conventions
 
@@ -35,6 +36,8 @@ npm run parse -- test/parser/closures.ms   # print the AST
 npm run resolve -- test/resolve/scopes.ms  # print what every name binds to
 npm run check -- test/check/errors.ms      # type-check + ownership, print diagnostics
 npm run hir -- test/hir/lowering.ms        # print the lowered HIR
+npm run js -- test/run/basics.ms           # print the generated JS
+npm run run -- test/run/basics.ms          # compile and run on Node
 ```
 
 `test/corpus.test.ts` checks that:
@@ -49,7 +52,9 @@ npm run hir -- test/hir/lowering.ms        # print the lowered HIR
 - every `ownership/*.ms` type-checks cleanly and the ownership pass reports exactly its annotated codes;
 - every file in `programs/` also passes the ownership pass with zero diagnostics;
 - every `hir/*.ms` passes every check and matches its `.hir` snapshot;
-- every valid file lowers to HIR that `validateHir` accepts: every local bound, every label valid, nothing unsupported.
+- every valid file lowers to HIR that `validateHir` accepts: every local bound, every label valid, nothing unsupported;
+- every valid file compiles to JS that loads;
+- every `run/*.ms`, and every program with a `.out` file, runs without panicking and prints exactly its `.out`.
 
 **`.hir` format:** S-expressions, one top-level form per type and function. `(do …)` is a block, `(let x: T v)` / `(var …)` is a binding, `$name` is a temporary from lowering, and `x'2` is a second local named `x` in the same function. `@name` is a global, `#name` a function value, `(dyn r m …)` a dynamic call, and `extern:path` a member of a package without signatures. `(ok v)` / `fail` match an Option or a Result.
 

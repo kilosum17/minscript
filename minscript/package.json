@@ -15,7 +15,9 @@
     "parse": "node src/cli.ts parse",
     "resolve": "node src/cli.ts resolve",
     "check": "node src/cli.ts check",
-    "hir": "node src/cli.ts hir"
+    "hir": "node src/cli.ts hir",
+    "js": "node src/cli.ts js",
+    "run": "node src/cli.ts run"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

@@ -10,7 +10,8 @@
 // - test/ownership:    type-check cleanly, and ownership diagnostics match the annotations;
 // - test/hir/*.ms:     pass every check, and the lowered program matches the `.hir` snapshot;
 // - every valid file (programs, hir, check/inference, ownership/valid, resolve/scopes) lowers to HIR
-//   that passes `validateHir` (all locals bound, labels valid, nothing unsupported).
+//   that passes `validateHir` (all locals bound, labels valid, nothing unsupported);
+// - test/run/*.ms, and programs with a `.out` file, run on the JS back end and print their `.out`.
 //
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (npm run test:update). Review the diff before committing.
 
@@ -28,6 +29,7 @@ import { checkPackage } from "../src/check.ts"
 import { dumpTypes } from "../src/check_dump.ts"
 import { validateHir } from "../src/hir_check.ts"
 import { dumpHir } from "../src/hir_dump.ts"
+import { compileToJs, loadJs, runJs } from "../src/js/run.ts"
 import { lowerPackage } from "../src/lower.ts"
 import { checkOwnership } from "../src/ownership.ts"
 import { loadPrelude } from "../src/prelude.ts"
@@ -206,6 +208,35 @@ describe("every valid file lowers to well-formed HIR", () => {
             const res = resolvePackage([parsed.file])
             const checked = checkPackage([parsed.file], res)
             assert.deepEqual(validateHir(lowerPackage([parsed.file], res, checked)), [])
+        })
+    }
+})
+
+describe("running on the JS back end (test/run, programs with .out)", () => {
+    const programs = msFiles(join(root, "programs")).filter((f) => existsSync(f.replace(/\.ms$/, ".out")))
+    for (const file of [...msFiles(join(root, "run")), ...programs]) {
+        test(rel(file), async () => {
+            const compiled = compileToJs(readFileSync(file))
+            assert.deepEqual(fmt(compiled.diagnostics), [], "must compile cleanly")
+            const lines: string[] = []
+            const result = await runJs(compiled.js!, (line) => lines.push(line))
+            assert.equal(result.panic, null, `panicked:\n${lines.join("\n")}`)
+            snapshot(file, ".out", lines.join("\n") + "\n")
+        })
+    }
+})
+
+describe("every valid file compiles to JS that loads", () => {
+    const valid = [
+        ...msFiles(join(root, "programs")), ...msFiles(join(root, "hir")), ...msFiles(join(root, "run")),
+        join(root, "check", "inference.ms"), join(root, "ownership", "valid.ms"), join(root, "resolve", "scopes.ms"),
+    ]
+    for (const file of valid) {
+        test(rel(file), async () => {
+            const compiled = compileToJs(readFileSync(file))
+            assert.deepEqual(fmt(compiled.diagnostics), [], "must compile cleanly")
+            const mod = await loadJs(compiled.js!)
+            assert.equal(typeof mod.$main, "function")
         })
     }
 })

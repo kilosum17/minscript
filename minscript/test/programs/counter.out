@@ -1,0 +1,8 @@
+Doubled: [20, 50, 80, 10, 180, 220], high: [90, 110]
+Honor roll: true, all passing: true
+Processed complex values: [105, 630, 1605, 30, 8105, 12105]
+Total: 280
+Current Counter Value: 10
+Incremented result: 25, now Counter(26)
+LOG: area = 7.0
+30 60 610 610 900 2 31 40

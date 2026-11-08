@@ -1,0 +1,13 @@
+parsed ok
+Ted <no-email@minscript.dev> admin=true
+admins: ["Ted"]
+total volume: 300
+total area: 7.14159
+circle: 3.14159
+shape: 4.0
+0: login 1
+1: logout 1
+2: ping
+port 8080, first id 3
+requests: 1
+recovered: index 10 out of bounds (length 3) at :0

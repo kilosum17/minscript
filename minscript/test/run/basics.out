@@ -1,0 +1,17 @@
+3 1 -3 5.0 7
+i64: 9000000005 4500000002
+fib(15) = 610
+hello MinScript, 9 chars, upper MINSCRIPT
+abc x ["a", "b", "c"]
+Point { x: 1, y: 2 } Point { x: 1, y: 5 } true false
+0 no note
+Circle { r: 1.0 } 3.0
+Rect(2.0, 3.0) 6.0
+Empty 0.0
+zero small negative big
+Ok(6) Err("not an integer: \"x\"")
+Some(4) None
+7 Some(30)
+hits 14 found 14
+3 m{ "a": 11, "b": 2 } None 2 6
+caught: index 5 out of bounds (length 2)

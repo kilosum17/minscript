@@ -65,6 +65,7 @@ Pipeline:
 | `map[k] = v` | — | — | inserts if missing, overwrites otherwise |
 | Package graph | — | — | **acyclic**; each package compiles independently (`E_IMPORT_CYCLE`) |
 | Lexer (implemented) | — | — | template tokens for `${…}`; `"…"` interpolations stay on one line; lexer balances delimiters (§1.1, §1.5) |
+| JS back end (implemented, first version) | — | — | `ms run`: programs run on Node (§14.2) |
 | Lowering to HIR (implemented) | — | — | one small typed core for every back end (§14.1) |
 | Ownership pass (implemented, first version) | — | — | moves, mutability, scoped values, escaping closures, borrows across spawn (§9.13) |
 | Type checker (implemented, first version) | — | — | bidirectional inference; prelude written in MinScript (`std/prelude.ms`); `unknown` for std packages without signatures (§9.12) |
@@ -1661,13 +1662,52 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
 - **Unknown members:** members of std packages without signatures stay symbolic (`extern:json.parse`), and so do variants of their types.
 - **Checks:** `.hir` snapshots show the lowering (`test/hir/`). A validator (`src/hir_check.ts`) checks that every valid corpus file lowers to well-formed HIR: every local is bound before use, every label exists, and nothing is unsupported.
 
-### 14.2 JS back end decisions [D]
+### 14.2 JS back end [D]
 
-- **Integers:** `i64` and `u64` are JS `BigInt`. Every other integer type, including `int` (32-bit on JS, §7.2), is a JS `number`. Floats are `number`.
-- **Not yet on JS (to solve later):**
-  - **overflow checks:** §9.5 says overflow always panics. JS arithmetic doesn't, and `number` integers silently lose precision past 2^53;
-  - the exact wrapping of `i8`…`u32` arithmetic;
-  - `as` truncation of non-BigInt integers.
+`src/js/emit.ts` turns HIR into an ES module, `src/js/runtime.ts` is the runtime it imports, and `ms run file.ms` (`src/js/run.ts`) compiles and runs a program on Node.
+
+**Representation:**
+
+| MinScript | JS |
+|---|---|
+| `i64`, `u64` | `BigInt` |
+| every other integer (including `int`), floats | `number` (integer `/` and `%` truncate and panic on zero) |
+| `string`, `char` | string |
+| struct | `{ $t: "User", id, name }`; the tag drives `to_str`, `==` and dynamic dispatch |
+| variant (`Option` / `Result` included) | `{ $t: "Shape", $v: "Square", $f: [payload…] }`; `None` is shared |
+| record / tuple / `Vec`, `Array`, `Slice` | object / array / array |
+| `Map`, `Set` | runtime classes keyed by a structural hash, so `m{ t(1, 2): … }` works |
+| `Ref`, `Topic`, `Queue`, `Signal`, `Sub`, `Watcher` | runtime classes |
+| `Promise`, `async`, `await` | native JS: calling an async function starts it at once (§9.6) |
+| panic | a thrown `Panic`; `recover` is `try` / `catch` |
+| `t()` | `undefined` |
+
+**How the code is generated:**
+- **Expressions vs statements:** blocks, `if`, `match` and loops are expressions in MinScript but not in JS. They compile to statements that assign a temporary. When a later argument needs statements, earlier ones are evaluated into temporaries first, so evaluation stays left to right.
+- **Labels:** every `break` / `continue` is labelled, so the emitter's own loops (`select`, a loop with a step) never capture them.
+- **`&mut` parameters** (functions and closures) use a **cell**: the caller passes `{ v: x }` and writes `x = cell.v` back after the call, so assignments in the callee (`n += 1`) reach the caller. `Ref.update` / `Signal.update` pass cells to their callbacks the same way.
+- **`select`** waits with a runtime `Selector`:
+  - it chooses at random among arms that are already settled;
+  - a refutable pattern that fails disables its arm;
+  - losing waits are cancelled, and std waits give back a value they already took (`Sub.next`, `Watcher.next`, `time.after`), which keeps them cancel-safe (§4.9).
+- **Floats** print as `2.0`, not `2`. Where the type is known (interpolation, `&Stringer` arguments, struct fields and variant payloads), the generated code uses the float-aware `to_str`.
+- **Unloaded std packages:** members without signatures are looked up at run time (`$rt.ext("std.json.parse")`). A small set is provided: `std.io.println`, `std.json` (`parse.[T]` builds the named struct), `std.time.after` / `sleep` / `now`, `std.env.get`, `std.runtime.yield`, and `std.math`. Anything else panics with "not available on the JS back end yet".
+
+**Panics and deadlock** (§9.8, §9.10):
+- A panic escaping `main` prints `panic: …` and exits with status 101.
+- A panic in a task nobody awaits prints `panic in task: …`, and the program goes on.
+- If `main` is still waiting when Node's event loop has nothing left (no timers, no I/O), it is a `Deadlock` panic.
+
+**Not yet on JS (to solve later):**
+- overflow checks: §9.5 says overflow always panics, but JS arithmetic doesn't, and `number` integers lose precision past 2^53;
+- the exact wrapping of `i8`…`u32`, and `as` truncation of non-BigInt integers;
+- string `len()` / indices count UTF-16 units, not bytes;
+- cooperative `cancel()` of tasks (§9.6): it only cancels std waits;
+- `ResolverDropped`;
+- a panic's `file` / `line`;
+- raw pointers and `extern` functions;
+- copies of `Copy` aggregates share the JS object (harmless unless one is mutated);
+- floats nested in collections print without `.0`.
 
 ---
 

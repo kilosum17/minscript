@@ -993,6 +993,11 @@ class Checker {
         }
     }
 
+    private isInterface(t: Ty): boolean {
+        const s = T.strip(t)
+        return s.k === "named" && this.info(s.sym)?.kind === "inter"
+    }
+
     private isVoid(t: Ty): boolean {
         t = T.prune(t)
         return t.k === "prim" && t.name === "void"
@@ -1574,7 +1579,9 @@ class Checker {
                 return T.UNKNOWN
             }
         }
-        if (exp !== undefined) this.tryAssign(callable.ret, exp)    // let the expected result guide inference
+        // let the expected result guide inference, unless it is an interface (`&Stringer` accepts any type,
+        // so it must not decide a generic result: `log.println(xs.fold(0, …))`)
+        if (exp !== undefined && !this.isInterface(exp)) this.tryAssign(callable.ret, exp)
         this.applyArgs(e, callable)
         this.calls.set(e, { target: this.callTarget(e, callable, onValue ?? false), args: this.argParams(e, callable), receiver: onValue ? callable.receiver ?? null : null, async: callable.async })
         for (const b of callable.bounds) {

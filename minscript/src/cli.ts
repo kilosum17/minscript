@@ -1,7 +1,8 @@
-// Usage: node src/cli.ts lex|parse|resolve|check|hir <file.ms>...
+// Usage: node src/cli.ts lex|parse|resolve|check|hir|js <file.ms>...   or   node src/cli.ts run <file.ms>
 // `lex` prints the token dump (src/dump.ts); `parse` prints the AST as S-expressions (src/sexpr.ts);
 // `resolve` prints what each name refers to (src/resolve_dump.ts); `check` type-checks, runs the
-// ownership pass, and prints only diagnostics; `hir` prints the lowered program (src/hir_dump.ts).
+// ownership pass, and prints only diagnostics; `hir` prints the lowered program (src/hir_dump.ts);
+// `js` prints the generated JS; `run` compiles and runs the program.
 // Each file is its own package.
 // Exits with status 1 if any file has diagnostics.
 
@@ -19,6 +20,24 @@ import { dumpResolution } from "./resolve_dump.ts"
 import { printFile } from "./sexpr.ts"
 
 const [command, ...files] = process.argv.slice(2)
+
+if (command === "run" || command === "js") {
+    const { compileToJs, runJs } = await import("./js/run.ts")
+    const file = files[0]
+    if (file === undefined) {
+        console.error(`usage: node src/cli.ts ${command} <file.ms>`)
+        process.exit(2)
+    }
+    const compiled = compileToJs(readFileSync(file))
+    for (const d of compiled.diagnostics) console.error(`${file}:${d.span.line}:${d.span.col}: ${d.severity} ${d.code}: ${d.message}`)
+    if (compiled.js === null) process.exit(1)
+    if (command === "js") {
+        process.stdout.write(compiled.js)
+        process.exit(0)
+    }
+    const result = await runJs(compiled.js)
+    process.exit(result.exitCode)
+}
 
 if (!["lex", "parse", "resolve", "check", "hir"].includes(command ?? "") || files.length === 0) {
     console.error("usage: node src/cli.ts lex|parse|resolve|check|hir <file.ms>...")
