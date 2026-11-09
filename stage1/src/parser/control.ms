@@ -8,7 +8,7 @@ impl Parser {
     // ---- closures ----
 
     fun parse_closure(&mut this) -> Result[Expr, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         var captures: Vec[Capture]? = None
         var brace: Token? = None
         if this.at("#[") {
@@ -20,7 +20,7 @@ impl Parser {
             this.jump_to(this.closer_index(open))
             let close = this.expect("]")?
             if this.at("{") {
-                if this.cur().ws_before {
+                if this.t[this.i].ws_before {
                     this.report("E_CAPTURE_NOT_GLUED", "the closure body `{` must be glued to the capture list: `#[x]{ … }`")
                 }
                 brace = Some(this.advance())
@@ -65,7 +65,7 @@ impl Parser {
             ret = r
         }
         this.closures.push(params.is_some())
-        let body_start = this.cur().span
+        let body_start = this.cur_span()
         let stmts = this.parse_stmts(end)
         let _ = this.closures.pop()
         let body = Block { id: this.id(), span: this.sp(body_start), stmts }
@@ -75,7 +75,7 @@ impl Parser {
     fun parse_captures(&mut this) -> Result[Vec[Capture], Sync] {
         var caps = [] as Vec[Capture]
         for !this.at("]") && !this.at("EOF") {
-            let start = this.cur().span
+            let start = this.cur_span()
             var mode = "move"
             if this.eat("&") {
                 mode = if this.eat("mut") { "mut" } else { "ref" }
@@ -147,11 +147,11 @@ impl Parser {
         var params = [] as Vec[ClosureParam]
         var ret: Type? = None
         for this.i < arrow_at {
-            let start = this.cur().span
+            let start = this.cur_span()
             let is_mut = this.eat("mut")
             var name = ""
             if this.at("_") {
-                let _ = this.advance()
+                this.skip()
                 name = "_"
             } else {
                 name = this.ident_name("a closure parameter name")?
@@ -214,7 +214,7 @@ impl Parser {
         let then = this.parse_header_block("`if`")?
         var else_branch: Box[Expr]? = None
         if this.at("else") {
-            let _ = this.advance()
+            this.skip()
             if this.at("if") {
                 else_branch = Some(Box(this.parse_if()?))
             } else {
@@ -228,7 +228,7 @@ impl Parser {
     fun parse_for(&mut this, label_tok: Token?) -> Result[Expr, Sync] {
         let start = match &label_tok {
             Some(l) => l.span
-            None => this.cur().span
+            None => this.cur_span()
         }
         let kw = this.advance()           // `for` (or a reserved `while` / `loop`)
         let label = match &label_tok {
@@ -241,7 +241,7 @@ impl Parser {
             return Ok(this.mk(start, For { label, form: "infinite", is_await: false, pattern: None, pattern2: None, expr: None, body }))
         }
         if kw.kind == "for" && this.at("let") {
-            let _ = this.advance()
+            this.skip()
             let pattern = this.parse_pattern()?
             let _ = this.expect("=")?
             let value = this.parse_expr_no_struct()?
@@ -250,10 +250,10 @@ impl Parser {
         }
         if kw.kind == "for" && this.header_has_in() {
             let is_await = this.eat("await")
-            var pattern = Pattern { id: 0, span: this.cur().span, kind: PError }
+            var pattern = Pattern { id: 0, span: this.cur_span(), kind: PError }
             if this.at("in") {
                 this.report("E_INVALID_PATTERN", "expected a pattern before `in`: `for x in items`")
-                let span = this.cur().span
+                let span = this.cur_span()
                 pattern = Pattern { id: this.id(), span: this.sp(span), kind: PError }
             } else {
                 pattern = this.parse_pattern()?
@@ -319,7 +319,7 @@ impl Parser {
         let saved = this.enter(true)
         for this.i < end && !this.at("EOF") {
             if this.at(",") || this.at(";") {
-                let _ = this.advance()
+                this.skip()
                 continue
             }
             let arm_start = this.i
@@ -341,7 +341,7 @@ impl Parser {
     }
 
     fun parse_match_arm(&mut this, has_subject: bool) -> Result[MatchArm, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         var pattern: Pattern? = None
         var test: Expr? = None
         var guard: Expr? = None
@@ -351,7 +351,7 @@ impl Parser {
                 guard = Some(this.parse_expr(0)?)
             }
         } else if this.at("_") && this.peek(1).kind == "=>" {
-            let _ = this.advance()
+            this.skip()
             pattern = Some(Pattern { id: this.id(), span: this.sp(start), kind: PWild })
         } else {
             test = Some(this.parse_expr(0)?)
@@ -364,7 +364,7 @@ impl Parser {
     /// After an arm: `,`, a newline, or the closing `}`.
     fun end_arm(&mut this, end: int) -> Result[void, Sync] {
         if this.at(",") {
-            let _ = this.advance()
+            this.skip()
             return Ok()
         }
         if this.i >= end || this.nl() {
@@ -389,7 +389,7 @@ impl Parser {
         let saved = this.enter(true)
         for this.i < end && !this.at("EOF") {
             if this.at(",") || this.at(";") {
-                let _ = this.advance()
+                this.skip()
                 continue
             }
             let arm_start = this.i
@@ -432,7 +432,7 @@ impl Parser {
     }
 
     fun parse_select_arm(&mut this, end: int) -> Result[SelectArm, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         var pattern: Pattern? = None
         if this.select_arm_has_pattern(end) {
             pattern = Some(this.parse_pattern()?)
@@ -467,7 +467,7 @@ impl Parser {
     }
 
     pub fun parse_pattern(&mut this) -> Result[Pattern, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         let first = this.parse_pattern_alt()?
         if !this.at("|") {
             return Ok(first)
@@ -484,11 +484,11 @@ impl Parser {
         let start = start_tok.span
         match start_tok.kind {
             "_" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk_pat(start, PWild))
             }
             "mut" => {
-                let _ = this.advance()
+                this.skip()
                 let name = this.ident_name("a binding name")?
                 Ok(this.mk_pat(start, PBind { name, is_mut: true }))
             }
@@ -497,12 +497,12 @@ impl Parser {
                 this.maybe_range_pattern(start, lit)
             }
             ".." | "..=" => {
-                let _ = this.advance()
+                this.skip()
                 let end = this.parse_pattern_literal()?
                 Ok(this.mk_pat(start, PRange { op: start_tok.kind.clone(), start: None, end: Some(Box(end)) }))
             }
             "t(" => {
-                let _ = this.advance()
+                this.skip()
                 let saved = this.enter(false)
                 let list = this.pattern_list(")")
                 this.leave(saved)
@@ -513,7 +513,7 @@ impl Parser {
             }
             "(" => {
                 this.report("E_BARE_TUPLE", "tuple patterns are written `t(a, b)`")
-                let _ = this.advance()
+                this.skip()
                 let saved = this.enter(false)
                 let list = this.pattern_list(")")
                 this.leave(saved)
@@ -531,9 +531,9 @@ impl Parser {
             }
             "Ident" | "Self" => {
                 var path = [if start_tok.kind == "Self" { "Self" } else { text_of(start_tok) }]
-                let _ = this.advance()
+                this.skip()
                 for this.at(".") && this.peek(1).kind == "Ident" {
-                    let _ = this.advance()
+                    this.skip()
                     path.push(text_of(this.advance()))
                 }
                 if this.at("(") && !this.nl() {
@@ -559,7 +559,7 @@ impl Parser {
             _ => {
                 if is_keyword(start_tok.kind) && !is_reserved(start_tok.kind) {
                     this.report("E_KEYWORD_AS_IDENT", "`${start_tok.kind}` is a keyword and can't be used as a binding name")
-                    let _ = this.advance()
+                    this.skip()
                     return Ok(this.mk_pat(start, PBind { name: start_tok.kind.clone(), is_mut: false }))
                 }
                 this.fail("E_INVALID_PATTERN", "expected a pattern, found ${describe(start_tok)}")
@@ -568,9 +568,9 @@ impl Parser {
     }
 
     fun parse_pattern_literal(&mut this) -> Result[Expr, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         if this.at("-") {
-            let _ = this.advance()
+            this.skip()
             let k = this.kind()
             if k != "Int" && k != "Float" {
                 return this.fail("E_INVALID_PATTERN", "expected a number after `-` in a pattern")
@@ -607,7 +607,7 @@ impl Parser {
         var rest = false
         for !this.at(close) && !this.at("EOF") {
             if this.at("..") {
-                let _ = this.advance()
+                this.skip()
                 rest = true
             } else {
                 elems.push(this.parse_pattern()?)
@@ -635,10 +635,10 @@ impl Parser {
         var rest = false
         for !this.at("}") && !this.at("EOF") {
             if this.at("..") {
-                let _ = this.advance()
+                this.skip()
                 rest = true
             } else {
-                let start = this.cur().span
+                let start = this.cur_span()
                 let name = this.ident_name("a field name")?
                 var pattern: Pattern? = None
                 if this.eat(":") {

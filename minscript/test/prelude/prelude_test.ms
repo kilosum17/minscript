@@ -197,3 +197,30 @@ fun test_shapes_pass_through_generic_functions() {
     assert_eq(s.name, "default")
     assert_eq(s.to_str(), "prelude_test.Settings { level: 3, name: \"default\", tags: [\"x\"], extra: None }")
 }
+
+type Holder = { items: Vec[Vec[int]] }
+
+fun test_vec_drain() {
+    var h = Holder { items: [[1, 2], [3]] }
+    let moved = h.items.drain()
+    assert_eq(moved.len(), 2)
+    assert_eq(moved[1][0], 3)
+    assert_true(h.items.is_empty(), "drained")
+    h.items.push([4])
+    assert_eq(moved.len(), 2)            // independent of the Vec it came from
+    assert_eq(h.items.len(), 1)
+}
+
+type Index = { by_name: Map[string, Vec[int]] }
+
+fun test_map_drain() {
+    var ix = Index { by_name: m{ "a": [1], "b": [2, 3] } }
+    var moved = ix.by_name.drain()
+    assert_eq(moved.len(), 2)
+    assert_eq((moved.get("b") ?? []).len(), 2)
+    assert_true(ix.by_name.is_empty(), "drained")
+    ix.by_name["c"] = [4]
+    moved["a"] = []                      // independent of the Map it came from
+    assert_eq(ix.by_name.len(), 1)
+    assert_eq(moved.keys().join(","), "a,b")
+}

@@ -68,18 +68,37 @@ pub type Program = {
 impl Program {
     /// The program's symbol arena (the last analysed package's holds every symbol).
     pub fun syms(&this) -> Vec[Sym] {
-        match this.analysed.last() {
-            Some(d) => d.res.symbols
-            None => this.prelude.symbols.clone()
-        }
+        let n = this.analysed.len()
+        if n == 0 { this.prelude.symbols.clone() } else { this.analysed[n - 1].res.symbols.clone() }
     }
 
     /// The program's inference variables.
     pub fun vars(&this) -> Vec[VarState] {
-        match this.analysed.last() {
-            Some(d) => d.checked.vars
-            None => this.prelude_checked.vars.clone()
+        let n = this.analysed.len()
+        if n == 0 { this.prelude_checked.vars.clone() } else { this.analysed[n - 1].checked.vars.clone() }
+    }
+
+    /// Takes the program's arenas out (for lowering); `put_arenas` gives them back.
+    pub fun take_arenas(&mut this) -> hir.Arenas {
+        let n = this.analysed.len()
+        if n == 0 {
+            return hir.Arenas { syms: this.prelude.symbols.clone(), scopes: this.prelude.scopes.clone(), vars: this.prelude_checked.vars.clone() }
         }
+        hir.Arenas {
+            syms: this.analysed[n - 1].res.symbols.drain(), scopes: this.analysed[n - 1].res.scopes.drain(),
+            vars: this.analysed[n - 1].checked.vars.drain(),
+        }
+    }
+
+    pub fun put_arenas(&mut this, arenas: hir.Arenas) {
+        let n = this.analysed.len()
+        if n == 0 {
+            return
+        }
+        var a = arenas
+        this.analysed[n - 1].res.symbols = a.syms.drain()
+        this.analysed[n - 1].res.scopes = a.scopes.drain()
+        this.analysed[n - 1].checked.vars = a.vars.drain()
     }
 
     pub fun file_count(&this) -> int {
@@ -135,7 +154,8 @@ pub async fun load_program(entry: &str, std_dir: &str, opts: LoadOptions) -> Res
     let parsed = parse_from(bytes, 0)
     let prelude = resolve_package([parsed.file], None, ResolveOptions { std: true, package_name: "std" })
     // the prelude's own functions are checked (and lowered) too: they start the program's arenas
-    let prelude_checked = check_loaded([parsed.file], prelude, parsed.file, prelude, [], [], [])
+    var own = prelude.clone()
+    let prelude_checked = check_loaded([parsed.file], own, parsed.file, prelude, [], [], [])
     var l = Loader { opts, std_dir: std, cwd: cwd.clone(), next_id: parsed.next_id, prelude_file: parsed.file, prelude, prelude_checked }
     let path = resolve_from(cwd, entry)
     let main = if await is_dir(path) { await l.load_folder(path) } else { await l.load_file(path) }
@@ -454,17 +474,20 @@ impl Loader {
                 item: link.item.clone(), items: link.items.clone(), glob: link.glob,
             }
         }
-        let base = match this.analysed.last() {
-            Some(d) => d.res
-            None => this.prelude.clone()
+        // this package continues the arenas of the one analysed before it (copied once: that one keeps its own)
+        // the arenas move on from the package analysed before (only the last package holds them)
+        let n = this.analysed.len()
+        let opts = ResolveOptions { package_name: p.name.clone() }
+        var res = if n == 0 {
+            resolve_loaded(asts, this.prelude, this.prelude.symbols.clone(), this.prelude.scopes.clone(), imports, opts)
+        } else {
+            let syms = this.analysed[n - 1].res.symbols.drain()
+            let scopes = this.analysed[n - 1].res.scopes.drain()
+            resolve_loaded(asts, this.prelude, syms, scopes, imports, opts)
         }
-        let res = resolve_loaded(asts, this.prelude, base, imports, ResolveOptions { package_name: p.name.clone() })
         let reach = this.reach_slots(pkg)
-        let vars = match this.analysed.last() {
-            Some(d) => d.checked.vars
-            None => this.prelude_checked.vars.clone()
-        }
-        let checked = check_loaded(asts, res, this.prelude_file, this.prelude, this.analysed, reach, vars)
+        let vars = if n == 0 { this.prelude_checked.vars.clone() } else { this.analysed[n - 1].checked.vars.drain() }
+        var checked = check_loaded(asts, res, this.prelude_file, this.prelude, this.analysed, reach, vars)
         let owned = check_ownership(asts, res, checked)
         for f in p.files.iter() {
             for d in f.parsed.diagnostics.iter() {
@@ -518,9 +541,13 @@ fun display_path(p: &Program, path: &str) -> string {
 
 /// Lowers every package of a loaded program into one HIR program: the prelude's functions written in
 /// MinScript (spec §10.1), then each package, dependencies first.
-pub fun lower_program(p: &Program) -> hir.Program {
-    let prelude = hir.lower_loaded([p.prelude_file.clone()], p.prelude, p.prelude_checked, p.prelude_file, p.prelude, "std", [], [], ["std/prelude.ms"], 0)
+pub fun lower_program(p: &mut Program) -> hir.Program {
+    let own = hir.Arenas { syms: p.prelude.symbols.clone(), scopes: p.prelude.scopes.clone(), vars: p.prelude_checked.vars.clone() }
+    let t(prelude, _) = hir.lower_loaded([p.prelude_file.clone()], p.prelude, p.prelude_checked, p.prelude_file, p.prelude, "std", [], [], ["std/prelude.ms"], 0, own)
     var out = hir.Program { funs: prelude.funs.filter(#{ f => !f.builtin }) }
+    // every package is lowered with the program's arenas (the last package's), handed from one to the next
+    var arenas = p.take_arenas()
+    arenas.tables = [hir.merge_program_tables(p.prelude, p.analysed)]
     var temps = prelude.temps
     for i in p.order.iter() {
         let pkg = &p.packages[i]
@@ -537,12 +564,14 @@ pub fun lower_program(p: &Program) -> hir.Program {
         }
         let names = pkg.files.map(#{ f => display_path(p, f.path) })
         let a = &p.analysed[pkg.slot]
-        let lowered = hir.lower_loaded(a.files, a.res, a.checked, p.prelude_file, p.prelude, pkg.name, p.analysed, reach, names, temps)
+        let t(lowered, back) = hir.lower_loaded(a.files, a.res, a.checked, p.prelude_file, p.prelude, pkg.name, p.analysed, reach, names, temps, arenas)
+        arenas = back
         temps = lowered.temps
         out.types.extend(lowered.types)
         out.funs.extend(lowered.funs)
         out.globals.extend(lowered.globals)
     }
+    p.put_arenas(arenas)
     out.temps = temps
     out
 }

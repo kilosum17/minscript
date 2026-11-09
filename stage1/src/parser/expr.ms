@@ -27,7 +27,7 @@ impl Parser {
         var stmts = [] as Vec[Stmt]
         for this.i < end && !this.at("EOF") {
             if this.at(";") {
-                let _ = this.advance()
+                this.skip()
                 continue
             }
             let stmt_start = this.i
@@ -37,7 +37,7 @@ impl Parser {
                     var stmt = parsed
                     var junk = false
                     if this.at(";") {
-                        let _ = this.advance()
+                        this.skip()
                         if let ExprStmt(es) = stmt {
                             var with_semi = es
                             with_semi.semi = true
@@ -72,8 +72,8 @@ impl Parser {
             return this.parse_let()
         }
         if tok.kind == "Ident" && this.peek(1).kind == ":" && this.peek(2).kind == "for" {
-            let _ = this.advance()
-            let _ = this.advance()
+            this.skip()
+            this.skip()
             let e = this.parse_for(Some(tok.clone()))?
             return Ok(
                 ExprStmt(
@@ -131,14 +131,14 @@ impl Parser {
                 "E_SHORT_DECL_TARGET",
                 "write `${start.kind} name = value` or `name ${if mutable { ":==" } else { ":=" }} value`, not both",
             )
-            let _ = this.advance()
+            this.skip()
         } else {
             let _ = this.expect("=")?
         }
         let value = this.parse_expr(0)?
         var else_branch: Block? = None
         if this.at("else") {
-            let _ = this.advance()
+            this.skip()
             else_branch = Some(this.parse_block()?)
         }
         Ok(
@@ -160,7 +160,7 @@ impl Parser {
     // ---- expressions ----
 
     pub fun parse_expr(&mut this, min_bp: int) -> Result[Expr, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         var left = this.parse_unary()?
 
         for {
@@ -174,21 +174,21 @@ impl Parser {
             }
 
             if tok.kind == "as" {
-                let _ = this.advance()
+                this.skip()
                 let ty = this.parse_type(false, false)?
                 left = this.mk(start, As { expr: Box(left), ty })
                 continue
             }
 
             if tok.kind == "or" {
-                let _ = this.advance()
+                this.skip()
                 var name: string? = None
                 var name_span: Span? = None
                 if this.at("Ident") && this.peek(1).kind == "=>" {
                     let name_tok = this.advance()
                     name = Some(text_of(name_tok))
                     name_span = Some(name_tok.span)
-                    let _ = this.advance()
+                    this.skip()
                 }
                 let rhs = this.parse_expr(BP_OR_RHS)?
                 left = this.mk(start, Or { expr: Box(left), name, name_span, rhs: Box(rhs) })
@@ -204,7 +204,7 @@ impl Parser {
             }
 
             if tok.kind == ".." || tok.kind == "..=" {
-                let _ = this.advance()
+                this.skip()
                 var end: Box[Expr]? = None
                 if this.can_start_operand() {
                     end = Some(Box(this.parse_expr(BP_RANGE_OPERAND)?))
@@ -216,7 +216,7 @@ impl Parser {
                 continue
             }
 
-            let _ = this.advance()
+            this.skip()
             let right = this.parse_expr(if info.assoc == "right" { info.bp } else { info.bp + 1 })?
 
             if is_assign_op(tok.kind) {
@@ -268,12 +268,12 @@ impl Parser {
         let start = start_tok.span
         match start_tok.kind {
             "-" | "!" => {
-                let _ = this.advance()
+                this.skip()
                 let e = this.parse_unary()?
                 return Ok(this.mk(start, Unary { op: start_tok.kind.clone(), expr: Box(e) }))
             }
             "&" => {
-                let _ = this.advance()
+                this.skip()
                 let is_mut = this.eat("mut")
                 let e = this.parse_unary()?
                 return Ok(
@@ -281,7 +281,7 @@ impl Parser {
                 )
             }
             "*" => {
-                let _ = this.advance()
+                this.skip()
                 let e = this.parse_unary()?
                 return Ok(this.mk(start, Unary { op: "*", expr: Box(e) }))
             }
@@ -292,7 +292,7 @@ impl Parser {
                     "write `x += 1` / `x -= 1`"
                 }
                 this.report("E_RESERVED_OPERATOR", "`${start_tok.kind}` is reserved: ${hint}")
-                let _ = this.advance()
+                this.skip()
                 let e = this.parse_unary()?
                 if start_tok.kind == "++" {
                     return Ok(e)
@@ -306,14 +306,14 @@ impl Parser {
             }
             "await" => {
                 // the operand is a postfix chain up to the first `?` / `?.` (spec §3.1)
-                let _ = this.advance()
+                this.skip()
                 let primary = this.parse_primary()?
                 let operand = this.parse_postfix(primary, true, None)?
                 let awaited = this.mk(start, Await(Box(operand)))
                 return this.parse_postfix(awaited, false, Some(start))
             }
             ".." | "..=" => {
-                let _ = this.advance()
+                this.skip()
                 var end: Box[Expr]? = None
                 if this.can_start_operand() {
                     end = Some(Box(this.parse_expr(BP_RANGE_OPERAND)?))
@@ -335,7 +335,7 @@ impl Parser {
             let tok = this.cur()
             match tok.kind {
                 "." => {
-                    let _ = this.advance()
+                    this.skip()
                     let t(name, index) = this.member_name()?
                     e = this.mk(start, Member { object: Box(e), name, index })
                 }
@@ -343,7 +343,7 @@ impl Parser {
                     if stop_at_try {
                         return Ok(e)
                     }
-                    let _ = this.advance()
+                    this.skip()
                     let t(name, index) = this.member_name()?
                     e = this.mk(start, OptMember { object: Box(e), name, index })
                 }
@@ -358,7 +358,7 @@ impl Parser {
                     if tok.nl_before {
                         return Ok(e)
                     }
-                    let _ = this.advance()
+                    this.skip()
                     let saved = this.enter(false)
                     let index = this.parse_expr(0)
                     this.leave(saved)
@@ -381,7 +381,7 @@ impl Parser {
                     if tok.nl_before || stop_at_try {
                         return Ok(e)
                     }
-                    let _ = this.advance()
+                    this.skip()
                     e = this.mk(start, Try(Box(e)))
                 }
                 "{" => {
@@ -408,7 +408,7 @@ impl Parser {
                         "E_RESERVED_OPERATOR",
                         "`${tok.kind}` is reserved: write `x ${if tok.kind == "++" { "+=" } else { "-=" }} 1`",
                     )
-                    let _ = this.advance()
+                    this.skip()
                 }
                 "<" => {
                     // `f<T>(x)`: generic arguments written with angle brackets
@@ -425,8 +425,8 @@ impl Parser {
                     if tok.ws_before || n1.kind != ":" || n1.ws_before || n2.kind != "<" || !is_path_expr(e) {
                         return Ok(e)
                     }
-                    let _ = this.advance()
-                    let _ = this.advance()
+                    this.skip()
+                    this.skip()
                     let args = this.parse_angle_args()?
                     e = this.mk(start, GenericApply { target: Box(e), args })
                 }
@@ -439,11 +439,11 @@ impl Parser {
     fun member_name(&mut this) -> Result[t(string, bool), Sync] {
         let tok = this.cur()
         if tok.kind == "Ident" {
-            let _ = this.advance()
+            this.skip()
             return Ok(t(text_of(tok), false))
         }
         if tok.kind == "Int" {
-            let _ = this.advance()
+            this.skip()
             return Ok(t(text_of(tok), true))
         }
         this.fail(
@@ -556,7 +556,7 @@ impl Parser {
         let start = tok.span
         match tok.kind {
             "Ident" => {
-                let _ = this.advance()
+                this.skip()
                 let name = text_of(tok)
                 if is_implicit_param(name) && !this.closures.is_empty() && this.closures[this.closures.len() - 1] {
                     this.report_at(
@@ -568,23 +568,23 @@ impl Parser {
                 Ok(this.mk(start, Ident(name)))
             }
             "_" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Ident("_")))
             }
             "Self" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Ident("Self")))
             }
             "this" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, This))
             }
             "Int" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Int(text_of(tok))))
             }
             "Float" => {
-                let _ = this.advance()
+                this.skip()
                 var x = 0.0
                 if let Some(v) = &tok.value {
                     if let Float(f) = v {
@@ -594,29 +594,29 @@ impl Parser {
                 Ok(this.mk(start, Float(x)))
             }
             "String" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Str { value: text_of(tok), raw: false }))
             }
             "RawString" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Str { value: text_of(tok), raw: true }))
             }
             "Char" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Char(text_of(tok))))
             }
             "true" | "false" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Bool(tok.kind == "true")))
             }
             "nil" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk(start, Nil))
             }
             "TemplateHead" => this.parse_template()
             "(" => this.parse_paren()
             "[" | "a[" | "t(" => {
-                let _ = this.advance()
+                this.skip()
                 let close = if tok.kind == "t(" { ")" } else { "]" }
                 let saved = this.enter(false)
                 let list = this.expr_list(close)
@@ -632,7 +632,7 @@ impl Parser {
                 Ok(this.mk(start, kind))
             }
             "s{" => {
-                let _ = this.advance()
+                this.skip()
                 let saved = this.enter(true)
                 let list = this.expr_list("}")
                 this.leave(saved)
@@ -642,7 +642,7 @@ impl Parser {
                 Ok(this.mk(start, SetLit(elems)))
             }
             "m{" => {
-                let _ = this.advance()
+                this.skip()
                 let saved = this.enter(true)
                 let list = this.map_entries()
                 this.leave(saved)
@@ -686,17 +686,17 @@ impl Parser {
             }
             "select" => this.parse_select()
             "unsafe" => {
-                let _ = this.advance()
+                this.skip()
                 let body = this.parse_block()?
                 Ok(this.mk(start, Unsafe(body)))
             }
             "recover" => {
-                let _ = this.advance()
+                this.skip()
                 let body = this.parse_block()?
                 Ok(this.mk(start, Recover(body)))
             }
             "return" => {
-                let _ = this.advance()
+                this.skip()
                 var value: Box[Expr]? = None
                 if this.can_start_value() {
                     value = Some(Box(this.parse_expr(0)?))
@@ -704,7 +704,7 @@ impl Parser {
                 Ok(this.mk(start, Return(value)))
             }
             "break" => {
-                let _ = this.advance()
+                this.skip()
                 let label = this.loop_label()
                 var value: Box[Expr]? = None
                 if this.can_start_value() {
@@ -713,7 +713,7 @@ impl Parser {
                 Ok(this.mk(start, Break { label, value }))
             }
             "continue" => {
-                let _ = this.advance()
+                this.skip()
                 let label = this.loop_label()
                 Ok(this.mk(start, Continue(label)))
             }
@@ -735,7 +735,7 @@ impl Parser {
         if this.at("Ident") && !this.nl() {
             let name = text_of(this.cur())
             if this.labels.contains(name) {
-                let _ = this.advance()
+                this.skip()
                 return Some(name)
             }
         }
@@ -749,7 +749,7 @@ impl Parser {
     }
 
     fun parse_template(&mut this) -> Result[Expr, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         var parts = [] as Vec[TemplatePart]
         let head = this.advance()
         parts.push(Text(text_of(head)))
@@ -760,12 +760,12 @@ impl Parser {
             parts.push(Interp(inner?))
             let tok = this.cur()
             if tok.kind == "TemplateMiddle" {
-                let _ = this.advance()
+                this.skip()
                 parts.push(Text(text_of(tok)))
                 continue
             }
             if tok.kind == "TemplateTail" {
-                let _ = this.advance()
+                this.skip()
                 parts.push(Text(text_of(tok)))
                 break
             }
@@ -786,9 +786,9 @@ impl Parser {
                 return this.parse_arrow_closure(open)
             }
         }
-        let _ = this.advance()
+        this.skip()
         if this.at(")") {
-            let _ = this.advance()
+            this.skip()
             this.report_at("E_BARE_TUPLE", "the unit value is `t()`", open.span)
             return Ok(this.mk(open.span, TupleLit([])))
         }
@@ -875,7 +875,7 @@ impl Parser {
                 let e = this.parse_expr(0)?
                 out.push(MSpread { span: this.sp(start.span), expr: e })
             } else {
-                let kstart = this.cur().span
+                let kstart = this.cur_span()
                 let key = this.parse_expr(0)?
                 let _ = this.expect_what(":", "`:` between a map key and its value")?
                 let value = this.parse_expr(0)?
@@ -932,13 +932,13 @@ impl Parser {
                 "E_INVALID_RECORD_KEY",
                 "a ${what} key must be a name${if what == "record" { " or a string" } else { "" }}, found ${describe(key_tok)}",
             )
-            let _ = this.advance()
+            this.skip()
             if this.eat(":") {
                 let _ = this.parse_expr(0)?
             }
             return Ok(RecordField { id: this.id(), span: this.sp(start), key: "", value: None })
         }
-        let _ = this.advance()
+        this.skip()
         var value: Expr? = None
         if this.eat(":") {
             value = Some(this.parse_expr(0)?)

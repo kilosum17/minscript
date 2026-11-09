@@ -88,10 +88,10 @@ async fun main() {
             report(file, all)
         } else {
             let parsed = parser.parse_from(bytes, first_id)
-            let res = resolve.resolve_package([parsed.file], prelude, resolve.ResolveOptions {})
+            var res = resolve.resolve_package([parsed.file], prelude, resolve.ResolveOptions {})
             let Some(pf) = &prelude_file else { return }
             let Some(pr) = &prelude else { return }
-            let checked = check.check_package([parsed.file], res, pf, pr)
+            var checked = check.check_package([parsed.file], res, pf, pr)
             var all = parsed.diagnostics.clone()
             all.extend(res.diagnostics.clone())
             all.extend(checked.diagnostics.clone())

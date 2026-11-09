@@ -21,8 +21,8 @@ fun codes(src: &str) -> string {
     let pp = parse(utf8.encode(mini_prelude()))
     let prelude = resolve_package([pp.file], None, ResolveOptions { std: true, package_name: "std" })
     let p = parse_from(utf8.encode("package p\n${decls()}\n${src}\n"), pp.next_id)
-    let res = resolve_package([p.file], Some(prelude.clone()), ResolveOptions {})
-    let checked = check_package([p.file], res, pp.file, prelude)
+    var res = resolve_package([p.file], Some(prelude.clone()), ResolveOptions {})
+    var checked = check_package([p.file], res, pp.file, prelude)
     let ds = check_ownership([p.file], res, checked)
     ds.map(#{ d => "${d.code}@${d.span.line - 5}" }).join(" ")
 }

@@ -254,15 +254,25 @@ fun sigil_opener(letter: &str) -> string {
 /// Resolves the files of one package. `prelude`: the resolved prelude (None when resolving it).
 pub fun resolve_package(files: &Vec[File], prelude: &Resolution?, opts: ResolveOptions) -> Resolution {
     var r = Resolver { is_std: opts.std, pkg_name: opts.package_name }
-    r.init(prelude, prelude)
+    match prelude {
+        Some(p) => {
+            r.begin(p.symbols.clone(), p.scopes.clone())
+            r.add_prelude(p)
+        }
+        None => r.begin([], [])
+    }
+    r.finish_prelude()
     r.run(files)
 }
 
-/// Resolves a package of a loaded program: `base` is the arena so far (the resolution of the package
-/// analysed before this one), `imports` the loaded imports by Import id.
-pub fun resolve_loaded(files: &Vec[File], prelude: &Resolution, base: &Resolution, imports: Map[int, LoadedImport], opts: ResolveOptions) -> Resolution {
+/// Resolves a package of a loaded program: `symbols` and `scopes` are the arenas so far (those of the
+/// package analysed before this one, which this resolution continues), `imports` the loaded imports
+/// by Import id.
+pub fun resolve_loaded(files: &Vec[File], prelude: &Resolution, symbols: Vec[Sym], scopes: Vec[Scope], imports: Map[int, LoadedImport], opts: ResolveOptions) -> Resolution {
     var r = Resolver { is_std: opts.std, pkg_name: opts.package_name, loaded: imports }
-    r.init(Some(prelude.clone()), Some(base.clone()))
+    r.begin(symbols, scopes)
+    r.add_prelude(prelude)
+    r.finish_prelude()
     r.run(files)
 }
 
@@ -295,34 +305,36 @@ type Resolver = {
     /// the imports the loader found, by Import id
     loaded: Map[int, LoadedImport] = m{}
 
-    fun init(&mut this, prelude: &Resolution?, base: &Resolution?) {
-        // one arena per program: the prelude's (and loaded packages') symbols and scopes keep their indices
-        if let Some(b) = base {
-            this.symbols = b.symbols.clone()
-            this.scopes = b.scopes.clone()
-        }
+    /// One arena per program: the prelude's (and loaded packages') symbols and scopes keep their indices.
+    fun begin(&mut this, symbols: Vec[Sym], scopes: Vec[Scope]) {
+        this.symbols = symbols
+        this.scopes = scopes
         this.first_own = this.symbols.len()
         this.prelude = this.new_scope("prelude", None)
         this.pkg = this.new_scope("package", Some(this.prelude))
         for name in builtin_types().iter() {
             let _ = this.define(this.prelude, name, "builtin-type", None, None, false)
         }
-        if let Some(p) = prelude {
-            for name, idx in p.scopes[p.pkg_scope].names {
-                let src = p.symbols[idx].clone()
-                if src.is_pub == Some(false) {
-                    continue                   // the prelude's private helpers (`is_space`)
-                }
-                this.scopes[this.prelude].names[name.clone()] = idx
-                if src.kind == "union" && exported_variants(name) {
-                    for v in src.variants.iter() {
-                        let vs = this.define(this.prelude, v.name, "variant", Some(v.id), Some(v.span), false)
-                        this.symbols[vs].std = true
-                        this.symbols[vs].owner = Some(idx)
-                    }
+    }
+
+    fun add_prelude(&mut this, p: &Resolution) {
+        for name, idx in p.scopes[p.pkg_scope].names {
+            let sym = &p.symbols[idx]
+            if sym.is_pub == Some(false) {
+                continue                   // the prelude's private helpers (`is_space`)
+            }
+            this.scopes[this.prelude].names[name.clone()] = idx
+            if sym.kind == "union" && exported_variants(name) {
+                for v in sym.variants.iter() {
+                    let vs = this.define(this.prelude, v.name, "variant", Some(v.id), Some(v.span), false)
+                    this.symbols[vs].std = true
+                    this.symbols[vs].owner = Some(idx)
                 }
             }
         }
+    }
+
+    fun finish_prelude(&mut this) {
         // names the prelude file doesn't declare yet (type-level forms): known, but opaque
         for name in prelude_types().iter() {
             if !this.scopes[this.prelude].names.has(name) {

@@ -178,6 +178,9 @@ pub type Vec[T] = {
     pub fun truncate(&mut this, n: int) { _builtin() }
     pub fun swap(&mut this, i: int, j: int) { _builtin() }
     pub fun clear(&mut this) { this.truncate(0) }
+    /// Moves every item out (no copies) and leaves this Vec empty: how a large value is handed on from
+    /// a field (`let arena = this.state.items.drain()`).
+    pub fun drain(&mut this) -> Vec[T] { _builtin() }
     pub fun extend(&mut this, other: Vec[T]) {
         var rest = other
         rest.reverse()
@@ -356,6 +359,8 @@ pub type Map[K, V] = {
     pub fun insert(&mut this, k: K, v: V) -> V? { _builtin() }
     pub fun remove(&mut this, k: &K) -> V? { _builtin() }
     pub fun clear(&mut this) { _builtin() }
+    /// Moves every entry out (no copies) into a new Map and leaves this one empty (as `Vec.drain`).
+    pub fun drain(&mut this) -> Map[K, V] { _builtin() }
     pub fun keys(&this) -> Vec[K] {
         var out = [] as Vec[K]
         for k, _ in this {

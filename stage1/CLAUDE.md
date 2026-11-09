@@ -46,6 +46,12 @@ The MinScript compiler, written in MinScript. It replaces the TypeScript compile
 - **mod.ms is evaluated in a child process** (stage 0 evaluates it in its own and reads the value). A generated file in `package mod` (in memory: `LoadOptions.extra`) calls `build.evaluate(config)` (which forbids `run`, E_SCRIPT_IN_EVAL) and prints a marker line then `{"config": describe()}` or `{"error": message}`; `runtime.run_module_result(…, capture: true)` returns that output, and what `config()` printed itself (before the marker) is passed on. A `task` script runs through another generated entry, which evaluates `config()` again and calls the task with `Args`. `ms test`'s generated main returns the number of failures, which `run_module_result` reports as `value`. Shell scripts use `runtime.shell(cmd, dir)`. All of these came from this port.
 - Stage 0's callback helpers (`elementList`, `parseMembers`) become specialised loops (`expr_list`, `map_entries`, `record_items`, `parse_members` with a `MemberKind`): closures that mutate `this` are awkward under the ownership rules.
 
+## Performance
+
+- **`.clone()` is a deep copy**, and so are `get`, `first`, `last`, `find`, `filter` (they return copies). Never copy a whole structure to read one field: index in place (`this.analysed[n - 1].res.symbols`, `this.program.funs[fi].witnesses`), and give hot readers a narrow accessor (`Parser.cur_span()`, `skip()`).
+- **The program's arenas move, they are never copied per package:** each package's resolver takes the previous package's symbols and scopes with `drain()`, the checker and the ownership pass borrow their resolution's arenas and side tables (`&mut`, `drain()` in, assign back out), and lowering takes them as `hir.Arenas` (with the program-wide merged `Tables`) and hands them back. Only the last analysed package holds them.
+- Measure before keeping a change: `node --cpu-prof` on `exec.ts <stage1.mjs> js .`, and A/B best-of-3 runs (the machine is noisy). Two plausible runtime "fast paths" for short strings made things slower and were reverted.
+
 ## Pitfalls found while porting
 
 - An unqualified name in a pattern resolves through the prelude before the scrutinee's type (spec §6): a variant named `Range`, `Index` or like another type in scope (`Item`) silently means that type. Variants here are named `RangeExpr`, `IndexExpr`, `EValue`… (spec §18 #12).

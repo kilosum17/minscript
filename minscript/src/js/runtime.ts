@@ -119,10 +119,12 @@ const interDefaults = new Map<string, Record<string, Function>>()
 /** `floats`: fields printed as floats (`r` for a struct, `Circle.r` / `Rect.0` for a variant). */
 export function defType(name: string, kind: "struct" | "union", fields: Any, methods: Record<string, Function>, interfaces: string[], floats: string[] = [], shapes: Record<string, Shape> = {}, defaults: Record<string, () => Any> = {}): void {
     types.set(name, { kind, fields, methods, interfaces, floats: new Set(floats), shapes, defaults })
+    dynCache.clear()
 }
 
 export function defInter(name: string, defaults: Record<string, Function>): void {
     interDefaults.set(name, defaults)
+    dynCache.clear()
 }
 
 // ---- equality, hashing, cloning, printing (auto-generated interfaces, spec §9.7) ---------------
@@ -148,13 +150,32 @@ export function hashKey(v: Any): Any {
 
 export function clone(v: Any): Any {
     if (v === null || typeof v !== "object") return v
-    if (Array.isArray(v)) return isTuple(v) ? tup(v.map(clone)) : v.map(clone)
-    if (v instanceof MsMap) { const m = new MsMap(); for (const [k, x] of v.entries()) m.set(clone(k), clone(x)); return m }
-    if (v instanceof MsSet) { const s = new MsSet(); for (const k of v.values()) s.add(clone(k)); return s }
-    if (v instanceof Ref || v instanceof Topic || v instanceof Queue || v instanceof Signal || v instanceof Promise) return v   // handles
-    if (v.$v !== undefined) return v === None ? None : { $t: v.$t, $v: v.$v, $f: v.$f.map(clone) }
+    // the common cases first: Vecs, union values, structs (the hot path of every `.clone()`)
+    if (Array.isArray(v)) {
+        const n = v.length
+        const out = new Array(n)
+        for (let i = 0; i < n; i++) { const x = v[i]; out[i] = x === null || typeof x !== "object" ? x : clone(x) }
+        return isTuple(v) ? tup(out) : out
+    }
+    if (v.$v !== undefined) {
+        if (v === None) return None
+        const f = v.$f, n = f.length
+        const fields = new Array(n)
+        for (let i = 0; i < n; i++) { const x = f[i]; fields[i] = x === null || typeof x !== "object" ? x : clone(x) }
+        return { $t: v.$t, $v: v.$v, $f: fields }
+    }
+    if (v.$t === undefined) {
+        if (v instanceof MsMap) {
+            // the keys' hashes don't change with a copy: no rehashing
+            const m = new MsMap()
+            for (const [h, [k, x]] of v.inner) m.inner.set(h, [clone(k), x === null || typeof x !== "object" ? x : clone(x)])
+            return m
+        }
+        if (v instanceof MsSet) { const s = new MsSet(); for (const [h, k] of v.inner) s.inner.set(h, clone(k)); return s }
+        if (v instanceof Ref || v instanceof Topic || v instanceof Queue || v instanceof Signal || v instanceof Promise) return v   // handles
+    }
     const out: Any = {}
-    for (const k of Object.keys(v)) out[k] = clone(v[k])
+    for (const k in v) { const x = v[k]; out[k] = x === null || typeof x !== "object" ? x : clone(x) }
     return out
 }
 
@@ -711,20 +732,47 @@ export function after(ms: number): Cancellable {
 
 // ---- dynamic dispatch -------------------------------------------------------------------------
 
+/** `dyn`'s lookups for values with a type tag: type → method → the function (null: none of the
+ *  type's own). Cleared whenever types, interfaces or std functions are registered. */
+const dynCache = new Map<string, Map<string, Function | null>>()
+
+/** The method `method` of the type `t`: its own, std's, or an interface's default. */
+function typedMethod(t: string, method: string): Function | null {
+    const info = types.get(t)
+    const own = info?.methods[method]
+    if (own) return own
+    if (t.startsWith("std.")) {
+        const key = `${t.slice(4)}.${method}`
+        if (key in stdTable) return stdTable[key]
+    }
+    for (const i of info?.interfaces ?? []) {
+        const d = interDefaults.get(i)?.[method]
+        if (d) return d
+    }
+    return null
+}
+
 /** `recv.method(args)` when the receiver's type isn't known statically (interfaces, bounds, unknown). */
 export function dyn(recv: Any, method: string, args: Any[]): Any {
     if (recv !== null && typeof recv === "object" && typeof recv.$t === "string") {
-        const t = recv.$t as string
-        const info = types.get(t)
-        const own = info?.methods[method]
-        if (own) return own(recv, ...args)
-        if (t.startsWith("std.")) {
-            const key = `${t.slice(4)}.${method}`
-            if (key in stdTable) return stdTable[key](recv, ...args)
+        // what `<type>.<method>` is depends only on the registered types and std: cached
+        let byMethod = dynCache.get(recv.$t)
+        if (byMethod === undefined) { byMethod = new Map(); dynCache.set(recv.$t, byMethod) }
+        let f = byMethod.get(method)
+        if (f === undefined) {
+            f = typedMethod(recv.$t, method)
+            byMethod.set(method, f)
         }
-        for (const i of info?.interfaces ?? []) {
-            const d = interDefaults.get(i)?.[method]
-            if (d) return d(recv, ...args)
+        if (f !== null) return f(recv, ...args)
+        // a tagged value is a plain object (no runtime class has a `$t`): only a function-valued
+        // field, or the structural defaults, are left
+        if (typeof recv[method] !== "function") {
+            switch (method) {
+                case "clone": return clone(recv)
+                case "to_str": return toStr(recv)
+                case "eq": return eq(recv, args[0])
+                case "hash": return hashKey(recv)
+            }
         }
     }
     if (recv !== null && recv !== undefined && typeof recv[method] === "function" && !(recv instanceof Promise) && !Array.isArray(recv)) {
@@ -770,6 +818,7 @@ const stdTable: Record<string, Any> = {
     // Vec, Array, Slice, Map, Set: the core (storage and hashing); the rest is MinScript (std/prelude.ms)
     "Vec.truncate": (v: Any[], n: number) => { if (n < v.length) v.length = Math.max(0, n) },
     "Vec.swap": (v: Any[], i: number, j: number) => { at(v, i); at(v, j); const t = v[i]; v[i] = v[j]; v[j] = t },
+    "Vec.drain": (v: Any[]) => v.splice(0),
     "Vec.with_capacity": () => [],
     "Vec.len": (v: Any[]) => v.length,
     "Vec.push": (v: Any[], x: Any) => { v.push(x) },
@@ -787,6 +836,7 @@ const stdTable: Record<string, Any> = {
     "Map.get": (m: MsMap, k: Any) => (m.has(k) ? Some(m.get(k)) : None), "Map.has": (m: MsMap, k: Any) => m.has(k),
     "Map.insert": (m: MsMap, k: Any, v: Any) => m.set(k, v), "Map.remove": (m: MsMap, k: Any) => m.delete(k),
     "Map.clear": (m: MsMap) => { m.inner.clear() },
+    "Map.drain": (m: MsMap) => { const out = new MsMap(); for (const [h, kv] of m.inner) out.inner.set(h, kv); m.inner.clear(); return out },
     "Map.iter": (m: MsMap) => new Iter([...m.entries()].map(tup)),
     "Set.new": () => new MsSet(), "Set.len": (s: MsSet) => s.size,
     "Set.has": (s: MsSet, v: Any) => s.has(v), "Set.insert": (s: MsSet, v: Any) => s.add(v), "Set.remove": (s: MsSet, v: Any) => s.delete(v),
@@ -854,11 +904,15 @@ const stdTable: Record<string, Any> = {
 }
 
 /** Std functions the generated code compiled from MinScript (the prelude's, std packages'). */
-export function defStd(entries: Record<string, Function>): void { Object.assign(stdTable, entries) }
+export function defStd(entries: Record<string, Function>): void {
+    Object.assign(stdTable, entries)
+    dynCache.clear()
+}
 
-export const std: Record<string, Function> & Record<string, Any> = new Proxy(stdTable, {
-    get(target: Any, name: string | symbol) {
-        if (typeof name === "symbol" || name in target) return target[name]
+// What isn't in the table: the prototype answers (so a hit, the common case, is a plain property read).
+Object.setPrototypeOf(stdTable, new Proxy({}, {
+    get(_target: Any, name: string | symbol) {
+        if (typeof name === "symbol") return undefined
         // methods every value has (`string.clone`, `Vec.eq`): the structural defaults
         const method = name.slice(name.lastIndexOf(".") + 1)
         if (method === "clone") return clone
@@ -866,7 +920,9 @@ export const std: Record<string, Function> & Record<string, Any> = new Proxy(std
         if (method === "eq") return eq
         return (..._args: Any[]) => panic(`\`${String(name)}\` is not available on the JS back end yet`)
     },
-})
+}))
+
+export const std: Record<string, Function> & Record<string, Any> = stdTable
 
 // ---- std packages (std/*/*.ms: functions whose body is `_builtin()`) ----------------------------
 
@@ -1012,10 +1068,10 @@ Object.assign(stdTable, {
     "testing.clock": () => BigInt(Date.now()),
 
     // utf8
-    "utf8.decode": (b: number[]) => new TextDecoder().decode(Uint8Array.from(b)),
+    "utf8.decode": (b: number[]) => decoder.decode(Uint8Array.from(b)),
     "utf8.decode_range": (b: number[], start: number, end: number) => {
         const lo = Math.max(0, Math.min(start, b.length)), hi = Math.max(lo, Math.min(end, b.length))
-        return new TextDecoder().decode(Uint8Array.from(b.slice(lo, hi)))
+        return decoder.decode(Uint8Array.from(b.slice(lo, hi)))
     },
     "utf8.encode": (s: string) => [...new TextEncoder().encode(s)],
 
@@ -1253,6 +1309,8 @@ Object.assign(stdTable, {
 
 type Utf8 = { ascii: boolean, bytes: number, raw?: Uint8Array, unitOf?: Int32Array, byteOf?: Int32Array }
 const utf8Cache = new Map<string, Utf8>()
+
+const decoder = new TextDecoder()
 
 function utf8(s: string): Utf8 {
     const hit = utf8Cache.get(s)

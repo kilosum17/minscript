@@ -32,9 +32,11 @@ pub fun parse(src: Vec[u8]) -> ParseResult {
 
 /// Parses a file whose node ids start after `first_id`.
 pub fun parse_from(src: Vec[u8], first_id: int) -> ParseResult {
-    let lexed = lex(src)
-    var p = Parser { t: lexed.tokens.clone(), next_id: first_id }
+    var lexed = lex(src)
+    // the parser borrows the tokens (moved in and back, not copied)
+    var p = Parser { t: lexed.tokens.drain(), next_id: first_id }
     let file = p.parse_file()
+    lexed.tokens = p.t.drain()
     var diagnostics = lexed.diagnostics.clone()
     diagnostics.extend(p.diagnostics)
     ParseResult { file, diagnostics, lexed, next_id: p.next_id + 1 }
@@ -253,6 +255,8 @@ pub type Parser = {
     }
 
     fun cur(&this) -> Token { this.t[this.i].clone() }
+    /// The current token's span (without copying the token).
+    fun cur_span(&this) -> Span { this.t[this.i].span }
     fun kind(&this) -> string { this.t[this.i].kind.clone() }
     fun peek(&this, k: int) -> Token {
         let at = if this.i + k < this.t.len() { this.i + k } else { this.t.len() - 1 }
@@ -260,6 +264,15 @@ pub type Parser = {
     }
     fun at(&this, kind: &str) -> bool { this.t[this.i].kind == kind }
     fun nl(&this) -> bool { this.t[this.i].nl_before }
+
+    /// `advance` without the token.
+    fun skip(&mut this) {
+        let end = this.t[this.i].span.end
+        if this.t[this.i].kind != "EOF" {
+            this.i += 1
+        }
+        this.prev_end = end
+    }
 
     fun advance(&mut this) -> Token {
         let tok = this.t[this.i].clone()
@@ -272,7 +285,7 @@ pub type Parser = {
 
     fun eat(&mut this, kind: &str) -> bool {
         if this.at(kind) {
-            let _ = this.advance()
+            this.skip()
             return true
         }
         false
@@ -389,10 +402,10 @@ pub type Parser = {
     // ---- file and items ----
 
     pub fun parse_file(&mut this) -> File {
-        let start = this.cur().span
+        let start = this.cur_span()
         var pkg = [] as Vec[string]
         if this.at("package") {
-            let _ = this.advance()
+            this.skip()
             if let Ok(name) = this.dotted_name("package name") {
                 pkg = name
             }
@@ -410,7 +423,7 @@ pub type Parser = {
         for !this.at("EOF") {
             let item_start_at = this.i
             if this.at(";") {
-                let _ = this.advance()
+                this.skip()
                 continue
             }
             let step = this.file_entry(imports, items)
@@ -463,7 +476,7 @@ pub type Parser = {
     fun dotted_name(&mut this, what: &str) -> Result[Vec[string], Sync] {
         var parts = [this.ident_name(what)?]
         for this.at(".") && this.peek(1).kind == "Ident" {
-            let _ = this.advance()
+            this.skip()
             parts.push(this.ident_name(what)?)
         }
         Ok(parts)
@@ -473,7 +486,7 @@ pub type Parser = {
     fun ident_name(&mut this, what: &str) -> Result[string, Sync] {
         let tok = this.cur()
         if tok.kind == "Ident" {
-            let _ = this.advance()
+            this.skip()
             return Ok(text_of(tok))
         }
         if is_keyword(tok.kind) {
@@ -481,7 +494,7 @@ pub type Parser = {
                 "E_KEYWORD_AS_IDENT",
                 "`${tok.kind}` is a keyword and can't be used as ${what}",
             )
-            let _ = this.advance()
+            this.skip()
             return Ok(tok.kind.clone())
         }
         this.fail("E_UNEXPECTED_TOKEN", "expected ${what}, found ${describe(tok)}")
@@ -497,7 +510,7 @@ pub type Parser = {
                 "expected an import path string, found ${describe(path_tok)}",
             )
         }
-        let _ = this.advance()
+        this.skip()
         var alias: string? = None
         if this.eat("as") {
             alias = Some(this.ident_name("an import alias")?)
@@ -520,8 +533,8 @@ pub type Parser = {
             "attributes (`@name`) are reserved for a future version",
             at.span,
         )
-        if this.at("Ident") && !this.cur().ws_before {
-            let _ = this.advance()
+        if this.at("Ident") && !this.t[this.i].ws_before {
+            this.skip()
         }
         if this.at("(") && !this.nl() {
             let next = this.closer_index(this.cur()) + 1
@@ -533,12 +546,12 @@ pub type Parser = {
         for this.at("@") {
             this.skip_attribute()
         }
-        let start = this.cur().span
+        let start = this.cur_span()
         let is_pub = this.eat("pub")
         match this.kind() {
             "fun" => return Ok(Some(Fun(this.parse_fun(start, is_pub, false, "item", false)?)))
             "async" => {
-                let _ = this.advance()
+                this.skip()
                 if !this.at("fun") {
                     let found = describe(this.cur())
                     return this.fail(
@@ -587,7 +600,7 @@ pub type Parser = {
                 "generic parameters use `[…]`: write `name[T]`",
                 lt.span,
             )
-            let _ = this.advance()
+            this.skip()
             let params = this.generic_param_list(true)?
             let _ = this.close_angle()
             return Ok(params)
@@ -595,7 +608,7 @@ pub type Parser = {
         if !this.at("[") {
             return Ok([])
         }
-        let _ = this.advance()
+        this.skip()
         let saved = this.enter(false)
         let params = this.generic_param_list(false)
         this.leave(saved)
@@ -616,7 +629,7 @@ pub type Parser = {
             if done {
                 break
             }
-            let start = this.cur().span
+            let start = this.cur_span()
             let name = this.ident_name("a generic parameter name")?
             var bounds = [] as Vec[Type]
             if this.eat(":") {
@@ -759,23 +772,23 @@ pub type Parser = {
         let k1 = this.peek(1).kind
         let k2 = this.peek(2).kind
         if k0 == "this" {
-            let _ = this.advance()
+            this.skip()
             return Some("this")
         }
         if k0 == "&" && k1 == "this" {
-            let _ = this.advance()
-            let _ = this.advance()
+            this.skip()
+            this.skip()
             return Some("&this")
         }
         if k0 == "&" && k1 == "mut" && k2 == "this" {
-            let _ = this.advance()
-            let _ = this.advance()
-            let _ = this.advance()
+            this.skip()
+            this.skip()
+            this.skip()
             return Some("&mut this")
         }
         if k0 == "mut" && k1 == "this" {
-            let _ = this.advance()
-            let _ = this.advance()
+            this.skip()
+            this.skip()
             return Some("mut this")
         }
 
@@ -805,17 +818,17 @@ pub type Parser = {
         this.report("E_UNKNOWN_RECEIVER", "the receiver is `this`: write `${recv}`")
         var k = 0
         for k < n {
-            let _ = this.advance()
+            this.skip()
             k += 1
         }
         Some(recv)
     }
 
     fun parse_param(&mut this) -> Result[Param, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         if this.at("&") {
             this.report("E_INVALID_PARAM", "`&` belongs on the type: write `name: &T`")
-            let _ = this.advance()
+            this.skip()
             let _ = this.eat("mut")
         }
         let variadic = this.eat("...")
@@ -855,7 +868,7 @@ pub type Parser = {
     }
 
     fun parse_type_decl(&mut this, start: Span, is_pub: bool) -> Result[Item, Sync] {
-        let _ = this.advance()
+        this.skip()
         let name = this.ident_name("a type name")?
         let generics = this.parse_generic_params()?
         let impls = this.parse_impl_list()?
@@ -925,7 +938,7 @@ pub type Parser = {
         let saved = this.enter(true)
         for this.i < end && !this.at("EOF") {
             if this.at(",") || this.at(";") {
-                let _ = this.advance()
+                this.skip()
                 continue
             }
             let member_start = this.i
@@ -945,12 +958,12 @@ pub type Parser = {
                 for this.at("@") {
                     this.skip_attribute()
                 }
-                let mstart = this.cur().span
+                let mstart = this.cur_span()
                 let is_pub = this.eat("pub")
                 if this.at("fun") {
                     acc.methods.push(this.parse_fun(mstart, is_pub, false, "item", true)?)
                 } else if this.at("async") {
-                    let _ = this.advance()
+                    this.skip()
                     acc.methods.push(this.parse_fun(mstart, is_pub, true, "item", true)?)
                 } else if let StructMembers = kind {
                     acc.fields.push(this.parse_field(mstart, is_pub, true)?)
@@ -959,20 +972,20 @@ pub type Parser = {
                 }
             }
             VariantFields | RecordTypeFields => {
-                let fstart = this.cur().span
+                let fstart = this.cur_span()
                 let is_pub = this.eat("pub")
                 let allow_default = if let VariantFields = kind { true } else { false }
                 acc.fields.push(this.parse_field(fstart, is_pub, allow_default)?)
             }
             InterMembers | ImplMembers => {
-                let mstart = this.cur().span
+                let mstart = this.cur_span()
                 let is_pub = this.eat("pub")
                 let is_async = this.eat("async")
                 let mode = if let InterMembers = kind { "sig" } else { "item" }
                 acc.methods.push(this.parse_fun(mstart, is_pub, is_async, mode, true)?)
             }
             ExternFuns => {
-                let mstart = this.cur().span
+                let mstart = this.cur_span()
                 let is_pub = this.eat("pub")
                 acc.methods.push(this.parse_fun(mstart, is_pub, false, "sig", false)?)
             }
@@ -981,7 +994,7 @@ pub type Parser = {
     }
 
     fun parse_struct_body(&mut this) -> Result[StructBody, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         let m = this.parse_members(StructMembers, "{")?
         Ok(StructBody { id: this.id(), span: this.sp(start), fields: m.fields, methods: m.methods })
     }
@@ -998,7 +1011,7 @@ pub type Parser = {
     }
 
     fun parse_variant(&mut this) -> Result[Variant, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         let name = this.ident_name("a variant name")?
         var tuple: Vec[Type]? = None
         var fields: Vec[Field]? = None
@@ -1018,7 +1031,7 @@ pub type Parser = {
     }
 
     fun parse_union_decl(&mut this, start: Span, is_pub: bool) -> Result[UnionDecl, Sync] {
-        let _ = this.advance()
+        this.skip()
         let name = this.ident_name("a union name")?
         let generics = this.parse_generic_params()?
         let impls = this.parse_impl_list()?
@@ -1039,7 +1052,7 @@ pub type Parser = {
     }
 
     fun parse_inter_decl(&mut this, start: Span, is_pub: bool) -> Result[InterDecl, Sync] {
-        let _ = this.advance()
+        this.skip()
         let name = this.ident_name("an interface name")?
         let generics = this.parse_generic_params()?
         var supers = [] as Vec[Type]
@@ -1081,7 +1094,7 @@ pub type Parser = {
     }
 
     fun parse_impl(&mut this, start: Span) -> Result[ImplDecl, Sync] {
-        let _ = this.advance()
+        this.skip()
         let generics = if this.at("[") || this.at("<") { this.parse_generic_params()? } else { [] }
         var first = [this.parse_type_postfix()?]
         for this.eat(",") {
@@ -1115,7 +1128,7 @@ pub type Parser = {
     }
 
     fun parse_let_decl(&mut this, start: Span, is_pub: bool) -> Result[LetDecl, Sync] {
-        let _ = this.advance()
+        this.skip()
         let name = this.ident_name("a name")?
         var ty: Type? = None
         if this.eat(":") {
@@ -1127,7 +1140,7 @@ pub type Parser = {
     }
 
     fun parse_extern(&mut this, start: Span) -> Result[ExternDecl, Sync] {
-        let _ = this.advance()
+        this.skip()
         let abi_tok = this.expect_what("String", "an ABI string such as `\"C\"`")?
         let m = this.parse_members(ExternFuns, "{")?
         Ok(
@@ -1149,7 +1162,7 @@ pub type Parser = {
     /// Type grammar (spec §7.1). `union` allows `A | B` (only on the right of `type X =`). `&` between
     /// types is an intersection (if `allow_inter`); a leading `&` is a borrow of the postfix type after it.
     fun parse_type(&mut this, union_ok: bool, allow_inter: bool) -> Result[Type, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         var first = this.parse_type_inter(allow_inter)?
         if union_ok && this.at("|") {
             var members = [first]
@@ -1162,21 +1175,21 @@ pub type Parser = {
     }
 
     fun parse_type_inter(&mut this, allow_inter: bool) -> Result[Type, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         let first = this.parse_type_postfix()?
         if !allow_inter || !this.at("&") || this.nl() {
             return Ok(first)
         }
         var members = [first]
         for this.at("&") && !this.nl() {
-            let _ = this.advance()
+            this.skip()
             members.push(this.parse_type_postfix()?)
         }
         Ok(this.mk_type(start, TIntersection(members)))
     }
 
     fun parse_type_postfix(&mut this) -> Result[Type, Sync] {
-        let start = this.cur().span
+        let start = this.cur_span()
         var ty = this.parse_type_primary()?
         for this.at("?") && !this.nl() {
             if let TOption(_) = &ty.kind {
@@ -1185,7 +1198,7 @@ pub type Parser = {
                     "`T??` is not a type: an Option can't be optional again",
                 )
             }
-            let _ = this.advance()
+            this.skip()
             ty = this.mk_type(start, TOption(Box(ty)))
         }
         Ok(ty)
@@ -1197,40 +1210,40 @@ pub type Parser = {
         match start_tok.kind {
             "Ident" | "Self" => {
                 var path = [if start_tok.kind == "Self" { "Self" } else { text_of(start_tok) }]
-                let _ = this.advance()
+                this.skip()
                 for this.at(".") && this.peek(1).kind == "Ident" {
-                    let _ = this.advance()
+                    this.skip()
                     path.push(text_of(this.advance()))
                 }
                 var args = [] as Vec[Type]
-                if this.at("[") && !this.cur().ws_before {
+                if this.at("[") && !this.t[this.i].ws_before {
                     args = this.parse_type_args()?
-                } else if this.at("<") && !this.cur().ws_before {
+                } else if this.at("<") && !this.t[this.i].ws_before {
                     args = this.parse_angle_args()?
                 }
                 Ok(this.mk_type(start, TName { path, args }))
             }
             "&" => {
-                let _ = this.advance()
+                this.skip()
                 let is_mut = this.eat("mut")
                 let inner = this.parse_type_postfix()?
                 Ok(this.mk_type(start, TRef { is_mut, inner: Box(inner) }))
             }
             "&&" => {
                 // `&&T`: a borrow of a borrow
-                let _ = this.advance()
+                this.skip()
                 let inner = this.parse_type_postfix()?
                 let inner_ref = this.mk_type(start, TRef { is_mut: false, inner: Box(inner) })
                 Ok(this.mk_type(start, TRef { is_mut: false, inner: Box(inner_ref) }))
             }
             "*" => {
-                let _ = this.advance()
+                this.skip()
                 let is_mut = this.eat("mut")
                 let inner = this.parse_type_postfix()?
                 Ok(this.mk_type(start, TPtr { is_mut, inner: Box(inner) }))
             }
             "t(" => {
-                let _ = this.advance()
+                this.skip()
                 let saved = this.enter(false)
                 let list = this.type_list(")")
                 this.leave(saved)
@@ -1244,7 +1257,7 @@ pub type Parser = {
                 Ok(this.mk_type(start, TRecord(m.fields)))
             }
             "(" => {
-                let _ = this.advance()
+                this.skip()
                 let saved = this.enter(false)
                 let list = this.type_list(")")
                 this.leave(saved)
@@ -1252,7 +1265,7 @@ pub type Parser = {
                 this.jump_to(this.closer_index(start_tok))
                 let _ = this.expect(")")?
                 if this.at("->") {
-                    let _ = this.advance()
+                    this.skip()
                     let ret = this.parse_type(false, true)?
                     return Ok(this.mk_type(start, TFn { params: elems, ret: Box(ret) }))
                 }
@@ -1263,7 +1276,7 @@ pub type Parser = {
                 Ok(this.mk_type(start, TTuple(elems)))
             }
             "TypeOf" => {
-                let _ = this.advance()
+                this.skip()
                 let open = this.expect("(")?
                 let saved = this.enter(false)
                 let name = this.dotted_name("a value path")
@@ -1274,15 +1287,15 @@ pub type Parser = {
                 Ok(this.mk_type(start, TTypeOf(path)))
             }
             "String" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk_type(start, TLiteral(LitStr(text_of(start_tok)))))
             }
             "Int" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk_type(start, TLiteral(LitInt(text_of(start_tok)))))
             }
             "true" | "false" => {
-                let _ = this.advance()
+                this.skip()
                 Ok(this.mk_type(start, TLiteral(LitBool(start_tok.kind == "true"))))
             }
             _ => this.fail("E_UNEXPECTED_TOKEN", "expected a type, found ${describe(start_tok)}")
@@ -1308,7 +1321,7 @@ pub type Parser = {
                 "E_EXPECTED_TYPE_ARGUMENTS",
                 "expected at least one type argument inside `[ ]`",
             )
-            let _ = this.advance()
+            this.skip()
             return Ok([])
         }
         let saved = this.enter(false)
@@ -1357,11 +1370,11 @@ pub type Parser = {
             return true
         }
         if this.at(">") {
-            let _ = this.advance()
+            this.skip()
             return true
         }
         if this.at(">>") {
-            let _ = this.advance()
+            this.skip()
             this.gt_pending = true
             return true
         }

@@ -13,7 +13,7 @@ package hir
 
 import "app.lexer.{Span}"
 import "app.ast.*"
-import "app.resolve.{Sym, Resolution}"
+import "app.resolve.{Sym, Scope, Resolution}"
 import "app.check.{CheckResult, CheckedDep, CallInfo, MemberTarget, VariantRef, Owner, Ty, VarState, prune_ty, strip_ty, tag, named_sym, named_args, arg_at, is_int, is_float, is_numeric, is_stringy, is_prim, prim, void_ty, unknown, dec_neg}"
 
 /// What lowering needs of a function declaration.
@@ -61,27 +61,84 @@ pub fun package_prefix(name: &str) -> string {
 
 /// Lowers the files of one package (`main`) to HIR. `prelude` is the prelude's resolution and file.
 pub fun lower_package(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution) -> Program {
-    lower_loaded(files, res, checked, prelude_file, prelude, "main", [], [], [], 0)
+    let arenas = Arenas { syms: res.symbols.clone(), scopes: res.scopes.clone(), vars: checked.vars.clone() }
+    let t(program, _) = lower_loaded(files, res, checked, prelude_file, prelude, "main", [], [], [], 0, arenas)
+    program
+}
+
+/// A program's arenas (the last analysed package's: every symbol, scope and inference variable).
+/// Lowering takes them by value and hands them back, so they move from package to package, not copied.
+/// `tables` (none, or one): the program's merged side tables (`merge_program_tables`); without them,
+/// each package merges its own and its dependencies'.
+pub type Arenas = { pub syms: Vec[Sym], pub scopes: Vec[Scope], pub vars: Vec[VarState], pub tables: Vec[Tables] = [] }
+
+/// The resolver's and checker's side tables lowering reads, merged over packages: node ids are
+/// unique across a program, so they merge. A dependency's expressions lowered elsewhere (an imported
+/// struct's field defaults, `= None`) use its checker's decisions this way.
+pub type Tables = {
+    pub refs: Map[int, int] = m{}
+    pub decls: Map[int, int] = m{}
+    pub calls: Map[int, CallInfo] = m{}
+    pub members: Map[int, MemberTarget] = m{}
+    pub variants: Map[int, VariantRef] = m{}
+    pub rets: Map[int, Ty] = m{}
+}
+
+fun merge_checked(c: &CheckResult, into: &mut Tables) {
+    for id, x in c.calls {
+        into.calls[id] = x.clone()
+    }
+    for id, x in c.members {
+        into.members[id] = x.clone()
+    }
+    for id, x in c.variants {
+        into.variants[id] = x.clone()
+    }
+    for id, x in c.rets {
+        into.rets[id] = x.clone()
+    }
+}
+
+/// The tables of the prelude (its resolution) and of every analysed package, merged once for a whole
+/// program's lowering (each package then reads them instead of merging its dependencies').
+pub fun merge_program_tables(prelude: &Resolution, packages: &Vec[CheckedDep]) -> Tables {
+    var out = Tables {}
+    merge_refs(prelude, out.refs, out.decls)
+    for d in packages.iter() {
+        merge_refs(d.res, out.refs, out.decls)
+        merge_checked(d.checked, out)
+    }
+    out
+}
+
+/// A resolution's refs and declarations, added to the merged ones (read in place).
+fun merge_refs(r: &Resolution, refs: &mut Map[int, int], decls: &mut Map[int, int]) {
+    for id, rf in r.refs {
+        refs[id] = rf.sym
+    }
+    for id, s in r.decls {
+        decls[id] = s
+    }
 }
 
 /// Lowers a package of a loaded program: `package_name` prefixes its items (none for `main`), `deps[i]`
 /// for `i` in `reach` are the packages it can reach, `file_names[k]` names `files[k]` in panic
-/// locations, and temporaries are numbered after `first_temp`.
-pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution, package_name: &str, deps: &Vec[CheckedDep], reach: &Vec[int], file_names: Vec[string], first_temp: int) -> Program {
-    var refs = m{} as Map[int, int]
-    var decls = m{} as Map[int, int]
-    var all = [prelude.clone()]
-    for i in reach.iter() {
-        all.push(deps[i].res.clone())
-    }
-    all.push(res.clone())
-    for r in all.iter() {
-        for id, rf in r.refs {
-            refs[id] = rf.sym
+/// locations, and temporaries are numbered after `first_temp`. `arenas` are the program's, returned
+/// with the result.
+pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution, package_name: &str, deps: &Vec[CheckedDep], reach: &Vec[int], file_names: Vec[string], first_temp: int, arenas: Arenas) -> t(Program, Arenas) {
+    var given = arenas
+    let scopes = given.scopes.drain()
+    var tables = given.tables.drain()
+    if tables.is_empty() {
+        // on its own (no program-wide tables): the prelude's, the reachable packages' and its own
+        tables.push(Tables {})
+        merge_refs(prelude, tables[0].refs, tables[0].decls)
+        for i in reach.iter() {
+            merge_refs(deps[i].res, tables[0].refs, tables[0].decls)
+            merge_checked(deps[i].checked, tables[0])
         }
-        for id, s in r.decls {
-            decls[id] = s
-        }
+        merge_refs(res, tables[0].refs, tables[0].decls)
+        merge_checked(checked, tables[0])
     }
     var caps = m{} as Map[int, Vec[int]]
     for id, c in res.captures {
@@ -91,67 +148,34 @@ pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult,
     for d in res.deferred.iter() {
         let _ = deferred.insert(d.id)
     }
-    // a dependency's expressions lowered here (an imported struct's field defaults, `= None`) use its
-    // checker's decisions; node ids are unique across the program, so the tables merge
-    var calls = m{} as Map[int, CallInfo]
-    var members = m{} as Map[int, MemberTarget]
-    var variants = m{} as Map[int, VariantRef]
-    var rets = m{} as Map[int, Ty]
-    for i in reach.iter() {
-        let c = &deps[i].checked
-        for id, x in c.calls {
-            calls[id] = x.clone()
-        }
-        for id, x in c.members {
-            members[id] = x.clone()
-        }
-        for id, x in c.variants {
-            variants[id] = x.clone()
-        }
-        for id, x in c.rets {
-            rets[id] = x.clone()
-        }
-    }
-    if reach.is_empty() {
-        calls = checked.calls.clone()
-        members = checked.members.clone()
-        variants = checked.variants.clone()
-        rets = checked.rets.clone()
-    } else {
-        for id, x in checked.calls {
-            calls[id] = x.clone()
-        }
-        for id, x in checked.members {
-            members[id] = x.clone()
-        }
-        for id, x in checked.variants {
-            variants[id] = x.clone()
-        }
-        for id, x in checked.rets {
-            rets[id] = x.clone()
-        }
-    }
+    let Some(tb) = tables.pop() else { return t(Program {}, Arenas { syms: given.syms.drain(), scopes, vars: given.vars.drain() }) }
+    let Tables { refs, decls, calls, members, variants, rets } = tb
     var l = Lowerer {
-        syms: res.symbols.clone(), refs, decls, captures: caps, types: checked.types.clone(), sym_types: checked.symbols.clone(),
+        syms: given.syms.drain(), refs, decls, captures: caps, types: checked.types.clone(), sym_types: checked.symbols.clone(),
         calls, members, variants, rets,
-        open: res.open.clone(), deferred, vars: checked.vars.clone(), prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(),
+        open: res.open.clone(), deferred, vars: given.vars.drain(), prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(),
         package_name: package_name.to_str(), ret: void_ty(), current_file: None, temp_count: first_temp,
     }
-    for s in res.symbols.iter() {
+    var implicit = [] as Vec[t(int, int)]
+    for s in l.syms.iter() {
         if s.kind == "package" {
             if let Some(scope) = s.target {
                 if !l.pkg_names.has(scope) {
-                    l.pkg_names[scope] = res.scopes[scope].names.clone()
+                    l.pkg_names[scope] = scopes[scope].names.clone()
                 }
             }
         }
         if s.kind != "implicit" {
             continue
         }
-        let Some(owner) = res.scopes[s.scope].closure else { continue }
+        let Some(owner) = scopes[s.scope].closure else { continue }
+        implicit.push(t(owner, s.id))
+    }
+    for pair in implicit.iter() {
+        let t(owner, id) = pair
         var list = l.implicit_by_owner.get(owner) ?? []
-        if !list.contains(s.id) {
-            list.push(s.id)
+        if !list.contains(id) {
+            list.push(id)
         }
         l.implicit_by_owner[owner] = list
     }
@@ -184,7 +208,8 @@ pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult,
         }
     }
     program.temps = l.temp_count
-    program
+    let back = Tables { refs: l.refs, decls: l.decls, calls: l.calls, members: l.members, variants: l.variants, rets: l.rets }
+    t(program, Arenas { syms: l.syms.drain(), scopes, vars: l.vars.drain(), tables: [back] })
 }
 
 fun fun_info(f: &FunDecl) -> FunInfo {

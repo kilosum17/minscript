@@ -350,38 +350,42 @@ type Checker = {
 /// Checks the files of one package. `prelude` is the prelude's resolution (and `prelude_file` its
 /// file); `res` is the package's, which shares the prelude's symbol arena.
 pub fun check_package(files: &Vec[File], res: &Resolution, prelude_file: &File, prelude: &Resolution) -> CheckResult {
-    check_loaded(files, res, prelude_file, prelude, [], [], [])
+    var own = res.clone()
+    check_loaded(files, own, prelude_file, prelude, [], [], [])
 }
 
 /// Checks a package of a loaded program: `deps[i]` for every `i` in `reach` is a package it can reach
 /// (dependencies first), and `vars` the program's inference variables so far (each package continues
 /// the arena, so the types of a dependency's bindings stay valid here).
-pub fun check_loaded(files: &Vec[File], res: &Resolution, prelude_file: &File, prelude: &Resolution, deps: &Vec[CheckedDep], reach: &Vec[int], vars: Vec[VarState]) -> CheckResult {
+/// A resolution's tables, added to the merged ones (read in place: a resolution holds the program's arenas).
+fun merge_names(r: &Resolution, refs: &mut Map[int, int], decls: &mut Map[int, int], deferred: &mut Set[int], open: &mut Set[int]) {
+    for id, rf in r.refs {
+        refs[id] = rf.sym
+    }
+    for id, s in r.decls {
+        decls[id] = s
+    }
+    for d in r.deferred.iter() {
+        let _ = deferred.insert(d.id)
+    }
+    for id in r.open.iter() {
+        let _ = open.insert(id)
+    }
+}
+
+pub fun check_loaded(files: &Vec[File], res: &mut Resolution, prelude_file: &File, prelude: &Resolution, deps: &Vec[CheckedDep], reach: &Vec[int], vars: Vec[VarState]) -> CheckResult {
     var refs = m{} as Map[int, int]
     var decls = m{} as Map[int, int]
     var deferred = Set.new() as Set[int]
     var open = Set.new() as Set[int]
-    var all = [prelude.clone()]
+    merge_names(prelude, refs, decls, deferred, open)
     for i in reach.iter() {
-        all.push(deps[i].res.clone())
+        merge_names(deps[i].res, refs, decls, deferred, open)
     }
-    all.push(res.clone())
-    for r in all.iter() {
-        for id, rf in r.refs {
-            refs[id] = rf.sym
-        }
-        for id, s in r.decls {
-            decls[id] = s
-        }
-        for d in r.deferred.iter() {
-            let _ = deferred.insert(d.id)
-        }
-        for id in r.open.iter() {
-            let _ = open.insert(id)
-        }
-    }
+    merge_names(res, refs, decls, deferred, open)
+    // the checker borrows the resolution's arenas (they are the program's) and gives them back at the end
     var c = Checker {
-        syms: res.symbols.clone(), scopes: res.scopes.clone(), refs, decls, deferred, open, vars,
+        syms: res.symbols.drain(), scopes: res.scopes.drain(), refs, decls, deferred, open, vars,
         prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(), ctx: blank_ctx(),
     }
     for i in reach.iter() {
@@ -389,14 +393,19 @@ pub fun check_loaded(files: &Vec[File], res: &Resolution, prelude_file: &File, p
             c.sym_types[sym] = ty.clone()
         }
     }
-    for s in res.symbols.iter() {
+    var implicit = [] as Vec[t(int, int)]
+    for s in c.syms.iter() {
         if s.kind != "implicit" {
             continue
         }
-        let Some(owner) = res.scopes[s.scope].closure else { continue }
+        let Some(owner) = c.scopes[s.scope].closure else { continue }
+        implicit.push(t(owner, s.id))
+    }
+    for pair in implicit.iter() {
+        let t(owner, id) = pair
         var list = c.implicit_by_owner.get(owner) ?? []
-        if !list.contains(s.id) {
-            list.push(s.id)
+        if !list.contains(id) {
+            list.push(id)
         }
         c.implicit_by_owner[owner] = list
     }
@@ -423,6 +432,8 @@ pub fun check_loaded(files: &Vec[File], res: &Resolution, prelude_file: &File, p
             c.check_item(itm)
         }
     }
+    res.symbols = c.syms.drain()
+    res.scopes = c.scopes.drain()
     CheckResult {
         types: c.types, symbols: c.sym_types, calls: c.calls, rets: c.rets, members: c.members, variants: c.variants,
         diagnostics: c.diagnostics, vars: c.vars,

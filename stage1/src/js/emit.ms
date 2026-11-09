@@ -1146,8 +1146,11 @@ impl Emitter {
         }
         var cell_params = [] as Vec[bool]
         if let Some(fi) = this.user_funs.get(callee) {
-            let f = this.program.funs[fi].clone()
-            for w in f.witnesses.iter() {
+            // read what the call needs in place (copying the callee would copy its body)
+            let witnesses = this.program.funs[fi].witnesses.clone()
+            let has_recv = this.program.funs[fi].recv.is_some()
+            let param_tys = this.program.funs[fi].params.map(#{ p => p.ty.clone() })
+            for w in witnesses.iter() {
                 var given: Shape? = None
                 var found = false
                 for a in witness_args.iter() {
@@ -1160,11 +1163,11 @@ impl Emitter {
                 }
                 codes.push(if found { this.witness_code(given) } else { "null" })
             }
-            if f.recv.is_some() {
+            if has_recv {
                 cell_params.push(false)
             }
-            for p in f.params.iter() {
-                cell_params.push(this.needs_cell(p.ty))
+            for ty in param_tys.iter() {
+                cell_params.push(this.needs_cell(ty))
             }
         }
         let name = this.fn_name(callee)

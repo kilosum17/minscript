@@ -93,17 +93,19 @@ fun is_copy_iface(t: &Type) -> bool {
     }
 }
 
-pub fun check_ownership(files: &Vec[File], res: &Resolution, checked: &CheckResult) -> Vec[Diagnostic] {
+/// `res` and `checked` lend their arenas (symbols, inference variables) and side tables for the pass,
+/// and get them back.
+pub fun check_ownership(files: &Vec[File], res: &mut Resolution, checked: &mut CheckResult) -> Vec[Diagnostic] {
     var caps = m{} as Map[int, Vec[int]]
     for id, c in res.captures {
         caps[id] = c.syms.clone()
     }
     var o = Ownership {
-        syms: res.symbols.clone(), refs: res.refs.clone(), decls: res.decls.clone(), captures: caps,
-        types: checked.types.clone(), sym_types: checked.symbols.clone(), calls: checked.calls.clone(), vars: checked.vars.clone(),
+        syms: res.symbols.drain(), refs: res.refs.drain(), decls: res.decls.drain(), captures: caps,
+        types: checked.types.drain(), sym_types: checked.symbols.drain(), calls: checked.calls.drain(), vars: checked.vars.drain(),
     }
-    for _, rf in res.refs {
-        if res.symbols[rf.sym].kind == "this" {
+    for _, rf in o.refs {
+        if o.syms[rf.sym].kind == "this" {
             o.this_refs.push(rf)
         }
         // stage 0 lists the Ident, This and RecordField uses: not captures (`#[x]`) or `TypeOf(x)`
@@ -122,6 +124,13 @@ pub fun check_ownership(files: &Vec[File], res: &Resolution, checked: &CheckResu
             o.check_item(itm)
         }
     }
+    res.symbols = o.syms.drain()
+    res.refs = o.refs.drain()
+    res.decls = o.decls.drain()
+    checked.types = o.types.drain()
+    checked.symbols = o.sym_types.drain()
+    checked.calls = o.calls.drain()
+    checked.vars = o.vars.drain()
     o.diagnostics
 }
 
