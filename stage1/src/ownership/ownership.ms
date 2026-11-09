@@ -1402,6 +1402,12 @@ impl Ownership {
                             // the receiver is consumed: the result borrows nothing from it
                         } else {
                             this.owners_visit(object.get(), out)
+                            // a borrow returned by a handle's method (`r.get()`: `&T`) borrows from that handle
+                            if let Some(r) = this.root(object.get()) {
+                                if this.is_handle(this.sym_type(r.sym)) && tag(this.prune(this.type_of(n.id) ?? unknown())) == "ref" {
+                                    this.add_owner(r.sym, "shared", out)
+                                }
+                            }
                         }
                     }
                     _ => {}

@@ -175,3 +175,14 @@ fun borrow_inside_loop() {
         names.push("b")
     }
 }
+
+// `Ref.get()` lends the current value; writing through the handle while a borrow is live is fine
+// (the borrow keeps its snapshot, spec §9.9), and a borrow of a `&Ref` parameter may be returned.
+fun ref_get_and_write(r: &Ref[Vec[int]]) -> int {
+    let view = r.get()
+    r.update(#{ it.push(9) })
+    r.set([])
+    view.len()
+}
+
+fun ref_borrow_of_param(r: &Ref[Vec[int]]) -> &Vec[int] { r.get() }

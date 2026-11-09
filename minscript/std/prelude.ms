@@ -644,7 +644,9 @@ pub type Resolver[T] = {
 
 pub type Ref[T] = {
     pub fun new(v: T) -> Ref[T] { _builtin() }
-    pub fun get(&this) -> T { _builtin() }
+    /// A borrow of the current value (no copy). Writers never change a value that is lent: `update`
+    /// copies it first, `set` replaces it (spec §9.9).
+    pub fun get(&this) -> &T { _builtin() }
     pub fun set(&this, v: T) { _builtin() }
     pub fun read[R](&this, f: &(&T) -> R) -> R { _builtin() }
     pub fun update[R](&this, f: &(&mut T) -> R) -> R { _builtin() }

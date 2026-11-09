@@ -174,6 +174,18 @@ fun return_borrow_of_local() -> &str {
     s.trim()                                    //~ E_RETURN_LOCAL_BORROW
 }
 
+fun return_borrow_of_local_ref() -> &Vec[int] {
+    let r = Ref([1, 2])
+    r.get()                                     //~ E_RETURN_LOCAL_BORROW
+}
+
+fun reassign_ref_while_lent() {
+    var r = Ref([1, 2])
+    let view = r.get()
+    r = Ref([3])                                //~ E_BORROW_CONFLICT
+    log.println(view.len())
+}
+
 fun return_borrow_of_owned_param(s: string) -> &str {
     s.trim()                                    //~ E_RETURN_LOCAL_BORROW
 }

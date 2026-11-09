@@ -58,6 +58,7 @@ Pipeline:
 | Field defaults | — | — | `type T = { indent: int = 4 }` |
 | `as` | numeric cast | numeric cast | **also a type annotation**: `g := [] as Vec[T]` |
 | Inter-task communication | — | channels deferred | **`Topic` (broadcast), `Queue` (one consumer), `Signal` (state)**, one-shot `Promise.new()` |
+| `Ref.get()` | clone | clone | **`&T`**: a borrow of the current value; writers copy-on-write (§9.9) |
 | Closing / deadlocks | — | — | auto-close on last-handle drop; runtime `Deadlock` panic (catchable) + lint `L_SELF_WAIT` |
 | Handle types | — | — | **cloned implicitly** (`Ref`, `Topic`, `Queue`, `Signal`, …): no `.clone()` at call sites |
 | Projects | `ms.json` | `mod.ms` (design) | **`mod.ms` is evaluated** on the JS back end; `main` is every `package main` file of its folder; `path:` deps load (§17) |
@@ -989,6 +990,7 @@ Call sites never write `&`; the LSP shows hints. `&mut this` methods need a `var
    - captured by value into escaping closures,
    - held across an un-awaited async call (§9.6).
 4. A function may **return** a scoped value only when it derives from its receiver or borrowed parameters. The caller treats the result as borrowing from every borrowed argument (conservative, no annotations).
+   - A handle binding isn't borrowed by being passed around (it is cloned), but a borrow a handle's method returns (`r.get()`, §9.9) does borrow from it: it may be returned only from a `&Ref[T]` parameter, the receiver or a global, and reassigning the handle variable while the borrow is live is `E_BORROW_CONFLICT`. Writing *through* the handle (`set`, `update`) is fine: the borrow keeps its snapshot.
 5. Each scoped value's set of owners is inferred inside the function body. Using an owner mutably while a scoped value derived from it is still live is an error.
 6. To keep a value beyond its owner's scope, convert it to an owned one: `.to_str()`, `.to_vec()`, `.clone()`.
 7. **Temporary extension:** when a `let` binds a scoped value that borrows from a temporary, the temporary lives until the end of the enclosing block. So `let name = (await io.read_line()).trim()` is valid.
@@ -1122,16 +1124,19 @@ if p.kind == PanicKind.Deadlock { … }             // built-in kinds: §11 runt
 | Type | Meaning | Key methods |
 |---|---|---|
 | `Box[T]` | unique heap allocation | `get()`, `set(v)` |
-| `Ref[T]` | atomically ref-counted with an RwLock (many readers or one writer); a `Handle` | `get() -> T` (clone), `read[R](f: &(&T) -> R) -> R`, `update[R](f: &(&mut T) -> R) -> R`, `set(v)`, `weak()` |
+| `Ref[T]` | atomically ref-counted shared state; a `Handle` | `get() -> &T` (a borrow of the current value, no copy), `read[R](f: &(&T) -> R) -> R`, `update[R](f: &(&mut T) -> R) -> R`, `set(v)`, `weak()` |
 | `Weak[T]` | non-owning handle | `upgrade() -> Ref[T]?` |
 
-**Why `read` and `update` take a closure:**
-- `get()` returns a **clone** of the whole value, which is fine for a counter but costly for a large map.
-- `read` lends the value **without copying it**. The borrow can't outlive the lock: borrows can't be returned or stored (§9.3), so it's handed to a closure that runs while the lock is held, and the closure returns what you need.
-- `update` returns the closure's value so that a change and the answer it produces happen **under one lock**. A separate `get()` afterwards could see another task's change.
+**Reading never copies, and a borrow never changes under you** (snapshot semantics):
+- `get()` returns a borrow of the value the `Ref` holds **now**, without copying it: `let toks = tokens.get()` is a `&Vec[Token]`. It is a scoped value (§9.3), tied to the handle (rule 4): it can be used, passed down and returned like any borrow, but not stored in a field, a global, a `Ref` or a task. Write `.clone()` for an owned copy (`string` copies implicitly, §7.2).
+- **Writers never change a value someone is reading.** `set(v)` replaces the value; `update` changes it in place when nobody holds a borrow of it, and otherwise first copies it (copy-on-write). A borrow from `get()` therefore keeps seeing the value as it was when it was taken, even if this task or another one writes to the `Ref` meanwhile, and reading never blocks, locks or panics.
+- So data that is built once and then only read (a token list, a symbol table) can be shared through a `Ref` and read anywhere for free. A `Ref` that is read and written often pays one copy per write that follows a `get()`; `read` and `update` avoid it, because their borrows end when the closure returns.
+- `read` lends the value to a closure, which returns what you need; `update` returns the closure's value so that a change and the answer it produces happen **atomically** (one writer at a time). A separate `get()` afterwards could see another task's change.
+- **Implementation:** a value with a reference count; `update` copies only when the count says a reader still holds it (like Rust's `Arc::make_mut`). The JS back end marks a value as lent when `get()` returns it, and the next `update` copies it once if it was.
 
 ```rust
 let users = Ref(m{ "ann": User { … } })
+let all = users.get()                                  // &Map[string, User]: no copy
 n := users.read(#{ it.len() })                         // no copy of the map
 let name = users.read(#{ it.get("ann")?.name.to_str() })   // owned result out of the closure
 id := counter.update(#{ n => n += 1; n })              // increment and get the new value atomically

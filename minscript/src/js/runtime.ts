@@ -413,9 +413,43 @@ function rangeValues(r: Range): Iterable<Any> {
 /** A mutable cell passed to callbacks taking `&mut T` (the closure writes the new value back). */
 export type Cell = { v: Any }
 
+/** `Ref[T]` (spec §9.9). Snapshot semantics: a borrow from `get()` never changes under its holder.
+ *  `lent`: `get()` returned the current value (so the next `update` copies it first); `reading` /
+ *  `updating`: `read` / `update` closures running now. */
 export class Ref {
     v: Any
+    lent = false
+    reading = 0
+    updating = 0
     constructor(v: Any) { this.v = v }
+}
+
+function refGet(r: Ref): Any {
+    if (r.updating > 0) return clone(r.v)          // the value is being changed: the borrow gets it as it is now
+    r.lent = true
+    return r.v
+}
+
+function refRead(r: Ref, f: Function): Any {
+    r.reading++
+    try { return f(r.v) } finally { r.reading-- }
+}
+
+function refUpdate(r: Ref, f: Function): Any {
+    // copy-on-write: a value someone still reads is copied, the copy changed
+    if (r.lent || r.reading > 0) { r.v = clone(r.v); r.lent = false }
+    r.updating++
+    try {
+        const cell: Cell = { v: r.v }
+        const out = f(cell)
+        r.v = cell.v
+        return out
+    } finally { r.updating-- }
+}
+
+function refSet(r: Ref, v: Any): void {
+    r.v = v                                          // a replacement: borrows keep the old value
+    r.lent = false
 }
 
 export class Weak {
@@ -878,10 +912,9 @@ const stdTable: Record<string, Any> = {
     "Resolver.resolve": (r: Any, v: Any) => { r.resolve(v) },
 
     // shared state
-    "Ref.new": (v: Any) => new Ref(v), "Ref.get": (r: Ref) => clone(r.v), "Ref.set": (r: Ref, v: Any) => { r.v = v },
-    "Ref.read": (r: Ref, f: Function) => f(r.v),
-    "Ref.update": (r: Ref, f: Function) => { const cell: Cell = { v: r.v }; const out = f(cell); r.v = cell.v; return out },
-    "Ref.reset": (r: Ref, v: Any) => { r.v = v }, "Ref.weak": (r: Ref) => new Weak(r),
+    "Ref.new": (v: Any) => new Ref(v), "Ref.get": refGet, "Ref.set": refSet,
+    "Ref.read": refRead, "Ref.update": refUpdate,
+    "Ref.reset": refSet, "Ref.weak": (r: Ref) => new Weak(r),
     "Weak.upgrade": (w: Weak) => Some(w.ref),
     "Box.new": (v: Any) => ({ $t: "std.Box", v }), "Box.get": (b: Any) => b.v, "Box.set": (b: Any, v: Any) => { b.v = v },
 

@@ -927,6 +927,9 @@ class Ownership {
                         // the receiver is consumed: the result borrows nothing from it
                     } else if (callee.kind === "Member" || callee.kind === "OptMember") {
                         visit(callee.object)
+                        // a borrow returned by a handle's method (`r.get()`: `&T`) borrows from that handle
+                        const r = this.root(callee.object)
+                        if (r && this.isHandle(this.symTypes.get(r.sym)) && T.prune(this.typeOf(n) ?? T.UNKNOWN).k === "ref") add(r.sym, "shared")
                     }
                     n.args.forEach((a, i) => {
                         const p = T.prune(info?.args[i] ?? T.UNKNOWN)
