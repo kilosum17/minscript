@@ -20,7 +20,7 @@ impl Parser {
             this.jump_to(this.closer_index(open))
             let close = this.expect("]")?
             if this.at("{") {
-                if this.t[this.i].ws_before {
+                if this.t.get()[this.i].ws_before {
                     this.report("E_CAPTURE_NOT_GLUED", "the closure body `{` must be glued to the capture list: `#[x]{ … }`")
                 }
                 brace = Some(this.advance())
@@ -109,12 +109,12 @@ impl Parser {
     /// skipped bracket groups, up to `=>` on the closure's first line. Returns the index of `=>`, or -1.
     /// A header that starts on the next line is reported (E_CLOSURE_HEADER_LINE) and accepted.
     fun find_closure_header(&mut this, from: int, end: int) -> int {
-        if from >= end || from >= this.t.len() {
+        if from >= end || from >= this.t.get().len() {
             return -1
         }
         let arrow = this.scan_header(from, end)
-        if arrow >= 0 && this.t[from].nl_before {
-            let span = this.t[from].span
+        if arrow >= 0 && this.t.get()[from].nl_before {
+            let span = this.t.get()[from].span
             this.report_at("E_CLOSURE_HEADER_LINE", "closure parameters (`a, b =>`) must be on the same line as the opening `#{`", span)
         }
         arrow
@@ -123,7 +123,7 @@ impl Parser {
     fun scan_header(&this, from: int, end: int) -> int {
         var k = from
         for k < end {
-            let tok = &this.t[k]
+            let tok = &this.t.get()[k]
             if k > from && tok.nl_before {
                 return -1
             }
@@ -286,8 +286,8 @@ impl Parser {
     /// Is there an `in` at depth 0 between here and the header's `{` (on this line)?
     fun header_has_in(&this) -> bool {
         var k = this.i
-        for k < this.t.len() {
-            let tok = &this.t[k]
+        for k < this.t.get().len() {
+            let tok = &this.t.get()[k]
             if tok.kind == "EOF" || (k > this.i && tok.nl_before) || tok.kind == "{" {
                 return false
             }
@@ -448,7 +448,7 @@ impl Parser {
     fun select_arm_has_pattern(&this, end: int) -> bool {
         var k = this.i
         for k < end {
-            let tok = &this.t[k]
+            let tok = &this.t.get()[k]
             if (k > this.i && tok.nl_before) || tok.kind == "=>" || tok.kind == "," {
                 return false
             }

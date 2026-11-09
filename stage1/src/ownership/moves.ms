@@ -11,7 +11,7 @@ package ownership
 
 import "app.lexer.{Span}"
 import "app.ast.*"
-import "app.check.{tag, unknown}"
+import "app.check.{tag, unknown, pruned, stripped}"
 
 type Pending = { call: int, sym: int, root: int, stmts: Vec[int], bounds: Vec[Span] }
 
@@ -24,49 +24,58 @@ type MoveWalk = {
     stmts: Vec[int] = []
 }
 
-/// The functions an item declares (methods included).
-fun funs_of(itm: &Item) -> Vec[FunDecl] {
-    match itm {
-        Fun(f) => [f.clone()]
-        TypeDef(d) => match &d.body {
-            Struct(b) => b.methods.clone()
-            _ => []
-        }
-        Union(d) => d.methods.clone()
-        Impl(d) => d.methods.clone()
-        Inter(d) => d.methods ?? []
-        _ => []
-    }
-}
-
 impl Ownership {
     fun find_all_moves(&this, files: &Vec[File]) -> Set[int] {
         var out = Set.new() as Set[int]
+        // every binding's uses, once for the package (stage 0 scans them per function: same result)
+        var uses = m{} as Map[int, Vec[t(int, Span)]]
+        for id, rf in this.refs {
+            var list = uses.get(rf.sym) ?? []
+            list.push(t(id, rf.span))
+            uses[rf.sym] = list
+        }
         for f in files.iter() {
             for itm in f.items.iter() {
-                for fd in funs_of(itm).iter() {
-                    this.find_moves(fd, out)
+                // the functions an item declares (methods included), read in place
+                match itm {
+                    Fun(fd) => this.find_moves(fd, uses, out)
+                    TypeDef(d) => {
+                        if let Struct(b) = &d.body {
+                            for fd in b.methods.iter() {
+                                this.find_moves(fd, uses, out)
+                            }
+                        }
+                    }
+                    Union(d) => {
+                        for fd in d.methods.iter() {
+                            this.find_moves(fd, uses, out)
+                        }
+                    }
+                    Impl(d) => {
+                        for fd in d.methods.iter() {
+                            this.find_moves(fd, uses, out)
+                        }
+                    }
+                    Inter(d) => {
+                        if let Some(ms) = &d.methods {
+                            for fd in ms.iter() {
+                                this.find_moves(fd, uses, out)
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
         out
     }
 
-    fun find_moves(&this, f: &FunDecl, out: &mut Set[int]) {
+    fun find_moves(&this, f: &FunDecl, uses: &Map[int, Vec[t(int, Span)]], out: &mut Set[int]) {
         let Some(body) = &f.body else { return }
         var w = MoveWalk {}
         this.mv_block(body, w)
         if w.pending.is_empty() {
             return
-        }
-        var uses = m{} as Map[int, Vec[t(int, Span)]]
-        for id, rf in this.refs {
-            if !w.candidates.has(rf.sym) {
-                continue
-            }
-            var list = uses.get(rf.sym) ?? []
-            list.push(t(id, rf.span))
-            uses[rf.sym] = list
         }
         for p in w.pending.iter() {
             let Some(declared) = w.candidates.get(p.sym) else { continue }
@@ -80,7 +89,12 @@ impl Ownership {
             // declaration): every other use must be over before it starts
             let Some(stmt) = p.stmts.find(#{ start => start > declared }) else { continue }
             var ok = true
-            for u in (uses.get(p.sym) ?? []).iter() {
+            let none = [] as Vec[t(int, Span)]
+            let list = match uses.get(p.sym) {
+                Some(l) => l
+                None => none
+            }
+            for u in list.iter() {
                 let t(id, span) = u
                 if id != p.root && span.end > stmt {
                     ok = false
@@ -105,7 +119,7 @@ impl Ownership {
         }
         let Some(ty) = this.sym_types.get(sym) else { return }
         let some_ty = Some(ty.clone())
-        if tag(this.prune(ty)) == "ref" || this.is_copy(some_ty) || this.is_handle(some_ty) || this.holds_borrow(some_ty, 0) {
+        if tag(pruned(ty, this.vars)) == "ref" || this.is_copy(some_ty) || this.is_handle(some_ty) || this.holds_borrow(some_ty, 0) {
             return
         }
         if !this.fresh(l.value) {

@@ -4,7 +4,7 @@ package hir
 
 import "app.lexer.{Span}"
 import "app.ast.*"
-import "app.check.{CallInfo, CallTarget, VariantRef, Owner, Ty, tag, named_sym, named_args, arg_at, is_int, is_numeric, is_stringy, is_prim, prim, void_ty, unknown, dec_neg}"
+import "app.check.{CallInfo, CallTarget, VariantRef, Owner, Ty, tag, pruned, stripped, named_sym, named_args, arg_at, is_int, is_numeric, is_stringy, is_prim, prim, void_ty, unknown, dec_neg}"
 
 fun elem_ast(el: &Elem) -> Expr {
     match el {
@@ -54,7 +54,7 @@ impl Lowerer {
         let span = e.span
         match &e.kind {
             Ident(name) => this.ident(e, name, ty)
-            This => match this.refs.get(e.id) {
+            This => match this.tables.get().refs.get(e.id) {
                 Some(sym) => this.sym_ref(sym, ty, span)
                 None => this.unsupported("`this` without a receiver", span, ty)
             }
@@ -156,7 +156,7 @@ impl Lowerer {
             IndexExpr { object, index } => {
                 let ot = this.strip(this.ty(object.get().id))
                 let osym = named_sym(ot)
-                let map = osym >= 0 && this.syms[osym].std && this.syms[osym].name == "Map"
+                let map = osym >= 0 && this.syms.get()[osym].std && this.syms.get()[osym].name == "Map"
                 let o = this.expr(object.get())
                 let i = this.expr(index.get())
                 mk(ty, span, KIndex { object: Box.new(o), index: Box.new(i), map })
@@ -228,17 +228,17 @@ impl Lowerer {
 
     fun ident(&mut this, e: &Expr, name: &str, ty: Ty) -> HExpr {
         let span = e.span
-        if let Some(v) = this.variants.get(e.id) {
+        if let Some(v) = this.tables.get().variants.get(e.id) {
             return this.variant_value(v, ty, span)
         }
-        let Some(sym) = this.refs.get(e.id) else {
+        let Some(sym) = this.tables.get().refs.get(e.id) else {
             // names from a glob import, or variants of a package type that isn't loaded yet: they stay symbolic
             if this.open.has(e.id) || this.deferred.has(e.id) {
                 return mk(ty, span, KExtern { path: name.to_str(), args: None, type_args: None })
             }
             return this.unsupported("unresolved name `${name}`", span, ty)
         }
-        match this.syms[sym].kind.clone() {
+        match this.syms.get()[sym].kind.clone() {
             "local" | "param" | "closure-param" | "implicit" | "this" => this.sym_ref(sym, ty, span)
             _ => this.sym_value(sym, span, ty)
         }
@@ -246,18 +246,18 @@ impl Lowerer {
 
     /// A top-level item used as a value.
     fun sym_value(&mut this, sym: int, span: Span, ty: Ty) -> HExpr {
-        let kind = this.syms[sym].kind.clone()
+        let kind = this.syms.get()[sym].kind.clone()
         match kind {
             "fun" | "extern-fun" => {
-                let Some(d) = this.syms[sym].decl else { return this.unsupported("function", span, ty) }
+                let Some(d) = this.syms.get()[sym].decl else { return this.unsupported("function", span, ty) }
                 if this.fun_decl(d).is_none() {
                     return this.unsupported("function", span, ty)
                 }
                 mk(ty, span, KFn(this.fun_name(d, None)))
             }
             "global" => mk(ty, span, KGlobal(this.type_name(sym))),
-            "package" | "import" => mk(ty, span, KExtern { path: this.syms[sym].detail ?? this.syms[sym].name.clone(), args: None, type_args: None }),
-            _ => this.unsupported("`${this.syms[sym].name}` used as a value", span, ty)
+            "package" | "import" => mk(ty, span, KExtern { path: this.syms.get()[sym].detail ?? this.syms.get()[sym].name.clone(), args: None, type_args: None }),
+            _ => this.unsupported("`${this.syms.get()[sym].name}` used as a value", span, ty)
         }
     }
 
@@ -300,7 +300,7 @@ impl Lowerer {
                 out.push(HField { name: rf.key.clone(), value: this.expr(v) })
                 continue
             }
-            let value = match this.refs.get(rf.id) {
+            let value = match this.tables.get().refs.get(rf.id) {
                 Some(sym) => this.sym_ref(sym, this.local_of(sym).ty, rf.span)
                 None => this.unsupported("field `${rf.key}`", rf.span, unknown())
             }
@@ -341,7 +341,7 @@ impl Lowerer {
     }
 
     fun struct_lit(&mut this, e: &Expr, items: &Vec[RecordItem], ty: Ty) -> HExpr {
-        if let Some(v) = this.variants.get(e.id) {
+        if let Some(v) = this.tables.get().variants.get(e.id) {
             let vdecl = this.union_variant(v.owner, v.variant)
             let given = this.given_fields(items)
             var fields = [] as Vec[HExpr]
@@ -384,7 +384,7 @@ impl Lowerer {
         match params {
             Some(ps) => {
                 for p in ps.iter() {
-                    if let Some(s) = this.decls.get(p.id) {
+                    if let Some(s) = this.tables.get().decls.get(p.id) {
                         locals.push(this.local_of(s))
                     }
                 }
@@ -427,7 +427,7 @@ impl Lowerer {
         let Closure { captures: written, .. } = &e.kind else { return this.unsupported("closure", e.span, ty) }
         var explicit = m{} as Map[int, string]
         for c in (written ?? []).iter() {
-            if let Some(s) = this.refs.get(c.id) {
+            if let Some(s) = this.tables.get().refs.get(c.id) {
                 explicit[s] = c.mode.clone()
             }
         }
@@ -448,7 +448,7 @@ impl Lowerer {
 
     /// `it` / `it1` → 1, `it2` → 2, …
     fun implicit_num(&this, s: int) -> int {
-        let n = this.syms[s].name.substring(2, this.syms[s].name.len())
+        let n = this.syms.get()[s].name.substring(2, this.syms.get()[s].name.len())
         if n.is_empty() { 1 } else { dec_int(n) }
     }
 
@@ -502,7 +502,7 @@ impl Lowerer {
         // operator interfaces on user types: `a + b` → `T.plus(a, b)`
         let method = operator_method(op)
         let lsym = named_sym(ls)
-        if method != "" && lsym >= 0 && !this.syms[lsym].std {
+        if method != "" && lsym >= 0 && !this.syms.get()[lsym].std {
             return mk(ty, span, KCall { callee: "${this.type_name(lsym)}.${method}", args: [left, right], shapes: None, witness_args: [] })
         }
         mk(ty, span, KBinary { op: op.to_str(), left: Box.new(left), right: Box.new(right) })
@@ -549,9 +549,9 @@ impl Lowerer {
             Some(list) => list.get(0)
             None => None
         }
-        let payload = this.decls.get(e.id) ?? implicit
+        let payload = this.tables.get().decls.get(e.id) ?? implicit
         let r = this.expr(rhs)
-        let fallback = if tag(this.prune(r.ty)) == "never" {
+        let fallback = if tag(pruned(r.ty, this.vars.get())) == "never" {
             r
         } else {
             let ret = this.ret.clone()
@@ -581,7 +581,7 @@ impl Lowerer {
 
     fun member(&mut this, e: &Expr, object: &Expr, name: &str, ty: Ty) -> HExpr {
         let span = e.span
-        let target = this.members.get(e.id)
+        let target = this.tables.get().members.get(e.id)
         if let Some(MItem(sym)) = &target {
             return this.sym_value(sym, span, ty)
         }
@@ -601,16 +601,16 @@ impl Lowerer {
     fun extern_path(&this, e: &Expr) -> string? {
         match &e.kind {
             Ident(name) => {
-                let Some(sym) = this.refs.get(e.id) else {
-                    if this.open.has(e.id) || (this.deferred.has(e.id) && !this.variants.has(e.id)) {
+                let Some(sym) = this.tables.get().refs.get(e.id) else {
+                    if this.open.has(e.id) || (this.deferred.has(e.id) && !this.tables.get().variants.has(e.id)) {
                         return Some(name.clone())
                     }
                     return None
                 }
-                let kind = this.syms[sym].kind.clone()
+                let kind = this.syms.get()[sym].kind.clone()
                 // a loaded package's members resolve to its items; only packages without signatures stay symbolic
-                if (kind == "package" || kind == "import") && this.syms[sym].target.is_none() {
-                    return Some(this.syms[sym].detail ?? this.syms[sym].name.clone())
+                if (kind == "package" || kind == "import") && this.syms.get()[sym].target.is_none() {
+                    return Some(this.syms.get()[sym].detail ?? this.syms.get()[sym].name.clone())
                 }
                 None
             }
@@ -648,14 +648,14 @@ impl Lowerer {
 
     fun call(&mut this, e: &Expr, callee: &Expr, args: &Vec[Elem], ty: Ty) -> HExpr {
         // a clone whose source is never used again is a move (the ownership pass decided)
-        if this.moves.has(e.id) {
+        if this.moves.get().has(e.id) {
             if let Member { object, .. } = &callee.kind {
                 return this.expr(object.get())
             }
         }
         var out = this.call_inner(e, callee, args, ty)
         // the callee's generics as instantiated here: type witnesses, if the callee needs them
-        let env = match this.calls.get(e.id) {
+        let env = match this.tables.get().calls.get(e.id) {
             Some(info) => info.type_env
             None => []
         }
@@ -681,7 +681,7 @@ impl Lowerer {
 
     fun call_inner(&mut this, e: &Expr, callee0: &Expr, args: &Vec[Elem], ty: Ty) -> HExpr {
         let span = e.span
-        let info = this.calls.get(e.id)
+        let info = this.tables.get().calls.get(e.id)
         let callee = match &callee0.kind {
             GenericApply { target, .. } => target.get().clone()
             _ => callee0.clone()
@@ -699,8 +699,8 @@ impl Lowerer {
         // `T.default()`: a static of a generic parameter, called through T's witness
         if let Member { object, name, .. } = &callee.kind {
             if let Ident(_) = &object.get().kind {
-                if let Some(owner) = this.refs.get(object.get().id) {
-                    if this.syms[owner].kind == "generic" {
+                if let Some(owner) = this.tables.get().refs.get(object.get().id) {
+                    if this.syms.get()[owner].kind == "generic" {
                         let a = this.args(e, args, info, target_decl)
                         return mk(ty, span, KWstatic { witness: Some(SParam(owner)), method: name.clone(), args: a })
                     }
@@ -781,7 +781,7 @@ impl Lowerer {
                     // `json.parse.[User](s)`: the runtime needs the type to build a `User`
                     let type_args = match &callee0.kind {
                         GenericApply { args: targs, .. } => Some(targs.map(#{ ta => match &ta.kind {
-                            TName { .. } => match this.refs.get(ta.id) {
+                            TName { .. } => match this.tables.get().refs.get(ta.id) {
                                 Some(s) => this.type_name(s)
                                 None => "?"
                             }
@@ -1002,7 +1002,7 @@ impl Lowerer {
         let iterable = this.expr(x)
         let iter_ty = this.strip(iterable.ty)
         let isym = named_sym(iter_ty)
-        let std_name = if isym >= 0 && this.syms[isym].std { this.syms[isym].name.clone() } else { "" }
+        let std_name = if isym >= 0 && this.syms.get()[isym].std { this.syms.get()[isym].name.clone() } else { "" }
 
         // for await x in s → loop { match await s.next() { Some(x) => { … }, None => break } }
         if is_await {

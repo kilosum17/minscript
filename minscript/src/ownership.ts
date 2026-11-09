@@ -526,8 +526,9 @@ class Ownership {
     /** A value returned from the function (or closure): moved out, or checked as a returned borrow. */
     private returned(e: A.Expr, st: State, ret: A.Type | null): void {
         if (ret !== null && findBorrowType(ret) !== null) {
-            this.checkReturnedBorrow(e)
+            // walked first: a `match` / `if let` marks the bindings that borrow from its subject
             this.expr(e, st)
+            this.checkReturnedBorrow(e)
             return
         }
         const fnRet = ret !== null && (ret.kind === "TFn")
@@ -828,8 +829,12 @@ class Ownership {
         this.merge(st, [thenSt, elseSt])
     }
 
-    /** Bindings of a pattern matched against a borrowed place borrow from it. */
-    private matchedBy(subject: A.Expr, p: A.Pattern): void {
+    /** Bindings of a pattern matched against a borrowed place borrow from it (`match &x.f`: the `&`
+     *  borrows the place `x.f`). */
+    private matchedBy(subject0: A.Expr, p: A.Pattern): void {
+        let subject = subject0
+        while (subject.kind === "Paren") subject = subject.expr
+        if (subject.kind === "Unary" && (subject.op === "&" || subject.op === "&mut")) subject = subject.expr
         const r = this.root(subject)
         if (r === null || !this.isPlace(subject)) return
         const held = this.heldBy(r.sym)

@@ -14,7 +14,7 @@ package hir
 import "app.lexer.{Span}"
 import "app.ast.*"
 import "app.resolve.{Sym, Scope, Resolution}"
-import "app.check.{CheckResult, CheckedDep, CallInfo, MemberTarget, VariantRef, Owner, Ty, VarState, prune_ty, strip_ty, tag, named_sym, named_args, arg_at, is_int, is_float, is_numeric, is_stringy, is_prim, prim, void_ty, unknown, dec_neg}"
+import "app.check.{CheckResult, CheckedDep, CallInfo, MemberTarget, VariantRef, Owner, Ty, VarState, prune_ty, strip_ty, pruned, stripped, tag, named_sym, named_args, arg_at, is_int, is_float, is_numeric, is_stringy, is_prim, prim, void_ty, unknown, dec_neg}"
 
 /// What lowering needs of a function declaration.
 type FunInfo = { name: string, params: Vec[Param], generics: int, builtin: bool }
@@ -28,19 +28,16 @@ union LDecl = {
 }
 
 type Lowerer = {
-    syms: Vec[Sym]
-    refs: Map[int, int]
-    decls: Map[int, int]
+    /// the program's symbols, inference variables, merged side tables and moves (read-only, shared)
+    syms: Ref[Vec[Sym]]
+    vars: Ref[Vec[VarState]]
+    tables: Ref[Tables]
+    moves: Ref[Set[int]]
     captures: Map[int, Vec[int]]
     types: Map[int, Ty]
     sym_types: Map[int, Ty]
-    calls: Map[int, CallInfo]
-    members: Map[int, MemberTarget]
-    variants: Map[int, VariantRef]
-    rets: Map[int, Ty]
     open: Set[int]
     deferred: Set[int]
-    vars: Vec[VarState]
     prelude_names: Map[string, int]
     /// the names of each imported package's scope (`Sym.target`), for `pkg.Type` in field types
     pkg_names: Map[int, Map[string, int]] = m{}
@@ -52,8 +49,6 @@ type Lowerer = {
     /// the result type of the function (or closure) being lowered
     ret: Ty
     current_file: string?
-    /// the clones that are moves (call ids)
-    moves: Set[int] = Set.new()
 }
 
 /// The qualified prefix of a package's items: none for `main`, `std.` for the prelude, else `<package>.`.
@@ -63,17 +58,33 @@ pub fun package_prefix(name: &str) -> string {
 
 /// Lowers the files of one package (`main`) to HIR. `prelude` is the prelude's resolution and file.
 pub fun lower_package(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution, moves: Set[int]) -> Program {
-    let arenas = Arenas { syms: res.symbols.clone(), scopes: res.scopes.clone(), vars: checked.vars.clone(), moves }
-    let t(program, _) = lower_loaded(files, res, checked, prelude_file, prelude, "main", [], [], [], 0, arenas)
-    program
+    let shared = package_shared(prelude, res, checked, moves)
+    lower_loaded(files, res, checked, prelude_file, prelude, "main", [], [], [], 0, shared)
 }
 
-/// A program's arenas (the last analysed package's: every symbol, scope and inference variable).
-/// Lowering takes them by value and hands them back, so they move from package to package, not copied.
-/// `tables` (none, or one): the program's merged side tables (`merge_program_tables`); without them,
-/// each package merges its own and its dependencies'.
-/// `moves`: the clones the ownership passes found can be moves (call ids, program-wide).
-pub type Arenas = { pub syms: Vec[Sym], pub scopes: Vec[Scope], pub vars: Vec[VarState], pub tables: Vec[Tables] = [], pub moves: Set[int] = Set.new() }
+/// What every package's lowering reads and nobody changes any more: the program's arenas (the last
+/// analysed package's symbols, scopes and inference variables), its merged side tables, and the
+/// clones that are moves. `Ref`s, so each lowering reads them in place (spec §9.9).
+pub type Shared = {
+    pub syms: Ref[Vec[Sym]]
+    pub scopes: Ref[Vec[Scope]]
+    pub vars: Ref[Vec[VarState]]
+    pub tables: Ref[Tables]
+    pub moves: Ref[Set[int]]
+}
+
+/// `Shared` for one package lowered on its own (the prelude, or a file with `ms hir`): its arenas,
+/// and the prelude's and its own tables.
+pub fun package_shared(prelude: &Resolution, res: &Resolution, checked: &CheckResult, moves: Set[int]) -> Shared {
+    var tables = Tables {}
+    merge_refs(prelude, tables.refs, tables.decls)
+    merge_refs(res, tables.refs, tables.decls)
+    merge_checked(checked, tables)
+    Shared {
+        syms: Ref(res.symbols.clone()), scopes: Ref(res.scopes.clone()), vars: Ref(checked.vars.clone()),
+        tables: Ref(tables), moves: Ref(moves),
+    }
+}
 
 /// The resolver's and checker's side tables lowering reads, merged over packages: node ids are
 /// unique across a program, so they merge. A dependency's expressions lowered elsewhere (an imported
@@ -126,23 +137,8 @@ fun merge_refs(r: &Resolution, refs: &mut Map[int, int], decls: &mut Map[int, in
 
 /// Lowers a package of a loaded program: `package_name` prefixes its items (none for `main`), `deps[i]`
 /// for `i` in `reach` are the packages it can reach, `file_names[k]` names `files[k]` in panic
-/// locations, and temporaries are numbered after `first_temp`. `arenas` are the program's, returned
-/// with the result.
-pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution, package_name: &str, deps: &Vec[CheckedDep], reach: &Vec[int], file_names: Vec[string], first_temp: int, arenas: Arenas) -> t(Program, Arenas) {
-    var given = arenas
-    let scopes = given.scopes.drain()
-    var tables = given.tables.drain()
-    if tables.is_empty() {
-        // on its own (no program-wide tables): the prelude's, the reachable packages' and its own
-        tables.push(Tables {})
-        merge_refs(prelude, tables[0].refs, tables[0].decls)
-        for i in reach.iter() {
-            merge_refs(deps[i].res, tables[0].refs, tables[0].decls)
-            merge_checked(deps[i].checked, tables[0])
-        }
-        merge_refs(res, tables[0].refs, tables[0].decls)
-        merge_checked(checked, tables[0])
-    }
+/// locations, and temporaries are numbered after `first_temp`. `shared`: what it reads of the program.
+pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution, package_name: &str, deps: &Vec[CheckedDep], reach: &Vec[int], file_names: Vec[string], first_temp: int, shared: &Shared) -> Program {
     var caps = m{} as Map[int, Vec[int]]
     for id, c in res.captures {
         caps[id] = c.syms.clone()
@@ -151,17 +147,15 @@ pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult,
     for d in res.deferred.iter() {
         let _ = deferred.insert(d.id)
     }
-    let Some(tb) = tables.pop() else { return t(Program {}, Arenas { syms: given.syms.drain(), scopes, vars: given.vars.drain() }) }
-    let Tables { refs, decls, calls, members, variants, rets } = tb
     var l = Lowerer {
-        syms: given.syms.drain(), refs, decls, captures: caps, types: checked.types.clone(), sym_types: checked.symbols.clone(),
-        calls, members, variants, rets,
-        open: res.open.clone(), deferred, vars: given.vars.drain(), prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(),
+        syms: shared.syms, vars: shared.vars, tables: shared.tables, moves: shared.moves,
+        captures: caps, types: checked.types.clone(), sym_types: checked.symbols.clone(),
+        open: res.open.clone(), deferred, prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(),
         package_name: package_name.to_str(), ret: void_ty(), current_file: None, temp_count: first_temp,
-        moves: given.moves,
     }
+    let scopes = shared.scopes.get()
     var implicit = [] as Vec[t(int, int)]
-    for s in l.syms.iter() {
+    for s in shared.syms.get().iter() {
         if s.kind == "package" {
             if let Some(scope) = s.target {
                 if !l.pkg_names.has(scope) {
@@ -212,8 +206,7 @@ pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult,
         }
     }
     program.temps = l.temp_count
-    let back = Tables { refs: l.refs, decls: l.decls, calls: l.calls, members: l.members, variants: l.variants, rets: l.rets }
-    t(program, Arenas { syms: l.syms.drain(), scopes, vars: l.vars.drain(), tables: [back], moves: l.moves })
+    program
 }
 
 fun fun_info(f: &FunDecl) -> FunInfo {
@@ -483,7 +476,7 @@ impl Lowerer {
     }
 
     fun decl_of(&this, sym: int) -> LDecl? {
-        let Some(d) = this.syms[sym].decl else { return None }
+        let Some(d) = this.syms.get()[sym].decl else { return None }
         this.index.get(d)
     }
 
@@ -511,7 +504,7 @@ impl Lowerer {
     fun owner_name(&this, owner: &Owner) -> string {
         match owner {
             OName(n) => if n == "auto" { "auto" } else { "std.${n}" }
-            OSym(s) => if this.syms[s].std { "std.${this.syms[s].name}" } else { this.syms[s].name.clone() }
+            OSym(s) => if this.syms.get()[s].std { "std.${this.syms.get()[s].name}" } else { this.syms.get()[s].name.clone() }
         }
     }
 
@@ -567,7 +560,7 @@ impl Lowerer {
 
     /// The qualified name of a top-level item (`std.Vec`, `User` in main).
     fun type_name(&this, sym: int) -> string {
-        let s = &this.syms[sym]
+        let s = &this.syms.get()[sym]
         if s.std {
             return "std.${s.name}"
         }
@@ -580,10 +573,10 @@ impl Lowerer {
         for file in files.iter() {
             for itm in file.items.iter() {
                 let t(target, ifaces) = match itm {
-                    TypeDef(d) => t(this.decls.get(d.id), d.impls.clone())
-                    Union(d) => t(this.decls.get(d.id), d.impls.clone())
+                    TypeDef(d) => t(this.tables.get().decls.get(d.id), d.impls.clone())
+                    Union(d) => t(this.tables.get().decls.get(d.id), d.impls.clone())
                     Impl(d) => match &d.target.kind {
-                        TName { .. } => t(this.refs.get(d.target.id), d.interfaces.clone())
+                        TName { .. } => t(this.tables.get().refs.get(d.target.id), d.interfaces.clone())
                         _ => t(None, [] as Vec[Type])
                     }
                     _ => t(None, [] as Vec[Type])
@@ -592,7 +585,7 @@ impl Lowerer {
                 var list = out.get(ts) ?? []
                 for itf in ifaces.iter() {
                     if let TName { .. } = &itf.kind {
-                        if let Some(s) = this.refs.get(itf.id) {
+                        if let Some(s) = this.tables.get().refs.get(itf.id) {
                             list.push(this.type_name(s))
                         }
                     }
@@ -605,13 +598,13 @@ impl Lowerer {
 
     // ---- helpers ----
 
-    fun prune(&this, t: &Ty) -> Ty { prune_ty(t, this.vars) }
-    fun strip(&this, t: &Ty) -> Ty { strip_ty(t, this.vars) }
+    fun prune(&this, t: &Ty) -> Ty { prune_ty(t, this.vars.get()) }
+    fun strip(&this, t: &Ty) -> Ty { strip_ty(t, this.vars.get()) }
 
     fun ty(&this, id: int) -> Ty { this.prune(this.types.get(id) ?? unknown()) }
 
     fun display(&this, sym: int) -> string {
-        let s = &this.syms[sym]
+        let s = &this.syms.get()[sym]
         if s.name == "it1" { "it" } else if s.kind == "this" { "this" } else { s.name.clone() }
     }
 
@@ -621,7 +614,7 @@ impl Lowerer {
     }
 
     fun local_of(&this, sym: int) -> HLocal {
-        HLocal { sym, name: this.display(sym), ty: this.prune(this.sym_types.get(sym) ?? unknown()), mutable: this.syms[sym].mutable }
+        HLocal { sym, name: this.display(sym), ty: this.prune(this.sym_types.get(sym) ?? unknown()), mutable: this.syms.get()[sym].mutable }
     }
 
     fun refl(&this, l: &HLocal, span: Span) -> HExpr { mk(l.ty.clone(), span, KLocal { sym: l.sym, name: l.name.clone() }) }
@@ -648,10 +641,10 @@ impl Lowerer {
     fun option_kind(&this, t: &Ty) -> string {
         let s = this.strip(t)
         let sym = named_sym(s)
-        if sym < 0 || !this.syms[sym].std {
+        if sym < 0 || !this.syms.get()[sym].std {
             return ""
         }
-        if this.syms[sym].name == "Option" { "option" } else if this.syms[sym].name == "Result" { "result" } else { "" }
+        if this.syms.get()[sym].name == "Option" { "option" } else if this.syms.get()[sym].name == "Result" { "result" } else { "" }
     }
 
     fun is_big(&this, t: &Ty) -> bool {
@@ -683,7 +676,7 @@ impl Lowerer {
         let target = this.strip(to_ty)
         let from = this.strip(e.ty)
         // a Copy record / tuple read from a place and stored elsewhere is a copy (not for `&T`)
-        if store && is_place_kind(e.kind) && this.is_copy_aggregate(from, 0) && tag(this.prune(to_ty)) != "ref" {
+        if store && is_place_kind(e.kind) && this.is_copy_aggregate(from, 0) && tag(pruned(to_ty, this.vars.get())) != "ref" {
             let ty = e.ty.clone()
             let span = e.span
             return mk(ty, span, KCopy(Box.new(e)))
@@ -697,7 +690,7 @@ impl Lowerer {
         }
         // a float given as an interface (`&Stringer`): convert it while its type is known (`2.0`, not `2`)
         let tsym = named_sym(target)
-        if tsym >= 0 && this.float_shape(from).is_some() && this.syms[tsym].name == "Stringer" {
+        if tsym >= 0 && this.float_shape(from).is_some() && this.syms.get()[tsym].name == "Stringer" {
             if let Some(LInterD) = this.decl_of(tsym) {
                 return this.to_str(e)
             }
@@ -755,14 +748,14 @@ impl Lowerer {
             _ => return None
         }
         let TName { path, args } = &t.kind else { return None }
-        var found = this.refs.get(t.id)
+        var found = this.tables.get().refs.get(t.id)
         // `json.Value`: a type of an imported package (as the checker's `to_ty` finds it)
         if let Some(first) = found {
-            if path.len() > 1 && this.syms[first].kind == "package" {
+            if path.len() > 1 && this.syms.get()[first].kind == "package" {
                 var k = 1
                 for k < path.len() {
                     found = match found {
-                        Some(c) => match this.syms[c].target {
+                        Some(c) => match this.syms.get()[c].target {
                             Some(scope) => match this.pkg_names.get(scope) {
                                 Some(names) => names.get(path[k])
                                 None => None
@@ -776,7 +769,7 @@ impl Lowerer {
             }
         }
         let Some(sym) = found else { return None }
-        let s = &this.syms[sym]
+        let s = &this.syms.get()[sym]
         let arg = #{ i: int => match args.get(i) {
             Some(x) => this.ast_shape(x)
             None => None
@@ -820,8 +813,8 @@ impl Lowerer {
                     Some(x) => this.ty_shape(x)
                     None => None
                 } }
-                let st = this.syms[sym].std
-                let name = this.syms[sym].name.clone()
+                let st = this.syms.get()[sym].std
+                let name = this.syms.get()[sym].name.clone()
                 if st && (name == "Vec" || name == "Slice" || name == "Array") {
                     return Some(SVec(bx(arg(0))))
                 }
@@ -867,7 +860,7 @@ impl Lowerer {
                 for f in d.funs.iter() {
                     var params = [] as Vec[HLocal]
                     for x in f.params.iter() {
-                        if let Some(s) = this.decls.get(x.id) {
+                        if let Some(s) = this.tables.get().decls.get(x.id) {
                             params.push(this.local_of(s))
                         }
                     }
@@ -875,7 +868,7 @@ impl Lowerer {
                 }
             }
             Let(d) => {
-                let ty = match this.decls.get(d.id) {
+                let ty = match this.tables.get().decls.get(d.id) {
                     Some(sym) => this.prune(this.sym_types.get(sym) ?? unknown())
                     None => unknown()
                 }
@@ -886,7 +879,7 @@ impl Lowerer {
             }
             TypeDef(d) => {
                 let Struct(b) = &d.body else { return }
-                let sym = this.decls.get(d.id)
+                let sym = this.tables.get().decls.get(d.id)
                 let ifaces = match sym {
                     Some(s) => interfaces.get(s) ?? []
                     None => []
@@ -902,7 +895,7 @@ impl Lowerer {
                 }
             }
             Union(d) => {
-                let sym = this.decls.get(d.id)
+                let sym = this.tables.get().decls.get(d.id)
                 let name = match sym {
                     Some(s) => this.type_name(s)
                     None => d.name.clone()
@@ -953,32 +946,32 @@ impl Lowerer {
         if f.ret.is_none() {
             return void_ty()
         }
-        this.prune(this.rets.get(f.id) ?? unknown())
+        this.prune(this.tables.get().rets.get(f.id) ?? unknown())
     }
 
     fun lower_fun(&mut this, f: &FunDecl, outer: &Vec[GenericParam]) -> HFun {
         var generics = [] as Vec[int]
         for g in outer.iter() {
-            if let Some(s) = this.decls.get(g.id) {
+            if let Some(s) = this.tables.get().decls.get(g.id) {
                 generics.push(s)
             }
         }
         for g in f.generics.iter() {
-            if let Some(s) = this.decls.get(g.id) {
+            if let Some(s) = this.tables.get().decls.get(g.id) {
                 generics.push(s)
             }
         }
         var params = [] as Vec[HLocal]
         for p in f.params.iter() {
-            if let Some(s) = this.decls.get(p.id) {
+            if let Some(s) = this.tables.get().decls.get(p.id) {
                 params.push(this.local_of(s))
             }
         }
         var this_sym: int? = None
         if let Some(b) = &f.body {
             if let Some(id) = this_in_block(b) {
-                if let Some(s) = this.refs.get(id) {
-                    if this.syms[s].kind == "this" {
+                if let Some(s) = this.tables.get().refs.get(id) {
+                    if this.syms.get()[s].kind == "this" {
                         this_sym = Some(s)
                     }
                 }
@@ -1040,7 +1033,7 @@ impl Lowerer {
     fun let_stmt(&mut this, s: &LetStmt, out: &mut Vec[HStmt]) {
         var target: Ty? = None
         if let PBind { .. } = &s.pattern.kind {
-            if let Some(sym) = this.decls.get(s.pattern.id) {
+            if let Some(sym) = this.tables.get().decls.get(s.pattern.id) {
                 target = this.sym_types.get(sym)
             }
         }
@@ -1056,7 +1049,7 @@ impl Lowerer {
     fun destructure(&mut this, p: &Pattern, value: HExpr, out: &mut Vec[HStmt]) {
         match &p.kind {
             PBind { .. } => {
-                if let Some(sym) = this.decls.get(p.id) {
+                if let Some(sym) = this.tables.get().decls.get(p.id) {
                     out.push(HLet { local: this.local_of(sym), value })
                 }
             }
@@ -1084,7 +1077,7 @@ impl Lowerer {
     fun paths(&this, p: &Pattern, path: Vec[string], out: &mut Vec[t(int, Vec[string])]) {
         match &p.kind {
             PBind { .. } => {
-                if let Some(s) = this.decls.get(p.id) {
+                if let Some(s) = this.tables.get().decls.get(p.id) {
                     out.push(t(s, path))
                 }
             }
@@ -1104,7 +1097,7 @@ impl Lowerer {
                     match &f.pattern {
                         Some(fp) => this.paths(fp, next, out)
                         None => {
-                            if let Some(s) = this.decls.get(f.id) {
+                            if let Some(s) = this.tables.get().decls.get(f.id) {
                                 out.push(t(s, next))
                             }
                         }
@@ -1158,7 +1151,7 @@ impl Lowerer {
     }
 
     fun add_binding(&this, id: int, out: &mut Vec[int]) {
-        if let Some(s) = this.decls.get(id) {
+        if let Some(s) = this.tables.get().decls.get(id) {
             if !out.contains(s) {
                 out.push(s)
             }
@@ -1217,7 +1210,7 @@ impl Lowerer {
         let t = this.strip(ty)
         match &p.kind {
             PWild | PError => QWild
-            PBind { .. } => match this.decls.get(p.id) {
+            PBind { .. } => match this.tables.get().decls.get(p.id) {
                 Some(s) => QBind(this.local_of(s))
                 None => QWild
             }
@@ -1274,15 +1267,15 @@ impl Lowerer {
     }
 
     fun constructor_pattern(&mut this, p: &Pattern) -> HPat {
-        if let Some(v) = this.variants.get(p.id) {
+        if let Some(v) = this.tables.get().variants.get(p.id) {
             return this.variant_pattern(p, v)
         }
         // no checker info (the value's type is unknown): name the variant directly
-        let sym = this.refs.get(p.id)
+        let sym = this.tables.get().refs.get(p.id)
         if let Some(s) = sym {
-            if this.syms[s].kind == "variant" {
-                if let Some(o) = this.syms[s].owner {
-                    return this.variant_pattern(p, r{ owner: o, variant: this.syms[s].name.clone() })
+            if this.syms.get()[s].kind == "variant" {
+                if let Some(o) = this.syms.get()[s].owner {
+                    return this.variant_pattern(p, r{ owner: o, variant: this.syms.get()[s].name.clone() })
                 }
             }
         }
@@ -1294,7 +1287,7 @@ impl Lowerer {
         if let Some(pk) = path_kind {
             let t(path, args) = pk
             var fields = [] as Vec[HPat]
-            if path.len() == 1 && (sym.is_none() || this.syms[sym ?? 0].kind == "union") {
+            if path.len() == 1 && (sym.is_none() || this.syms.get()[sym ?? 0].kind == "union") {
                 for x in args.iter() {
                     fields.push(this.pattern(x, unknown()))
                 }
@@ -1312,7 +1305,7 @@ impl Lowerer {
             for f in fields.iter() {
                 let pat = match &f.pattern {
                     Some(fp) => this.pattern(fp, unknown())
-                    None => match this.decls.get(f.id) {
+                    None => match this.tables.get().decls.get(f.id) {
                         Some(s) => QBind(this.local_of(s))
                         None => QWild
                     }
@@ -1361,7 +1354,7 @@ impl Lowerer {
                     }
                     fields.push(match &f.pattern {
                         Some(fp) => this.pattern(fp, unknown())
-                        None => match this.decls.get(f.id) {
+                        None => match this.tables.get().decls.get(f.id) {
                             Some(s) => QBind(this.local_of(s))
                             None => QWild
                         }

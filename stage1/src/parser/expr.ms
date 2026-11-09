@@ -163,8 +163,10 @@ impl Parser {
         let start = this.cur_span()
         var left = this.parse_unary()?
 
+        // the tokens' handle in a local: `tok` borrows it (no copy), not `this`
+        let toks = this.t
         for {
-            let tok = this.cur()
+            let tok = toks.get()[this.i]
             if tok.nl_before && this.nl_sig && !continues(tok.kind) {
                 break
             }
@@ -250,7 +252,7 @@ impl Parser {
 
     /// Whether the current token can start an operand here (used for open-ended ranges).
     fun can_start_operand(&this) -> bool {
-        let tok = &this.t[this.i]
+        let tok = &this.t.get()[this.i]
         if !expr_start(tok.kind) {
             return false
         }
@@ -264,7 +266,8 @@ impl Parser {
     }
 
     fun parse_unary(&mut this) -> Result[Expr, Sync] {
-        let start_tok = this.cur()
+        let toks = this.t
+        let start_tok = toks.get()[this.i]
         let start = start_tok.span
         match start_tok.kind {
             "-" | "!" => {
@@ -331,8 +334,9 @@ impl Parser {
     fun parse_postfix(&mut this, first: Expr, stop_at_try: bool, start_at: Span?) -> Result[Expr, Sync] {
         let start = start_at ?? first.span
         var e = first
+        let toks = this.t
         for {
-            let tok = this.cur()
+            let tok = toks.get()[this.i]
             match tok.kind {
                 "." => {
                     this.skip()
@@ -455,12 +459,12 @@ impl Parser {
     /// In a header, `P { a: 1 } {` (a struct literal followed by the real block) is a misplaced struct literal.
     fun looks_like_struct_in_header(&this, open: &Token) -> bool {
         let Some(close) = open.closer else { return false }
-        if close + 1 >= this.t.len() || this.i + 2 >= this.t.len() {
+        if close + 1 >= this.t.get().len() || this.i + 2 >= this.t.get().len() {
             return false
         }
-        let after = &this.t[close + 1]
-        let first = &this.t[this.i + 1]
-        let second = &this.t[this.i + 2]
+        let after = &this.t.get()[close + 1]
+        let first = &this.t.get()[this.i + 1]
+        let second = &this.t.get()[this.i + 2]
         after.kind == "{" && !after.nl_before && first.kind == "Ident" && (second.kind == ":" || second.kind == ",")
     }
 
@@ -469,8 +473,8 @@ impl Parser {
         var k = from
         var depth = 0
         var n = 0
-        for n < 64 && k < this.t.len() {
-            let tok = &this.t[k]
+        for n < 64 && k < this.t.get().len() {
+            let tok = &this.t.get()[k]
             match tok.kind {
                 "<" => {
                     depth += 1
@@ -495,10 +499,10 @@ impl Parser {
                 _ => return false
             }
             if depth <= 0 {
-                if depth != 0 || k >= this.t.len() {
+                if depth != 0 || k >= this.t.get().len() {
                     return false
                 }
-                let next = &this.t[k]
+                let next = &this.t.get()[k]
                 return next.kind == "(" && !next.ws_before
             }
             n += 1
@@ -552,7 +556,8 @@ impl Parser {
     }
 
     fun parse_primary(&mut this) -> Result[Expr, Sync] {
-        let tok = this.cur()
+        let toks = this.t
+        let tok = toks.get()[this.i]
         let start = tok.span
         match tok.kind {
             "Ident" => {
@@ -744,7 +749,7 @@ impl Parser {
 
     /// After `return` / `break`: a value follows on the same line.
     fun can_start_value(&this) -> bool {
-        let tok = &this.t[this.i]
+        let tok = &this.t.get()[this.i]
         expr_start(tok.kind) && !tok.nl_before
     }
 
@@ -780,8 +785,8 @@ impl Parser {
     fun parse_paren(&mut this) -> Result[Expr, Sync] {
         let open = this.cur()
         let close_idx = this.closer_index(open)
-        if close_idx + 1 < this.t.len() {
-            let after = &this.t[close_idx + 1]
+        if close_idx + 1 < this.t.get().len() {
+            let after = &this.t.get()[close_idx + 1]
             if (after.kind == "=>" || after.kind == "->") && !after.nl_before {
                 return this.parse_arrow_closure(open)
             }

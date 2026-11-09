@@ -610,7 +610,7 @@ impl Checker {
         let tt = this.check_expr(target, None)
         if op == "??=" {
             let o = this.optional_inner(tt)
-            if o.is_none() && tag(this.strip(tt)) != "unknown" {
+            if o.is_none() && tag(stripped(tt, this.vars)) != "unknown" {
                 this.error("E_TYPE_MISMATCH", "`??=` needs an Option on its left, found `${this.show(tt)}`", target.span)
             }
             let want = match o {
@@ -701,7 +701,7 @@ impl Checker {
     fun check_try(&mut this, e: &Expr, x: &Expr) -> Ty {
         let t = this.check_expr(x, None)
         let Some(o) = this.optional_inner(t) else {
-            let k = tag(this.strip(t))
+            let k = tag(stripped(t, this.vars))
             if k != "unknown" && k != "var" {
                 this.error("E_INVALID_TRY", "`?` needs an Option or a Result, found `${this.show(t)}`", e.span)
             }
@@ -784,7 +784,7 @@ impl Checker {
         let obj = this.check_expr(object, None)
         if opt {
             let Some(o) = this.optional_inner(obj) else {
-                let k = tag(this.strip(obj))
+                let k = tag(stripped(obj, this.vars))
                 if k != "unknown" && k != "var" {
                     this.error("E_TYPE_MISMATCH", "`?.` needs an Option or a Result, found `${this.show(obj)}`; use `.`", e.span)
                 }

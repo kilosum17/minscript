@@ -186,3 +186,21 @@ fun ref_get_and_write(r: &Ref[Vec[int]]) -> int {
 }
 
 fun ref_borrow_of_param(r: &Ref[Vec[int]]) -> &Vec[int] { r.get() }
+
+// Bindings of a pattern matched against `&place` borrow from the place, so they may be returned when
+// the place belongs to a borrowed parameter (spec §9.3 rule 4).
+type Slot = { bound: string? }
+
+fun bound_of(slots: &Vec[Slot], i: int) -> &str {
+    match &slots[i].bound {
+        Some(b) => b
+        None => ""
+    }
+}
+
+fun first_bound(slots: &Vec[Slot]) -> &str {
+    if let Some(b) = &slots[0].bound {
+        return b
+    }
+    ""
+}

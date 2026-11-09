@@ -20,7 +20,7 @@ package ownership
 import "app.lexer.{Span, Diagnostic}"
 import "app.ast.*"
 import "app.resolve.{Sym, Resolution, Ref}"
-import "app.check.{CheckResult, CallInfo, Ty, VarState, prune_ty, strip_ty, show_ty, tag, named_sym, unknown}"
+import "app.check.{CheckResult, CallInfo, Ty, VarState, prune_ty, strip_ty, pruned, stripped, show_ty, tag, named_sym, unknown}"
 
 type Moved = r{ at: Span, maybe: bool }
 
@@ -77,6 +77,22 @@ type Ownership = {
 /// `moves`: the `x.clone()` calls (by id) whose source is never observed again, which lowering turns
 /// into moves (spec §14.1, moves.ms).
 pub type OwnershipResult = { pub diagnostics: Vec[Diagnostic], pub moves: Set[int] }
+
+/// `&x.f` (or `(…)` around it) → the place `x.f`; anything else as it is.
+fun place_of_borrow(e: &Expr) -> &Expr {
+    match &e.kind {
+        Paren(x) => place_of_borrow(x.get())
+        Unary { op, expr } => if op == "&" || op == "&mut" { unparen(expr.get()) } else { e }
+        _ => e
+    }
+}
+
+fun unparen(e: &Expr) -> &Expr {
+    match &e.kind {
+        Paren(x) => unparen(x.get())
+        _ => e
+    }
+}
 
 fun local_kind(k: &str) -> bool {
     match k {
@@ -585,8 +601,9 @@ impl Ownership {
     fun returned(&mut this, e: &Expr, st: &mut State, ret: &Type?) {
         if let Some(rt) = ret {
             if find_borrow_type(rt).is_some() {
-                this.check_returned_borrow(e)
+                // walked first: a `match` / `if let` marks the bindings that borrow from its subject
                 this.expr(e, st, false)
+                this.check_returned_borrow(e)
                 return
             }
             if let TFn { .. } = &rt.kind {
@@ -999,7 +1016,7 @@ impl Ownership {
                 this.check_spawn(e, args, ci, recv_expr)
             }
         }
-        if tag(this.prune(this.type_of(e.id) ?? unknown())) == "never" {
+        if tag(pruned(this.type_of(e.id) ?? unknown(), this.vars)) == "never" {
             st.dead = true
         }
     }
@@ -1053,7 +1070,10 @@ impl Ownership {
     }
 
     /// Bindings of a pattern matched against a borrowed place borrow from it.
-    fun matched_by(&mut this, subject: &Expr, p: &Pattern) {
+    /// Bindings of a pattern matched against a borrowed place borrow from it (`match &x.f`: the `&`
+    /// borrows the place `x.f`).
+    fun matched_by(&mut this, subject0: &Expr, p: &Pattern) {
+        let subject = place_of_borrow(subject0)
         let Some(r) = this.root(subject) else { return }
         if !this.is_place(subject) {
             return
@@ -1414,7 +1434,7 @@ impl Ownership {
                             this.owners_visit(object.get(), out)
                             // a borrow returned by a handle's method (`r.get()`: `&T`) borrows from that handle
                             if let Some(r) = this.root(object.get()) {
-                                if this.is_handle(this.sym_type(r.sym)) && tag(this.prune(this.type_of(n.id) ?? unknown())) == "ref" {
+                                if this.is_handle(this.sym_type(r.sym)) && tag(pruned(this.type_of(n.id) ?? unknown(), this.vars)) == "ref" {
                                     this.add_owner(r.sym, "shared", out)
                                 }
                             }

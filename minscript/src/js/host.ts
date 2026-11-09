@@ -3,7 +3,7 @@
 // the compiler, so a compiler written in MinScript runs with it (`exec.ts`, stage 1's seed).
 
 import { createHash } from "node:crypto"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, renameSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -16,7 +16,11 @@ export async function loadJs(js: string): Promise<{ $main: () => Promise<unknown
     const dir = join(tmpdir(), "minscript-run")
     mkdirSync(dir, { recursive: true })
     const file = join(dir, `${createHash("sha256").update(js).digest("hex").slice(0, 16)}.mjs`)
-    writeFileSync(file, js)
+    // processes running the same module share the file: write it under a private name, then rename it
+    // into place (atomic), so nobody imports it half-written
+    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+    writeFileSync(tmp, js)
+    renameSync(tmp, file)
     return await import(pathToFileURL(file).href) as { $main: () => Promise<unknown> }
 }
 

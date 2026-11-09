@@ -63,44 +63,12 @@ pub type Program = {
     pub prelude_checked: CheckResult
     pub std_dir: string
     pub cwd: string
+    /// what lowering and the back end read once everything is analysed: the program's arenas (the
+    /// last analysed package's), its merged side tables and the clones that are moves (`freeze`)
+    pub shared: hir.Shared
 }
 
 impl Program {
-    /// The program's symbol arena (the last analysed package's holds every symbol).
-    pub fun syms(&this) -> Vec[Sym] {
-        let n = this.analysed.len()
-        if n == 0 { this.prelude.symbols.clone() } else { this.analysed[n - 1].res.symbols.clone() }
-    }
-
-    /// The program's inference variables.
-    pub fun vars(&this) -> Vec[VarState] {
-        let n = this.analysed.len()
-        if n == 0 { this.prelude_checked.vars.clone() } else { this.analysed[n - 1].checked.vars.clone() }
-    }
-
-    /// Takes the program's arenas out (for lowering); `put_arenas` gives them back.
-    pub fun take_arenas(&mut this) -> hir.Arenas {
-        let n = this.analysed.len()
-        if n == 0 {
-            return hir.Arenas { syms: this.prelude.symbols.clone(), scopes: this.prelude.scopes.clone(), vars: this.prelude_checked.vars.clone() }
-        }
-        hir.Arenas {
-            syms: this.analysed[n - 1].res.symbols.drain(), scopes: this.analysed[n - 1].res.scopes.drain(),
-            vars: this.analysed[n - 1].checked.vars.drain(),
-        }
-    }
-
-    pub fun put_arenas(&mut this, arenas: hir.Arenas) {
-        let n = this.analysed.len()
-        if n == 0 {
-            return
-        }
-        var a = arenas
-        this.analysed[n - 1].res.symbols = a.syms.drain()
-        this.analysed[n - 1].res.scopes = a.scopes.drain()
-        this.analysed[n - 1].checked.vars = a.vars.drain()
-    }
-
     pub fun file_count(&this) -> int {
         var n = 0
         for i in this.order.iter() {
@@ -159,9 +127,10 @@ pub async fun load_program(entry: &str, std_dir: &str, opts: LoadOptions) -> Res
     var l = Loader { opts, std_dir: std, cwd: cwd.clone(), next_id: parsed.next_id, prelude_file: parsed.file, prelude, prelude_checked }
     let path = resolve_from(cwd, entry)
     let main = if await is_dir(path) { await l.load_folder(path) } else { await l.load_file(path) }
+    let shared = l.freeze()
     Ok(Program {
         main, packages: l.packages, order: l.ordered, analysed: l.analysed, diagnostics: l.diagnostics,
-        prelude_file: l.prelude_file, prelude: l.prelude, prelude_checked: l.prelude_checked, std_dir: l.std_dir, cwd,
+        prelude_file: l.prelude_file, prelude: l.prelude, prelude_checked: l.prelude_checked, std_dir: l.std_dir, cwd, shared,
     })
 }
 
@@ -191,6 +160,29 @@ fun package_name_of(f: &File) -> string {
 fun dotted(rel: &str) -> string { rel.split("/").join(".") }
 
 impl Loader {
+    /// Everything is analysed: the program's arenas (they moved on to the last analysed package) are
+    /// final, and the side tables are merged once, as `Ref`s that lowering and the back end read.
+    fun freeze(&mut this) -> hir.Shared {
+        var moves = Set.new() as Set[int]
+        for d in this.analysed.iter() {
+            for id in d.moves.iter() {
+                let _ = moves.insert(id)
+            }
+        }
+        let tables = hir.merge_program_tables(this.prelude, this.analysed)
+        let n = this.analysed.len()
+        if n == 0 {
+            return hir.Shared {
+                syms: Ref(this.prelude.symbols.clone()), scopes: Ref(this.prelude.scopes.clone()),
+                vars: Ref(this.prelude_checked.vars.clone()), tables: Ref(tables), moves: Ref(moves),
+            }
+        }
+        hir.Shared {
+            syms: Ref(this.analysed[n - 1].res.symbols.drain()), scopes: Ref(this.analysed[n - 1].res.scopes.drain()),
+            vars: Ref(this.analysed[n - 1].checked.vars.drain()), tables: Ref(tables), moves: Ref(moves),
+        }
+    }
+
     /// A folder's `.ms` files (with the in-memory ones), sorted, without `*_test.ms` unless it is the
     /// folder under test.
     async fun source_files(&this, dir: &str) -> Vec[string] {
@@ -461,10 +453,25 @@ impl Loader {
     }
 
     fun analyse(&mut this, pkg: int) {
-        let p = this.packages[pkg].clone()
-        let asts = p.files.map(#{ f => f.parsed.file.clone() })
+        // the files' syntax trees move to the analysed package (nothing reads them from `packages` after
+        // loading); the source files keep their paths and parse diagnostics
+        var asts = [] as Vec[File]
+        var paths = [] as Vec[string]
+        var parse_diags = [] as Vec[FileDiagnostic]
+        var k = 0
+        for k < this.packages[pkg].files.len() {
+            let path = this.packages[pkg].files[k].path.clone()
+            for d in this.packages[pkg].files[k].parsed.diagnostics.iter() {
+                parse_diags.push(FileDiagnostic { file: path.clone(), code: d.code.clone(), message: d.message.clone(), span: d.span, pass: "parse" })
+            }
+            let f = &mut this.packages[pkg].files[k].parsed.file
+            asts.push(File { id: f.id, span: f.span, package_path: f.package_path.clone(), imports: f.imports.drain(), items: f.items.drain() })
+            paths.push(path)
+            k += 1
+        }
+        let name = this.packages[pkg].name.clone()
         var imports = m{} as Map[int, LoadedImport]
-        for link in p.links.iter() {
+        for link in this.packages[pkg].links.iter() {
             let slot = this.packages[link.dep].slot
             if slot < 0 {
                 continue
@@ -474,10 +481,9 @@ impl Loader {
                 item: link.item.clone(), items: link.items.clone(), glob: link.glob,
             }
         }
-        // this package continues the arenas of the one analysed before it (copied once: that one keeps its own)
         // the arenas move on from the package analysed before (only the last package holds them)
         let n = this.analysed.len()
-        let opts = ResolveOptions { package_name: p.name.clone() }
+        let opts = ResolveOptions { package_name: name }
         var res = if n == 0 {
             resolve_loaded(asts, this.prelude, this.prelude.symbols.clone(), this.prelude.scopes.clone(), imports, opts)
         } else {
@@ -489,22 +495,18 @@ impl Loader {
         let vars = if n == 0 { this.prelude_checked.vars.clone() } else { this.analysed[n - 1].checked.vars.drain() }
         var checked = check_loaded(asts, res, this.prelude_file, this.prelude, this.analysed, reach, vars)
         let owned = check_ownership(asts, res, checked)
-        for f in p.files.iter() {
-            for d in f.parsed.diagnostics.iter() {
-                this.diagnostics.push(FileDiagnostic { file: f.path.clone(), code: d.code.clone(), message: d.message.clone(), span: d.span, pass: "parse" })
-            }
-        }
+        this.diagnostics.extend(parse_diags)
         var spans = [] as Vec[Set[string]]
-        if p.files.len() > 1 {
-            for f in p.files.iter() {
-                spans.push(collect_spans(f.parsed.file))
+        if asts.len() > 1 {
+            for f in asts.iter() {
+                spans.push(collect_spans(f))
             }
         }
-        let passes = [t("resolve", res.diagnostics.clone()), t("check", checked.diagnostics.clone()), t("ownership", owned.diagnostics.clone())]
+        let passes = [t("resolve", res.diagnostics.clone()), t("check", checked.diagnostics.clone()), t("ownership", owned.diagnostics)]
         for entry in passes.iter() {
             let t(pass, list) = entry
             for d in list.iter() {
-                let file = attribute(d.span, p.files, spans)
+                let file = attribute(d.span, paths, spans)
                 this.diagnostics.push(FileDiagnostic { file, code: d.code.clone(), message: d.message.clone(), span: d.span, pass: pass.to_str() })
             }
         }
@@ -514,19 +516,19 @@ impl Loader {
 }
 
 /// Which file of a package a resolver / checker diagnostic belongs to: the one with a node at that span.
-fun attribute(span: Span, files: &Vec[SourceFile], spans: &Vec[Set[string]]) -> string {
-    if files.len() == 1 {
-        return files[0].path.clone()
+fun attribute(span: Span, paths: &Vec[string], spans: &Vec[Set[string]]) -> string {
+    if paths.len() == 1 {
+        return paths[0].clone()
     }
     let key = "${span.start}:${span.end}:${span.line}"
     var i = 0
-    for i < files.len() {
+    for i < paths.len() {
         if spans[i].has(key) {
-            return files[i].path.clone()
+            return paths[i].clone()
         }
         i += 1
     }
-    files[0].path.clone()
+    paths[0].clone()
 }
 
 /// How a file is named in panic locations: std files as `std/…`, others relative to the current folder.
@@ -541,18 +543,11 @@ fun display_path(p: &Program, path: &str) -> string {
 
 /// Lowers every package of a loaded program into one HIR program: the prelude's functions written in
 /// MinScript (spec §10.1), then each package, dependencies first.
-pub fun lower_program(p: &mut Program) -> hir.Program {
-    let own = hir.Arenas { syms: p.prelude.symbols.clone(), scopes: p.prelude.scopes.clone(), vars: p.prelude_checked.vars.clone() }
-    let t(prelude, _) = hir.lower_loaded([p.prelude_file.clone()], p.prelude, p.prelude_checked, p.prelude_file, p.prelude, "std", [], [], ["std/prelude.ms"], 0, own)
+pub fun lower_program(p: &Program) -> hir.Program {
+    // the prelude is lowered with its own arenas; every package with the program's
+    let own = hir.package_shared(p.prelude, p.prelude, p.prelude_checked, Set.new())
+    let prelude = hir.lower_loaded([p.prelude_file.clone()], p.prelude, p.prelude_checked, p.prelude_file, p.prelude, "std", [], [], ["std/prelude.ms"], 0, own)
     var out = hir.Program { funs: prelude.funs.filter(#{ f => !f.builtin }) }
-    // every package is lowered with the program's arenas (the last package's), handed from one to the next
-    var arenas = p.take_arenas()
-    arenas.tables = [hir.merge_program_tables(p.prelude, p.analysed)]
-    for d in p.analysed.iter() {
-        for id in d.moves.iter() {
-            let _ = arenas.moves.insert(id)
-        }
-    }
     var temps = prelude.temps
     for i in p.order.iter() {
         let pkg = &p.packages[i]
@@ -569,14 +564,12 @@ pub fun lower_program(p: &mut Program) -> hir.Program {
         }
         let names = pkg.files.map(#{ f => display_path(p, f.path) })
         let a = &p.analysed[pkg.slot]
-        let t(lowered, back) = hir.lower_loaded(a.files, a.res, a.checked, p.prelude_file, p.prelude, pkg.name, p.analysed, reach, names, temps, arenas)
-        arenas = back
+        let lowered = hir.lower_loaded(a.files, a.res, a.checked, p.prelude_file, p.prelude, pkg.name, p.analysed, reach, names, temps, p.shared)
         temps = lowered.temps
         out.types.extend(lowered.types)
         out.funs.extend(lowered.funs)
         out.globals.extend(lowered.globals)
     }
-    p.put_arenas(arenas)
     out.temps = temps
     out
 }

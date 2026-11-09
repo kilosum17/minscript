@@ -186,6 +186,21 @@ fun reassign_ref_while_lent() {
     log.println(view.len())
 }
 
+fun return_match_binding_of_local() -> &str {
+    let slots = [Some("x".to_str())]
+    match &slots[0] {                           //~ E_RETURN_LOCAL_BORROW
+        Some(b) => b
+        None => ""
+    }
+}
+
+fun move_out_of_matched_borrow(slots: &Vec[Vec[int]?]) -> Vec[int] {
+    match &slots[0] {
+        Some(v) => v                            //~ E_MOVE_OUT_OF_BORROW
+        None => []
+    }
+}
+
 fun return_borrow_of_owned_param(s: string) -> &str {
     s.trim()                                    //~ E_RETURN_LOCAL_BORROW
 }

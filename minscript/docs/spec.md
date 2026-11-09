@@ -990,6 +990,7 @@ Call sites never write `&`; the LSP shows hints. `&mut this` methods need a `var
    - captured by value into escaping closures,
    - held across an un-awaited async call (§9.6).
 4. A function may **return** a scoped value only when it derives from its receiver or borrowed parameters. The caller treats the result as borrowing from every borrowed argument (conservative, no annotations).
+   - The bindings of a pattern matched against a borrowed place (`match &x.f { Some(v) => … }`, `if let Some(v) = &x[i]`) borrow from it: they can be returned when `x` is a borrowed parameter, and moving them out is `E_MOVE_OUT_OF_BORROW` (write `.clone()`).
    - A handle binding isn't borrowed by being passed around (it is cloned), but a borrow a handle's method returns (`r.get()`, §9.9) does borrow from it: it may be returned only from a `&Ref[T]` parameter, the receiver or a global, and reassigning the handle variable while the borrow is live is `E_BORROW_CONFLICT`. Writing *through* the handle (`set`, `update`) is fine: the borrow keeps its snapshot.
 5. Each scoped value's set of owners is inferred inside the function body. Using an owner mutably while a scoped value derived from it is still live is an error.
 6. To keep a value beyond its owner's scope, convert it to an owned one: `.to_str()`, `.to_vec()`, `.clone()`.

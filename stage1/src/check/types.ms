@@ -203,29 +203,29 @@ pub fun widens(from: &str, to: &str) -> bool {
 }
 
 /// Follows bound inference variables.
-pub fun prune_ty(t: &Ty, vars: &Vec[VarState]) -> Ty {
-    var cur = t.clone()
-    for {
-        let id = var_of(cur)
-        if id < 0 {
-            return cur
-        }
-        match &vars[id].bound {
-            Some(b) => cur = b.clone()
-            None => return cur
-        }
+pub fun prune_ty(t: &Ty, vars: &Vec[VarState]) -> Ty { pruned(t, vars).clone() }
+
+/// `prune_ty` without the copy: the type a variable chain ends in, in place.
+pub fun pruned(t: &Ty, vars: &Vec[VarState]) -> &Ty {
+    let id = var_of(t)
+    if id < 0 {
+        return t
+    }
+    match &vars[id].bound {
+        Some(b) => pruned(b, vars)
+        None => t
     }
 }
 
 /// Removes borrows: `&mut &T` → `T`.
-pub fun strip_ty(t: &Ty, vars: &Vec[VarState]) -> Ty {
-    var cur = prune_ty(t, vars)
-    for {
-        let next = match &cur {
-            TyRef { inner, .. } => prune_ty(inner.get(), vars)
-            _ => return cur
-        }
-        cur = next
+pub fun strip_ty(t: &Ty, vars: &Vec[VarState]) -> Ty { stripped(t, vars).clone() }
+
+/// `strip_ty` without the copy.
+pub fun stripped(t: &Ty, vars: &Vec[VarState]) -> &Ty {
+    let p = pruned(t, vars)
+    match p {
+        TyRef { inner, .. } => stripped(inner.get(), vars)
+        _ => p
     }
 }
 

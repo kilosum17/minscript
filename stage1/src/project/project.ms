@@ -381,7 +381,7 @@ pub async fun compile_to_js(tc: &Toolchain, entry: &str, opts: LoadOptions, entr
 /// `compile_to_js`, importing the runtime from `runtime_url`.
 pub async fun compile_with(tc: &Toolchain, entry: &str, opts: LoadOptions, entry_fn: &str, in_package: bool, runtime_url: &str) -> Compiled {
     let loaded = await load_program(entry, tc.std_dir, opts)
-    var program = loaded or e => {
+    let program = loaded or e => {
         return Compiled { js: None, diagnostics: [FileDiagnostic { file: entry.to_str(), code: "E_LOAD", message: e, span: r{ start: 0, end: 0, line: 1, col: 1 }, pass: "load" }] }
     }
     if !program.diagnostics.is_empty() {
@@ -391,5 +391,5 @@ pub async fun compile_with(tc: &Toolchain, entry: &str, opts: LoadOptions, entry
     let fn_name = if in_package && pkg != "main" { "${pkg}.${entry_fn}" } else { entry_fn.to_str() }
     var lowered = lower_program(program)
     hir.compute_witnesses(lowered)
-    Compiled { js: Some(js.emit_js(lowered, program.syms(), program.vars(), runtime_url, fn_name)), diagnostics: [] }
+    Compiled { js: Some(js.emit_js(lowered, program.shared.syms, program.shared.vars, runtime_url, fn_name)), diagnostics: [] }
 }

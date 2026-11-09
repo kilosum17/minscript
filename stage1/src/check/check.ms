@@ -452,7 +452,7 @@ impl Checker {
     fun strip(&this, t: &Ty) -> Ty { strip_ty(t, this.vars) }
     fun show(&this, t: &Ty) -> string { show_ty(t, this.vars, this.syms) }
     fun subst(&this, t: &Ty, env: &Map[int, Ty]) -> Ty { subst_ty(t, env, this.vars) }
-    fun ptag(&this, t: &Ty) -> string { tag(prune_ty(t, this.vars)) }
+    fun ptag(&this, t: &Ty) -> string { tag(pruned(t, this.vars)) }
 
     fun fresh(&mut this) -> Ty {
         this.vars.push(VarState { bound: None, lit: None })

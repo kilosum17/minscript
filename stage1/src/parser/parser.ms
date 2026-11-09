@@ -20,7 +20,10 @@ pub type ParseResult = {
     pub file: File
     /// lexer diagnostics first, then parser diagnostics
     pub diagnostics: Vec[Diagnostic]
+    /// the lexer's result (its tokens are in `tokens`)
     pub lexed: LexResult
+    /// the tokens, shared with the parser that read them (never written)
+    pub tokens: Ref[Vec[Token]]
     /// the first node id after this file's: the next file of a program starts there (ids are unique
     /// across the files of a program, since the passes key their side tables by id)
     pub next_id: int
@@ -33,13 +36,12 @@ pub fun parse(src: Vec[u8]) -> ParseResult {
 /// Parses a file whose node ids start after `first_id`.
 pub fun parse_from(src: Vec[u8], first_id: int) -> ParseResult {
     var lexed = lex(src)
-    // the parser borrows the tokens (moved in and back, not copied)
-    var p = Parser { t: lexed.tokens.drain(), next_id: first_id }
+    // the tokens move into a `Ref` the parser reads them through (no copies)
+    var p = Parser { t: Ref(lexed.tokens.drain()), next_id: first_id }
     let file = p.parse_file()
-    lexed.tokens = p.t.drain()
     var diagnostics = lexed.diagnostics.clone()
     diagnostics.extend(p.diagnostics)
-    ParseResult { file, diagnostics, lexed, next_id: p.next_id + 1 }
+    ParseResult { file, diagnostics, lexed, tokens: p.t, next_id: p.next_id + 1 }
 }
 
 /// Returned by `fail()` after reporting: carried with `?` to a recovery boundary.
@@ -232,7 +234,8 @@ type Members = {
 
 pub type Parser = {
     pub diagnostics: Vec[Diagnostic] = []
-    t: Vec[Token]
+    /// the tokens (read-only; borrowed in place with `this.t.get()[i]`)
+    t: Ref[Vec[Token]]
     i: int = 0
     prev_end: int = 0
     /// newlines end expressions (inside `{…}`)
@@ -254,28 +257,28 @@ pub type Parser = {
         this.next_id
     }
 
-    fun cur(&this) -> Token { this.t[this.i].clone() }
+    fun cur(&this) -> Token { this.t.get()[this.i].clone() }
     /// The current token's span (without copying the token).
-    fun cur_span(&this) -> Span { this.t[this.i].span }
-    fun kind(&this) -> string { this.t[this.i].kind.clone() }
+    fun cur_span(&this) -> Span { this.t.get()[this.i].span }
+    fun kind(&this) -> string { this.t.get()[this.i].kind.clone() }
     fun peek(&this, k: int) -> Token {
-        let at = if this.i + k < this.t.len() { this.i + k } else { this.t.len() - 1 }
-        this.t[at].clone()
+        let at = if this.i + k < this.t.get().len() { this.i + k } else { this.t.get().len() - 1 }
+        this.t.get()[at].clone()
     }
-    fun at(&this, kind: &str) -> bool { this.t[this.i].kind == kind }
-    fun nl(&this) -> bool { this.t[this.i].nl_before }
+    fun at(&this, kind: &str) -> bool { this.t.get()[this.i].kind == kind }
+    fun nl(&this) -> bool { this.t.get()[this.i].nl_before }
 
     /// `advance` without the token.
     fun skip(&mut this) {
-        let end = this.t[this.i].span.end
-        if this.t[this.i].kind != "EOF" {
+        let end = this.t.get()[this.i].span.end
+        if this.t.get()[this.i].kind != "EOF" {
             this.i += 1
         }
         this.prev_end = end
     }
 
     fun advance(&mut this) -> Token {
-        let tok = this.t[this.i].clone()
+        let tok = this.t.get()[this.i].clone()
         if tok.kind != "EOF" {
             this.i += 1
         }
@@ -308,8 +311,8 @@ pub type Parser = {
     }
 
     fun jump_to(&mut this, index: int) {
-        this.i = if index < this.t.len() - 1 { index } else { this.t.len() - 1 }
-        this.prev_end = if this.i > 0 { this.t[this.i - 1].span.end } else { 0 }
+        this.i = if index < this.t.get().len() - 1 { index } else { this.t.get().len() - 1 }
+        this.prev_end = if this.i > 0 { this.t.get()[this.i - 1].span.end } else { 0 }
     }
 
     /// The span from `start` to the end of the last consumed token.
@@ -323,12 +326,12 @@ pub type Parser = {
     }
 
     fun closer_index(&this, opener: &Token) -> int {
-        opener.closer ?? this.t.len() - 1
+        opener.closer ?? this.t.get().len() - 1
     }
 
     /// The index after the token at `k`: past its closer, if it is an opener.
     fun skip_index(&this, k: int) -> int {
-        match this.t[k].closer {
+        match this.t.get()[k].closer {
             Some(c) => if c > k { c + 1 } else { k + 1 }
             None => k + 1
         }
@@ -337,7 +340,7 @@ pub type Parser = {
     // ---- diagnostics ----
 
     fun report(&mut this, code: &str, message: string) {
-        let span = this.t[this.i].span
+        let span = this.t.get()[this.i].span
         this.report_at(code, message, span)
     }
 
@@ -348,7 +351,7 @@ pub type Parser = {
     /// E_OPEN_BRACE_NEWLINE, reported at the end of the header (the line the `{` belongs on).
     fun report_brace_newline(&mut this, message: string) {
         let at = if this.i > 0 { this.i - 1 } else { 0 }
-        let span = this.t[at].span
+        let span = this.t.get()[at].span
         this.report_at("E_OPEN_BRACE_NEWLINE", message, span)
     }
 
@@ -381,7 +384,7 @@ pub type Parser = {
     fun sync_from(&mut this, start: int, end: int, err_at: int, stop: &str) {
         var k = start
         for k < end {
-            let tok = &this.t[k]
+            let tok = &this.t.get()[k]
             let stops = match stop {
                 "item" => item_start(tok.kind)
                 "comma" => tok.kind == ","
@@ -419,7 +422,7 @@ pub type Parser = {
 
         var imports = [] as Vec[Import]
         var items = [] as Vec[Item]
-        let eof = this.t.len() - 1
+        let eof = this.t.get().len() - 1
         for !this.at("EOF") {
             let item_start_at = this.i
             if this.at(";") {
@@ -533,7 +536,7 @@ pub type Parser = {
             "attributes (`@name`) are reserved for a future version",
             at.span,
         )
-        if this.at("Ident") && !this.t[this.i].ws_before {
+        if this.at("Ident") && !this.t.get()[this.i].ws_before {
             this.skip()
         }
         if this.at("(") && !this.nl() {
@@ -587,7 +590,7 @@ pub type Parser = {
             "E_TOP_LEVEL_STATEMENT",
             "only declarations are allowed at the top level; move this into a function",
         )
-        this.sync_from(this.i, this.t.len() - 1, this.i + 1, "item")
+        this.sync_from(this.i, this.t.get().len() - 1, this.i + 1, "item")
         this.sync_to_item_start()
         Ok(None)
     }
@@ -1216,9 +1219,9 @@ pub type Parser = {
                     path.push(text_of(this.advance()))
                 }
                 var args = [] as Vec[Type]
-                if this.at("[") && !this.t[this.i].ws_before {
+                if this.at("[") && !this.t.get()[this.i].ws_before {
                     args = this.parse_type_args()?
-                } else if this.at("<") && !this.t[this.i].ws_before {
+                } else if this.at("<") && !this.t.get()[this.i].ws_before {
                     args = this.parse_angle_args()?
                 }
                 Ok(this.mk_type(start, TName { path, args }))
