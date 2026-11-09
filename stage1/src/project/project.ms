@@ -230,8 +230,11 @@ pub async fun evaluate_config(tc: &Toolchain, mod_file: &str) -> Evaluated {
     Evaluated { config: Some(from_described(v)), diagnostics: [], error: None }
 }
 
+/// Set by the language server: stdout is its protocol, so what `config()` prints isn't passed on.
+pub let QUIET = Ref(false)
+
 fun io_print(text: &str) {
-    if !text.is_empty() {
+    if !text.is_empty() && !QUIET.get() {
         io.print(text)
     }
 }
@@ -356,15 +359,21 @@ fun task_harness(name: &str) -> string {
     ].join("\n")
 }
 
-/// Runs the `task` script `name` of the project whose mod.ms is `mod_file`; the result is the exit code.
-pub async fun run_task(tc: &Toolchain, mod_file: &str, name: &str, args: &Vec[string]) -> int {
+/// The program that runs the `task` script `name` of the project whose mod.ms is `mod_file` (None, with
+/// the diagnostics printed: it doesn't compile).
+pub async fun task_command_js(tc: &Toolchain, mod_file: &str, name: &str) -> string? {
     var extra = m{} as Map[string, string]
     extra[harness_path(mod_file)] = task_harness(name)
     let compiled = await compile_to_js(tc, mod_file, LoadOptions { extra }, "ms_task_main", true)
-    let Some(code) = compiled.js else {
+    if compiled.js.is_none() {
         print_diagnostics(tc, compiled.diagnostics)
-        return 1
     }
+    compiled.js
+}
+
+/// Runs the `task` script `name` of the project whose mod.ms is `mod_file`; the result is the exit code.
+pub async fun run_task(tc: &Toolchain, mod_file: &str, name: &str, args: &Vec[string]) -> int {
+    let Some(code) = await task_command_js(tc, mod_file, name) else { return 1 }
     let r = await runtime.run_module_result(code, args, false)
     if r.code != 0 { r.code } else { r.value }
 }

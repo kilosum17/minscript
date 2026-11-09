@@ -9,9 +9,13 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 out=$(mktemp -d)
-# stage 1 is compiled once (by stage 0, from the current sources) and run with the runtime's host
-ms js . > "$out/stage1.mjs" || { echo "stage 0 can't compile stage 1"; exit 1; }
-s1="node $(pwd)/../minscript/src/js/exec.ts $out/stage1.mjs"
+# stage 1 is compiled once (by the seed, from the current sources) and run with its own runtime; it
+# analyses with stage 0's std (so both compilers see the same prelude), and its `js` output imports
+# stage 0's runtime (so the JavaScript compares as text)
+node bin/ms1.js js --runtime "file://$(pwd)/runtime/runtime.ts" . > "$out/stage1.mjs" || { echo "the seed can't compile stage 1"; exit 1; }
+export MS_STD="$(pwd)/../minscript/std" MS_RUNTIME="$(pwd)/runtime/runtime.ts"
+stage0_runtime="file://$(cd ../minscript && pwd)/src/js/runtime.ts"
+s1="node $(pwd)/runtime/exec.ts $out/stage1.mjs"
 files=$(find ../minscript/std ../minscript/test src -name '*.ms' | sort)
 count=$(echo "$files" | wc -l)
 status=0
@@ -41,8 +45,9 @@ compare ownership "ms ownership" "$s1 ownership --prelude ../minscript/std/prelu
 compare lowering "ms hir" "$s1 hir --prelude ../minscript/std/prelude.ms"
 
 # Whole programs (the loader, every pass on every package, the JS back end): `ms check`, `ms js` and
-# `ms run` on every runnable entry, stage 1 itself included (stage 1 compiling stage 1).
-entries="$(ls ../minscript/test/run/*.ms ../minscript/test/programs/*.ms ../minscript/test/packages/*/main.ms ../minscript/test/packages/errors/*/main.ms) ../minscript/test/projects/basic ../minscript/test/projects/plain ../minscript/test/projects/shared ../minscript/test/projects/script_in_eval ."
+# `ms run` on every runnable entry. (Stage 1 itself isn't an entry any more: it needs its own std,
+# which stage 0 doesn't have; its corpus, `ms1 corpus`, compiles and checks it.)
+entries="$(ls ../minscript/test/run/*.ms ../minscript/test/programs/*.ms ../minscript/test/packages/*/main.ms ../minscript/test/packages/errors/*/main.ms) ../minscript/test/projects/basic ../minscript/test/projects/plain ../minscript/test/projects/shared ../minscript/test/projects/script_in_eval"
 compare_programs() {   # compare_programs <pass> <stage-0 command> <stage-1 command>
     local pass=$1 n=0
     : > "$out/$pass.0.all"; : > "$out/$pass.1.all"
@@ -62,13 +67,11 @@ compare_programs() {   # compare_programs <pass> <stage-0 command> <stage-1 comm
     fi
 }
 compare_programs check-programs "ms check" "$s1 check --std ../minscript/std"
-compare_programs js-programs "ms js" "$s1 js --std ../minscript/std"
+compare_programs js-programs "ms js" "$s1 js --std ../minscript/std --runtime $stage0_runtime"
 compare_programs run-programs "ms run" "$s1 run --std ../minscript/std"
 # Projects and the commands around them (src/project/): `ms config`, scripts, `ms test`, each typed in
 # the folder it is about (scripts and `ms test` look for the project there). Test timings are
-# normalized. Stage 1 finds std through MS_STD, so a script's own `--` arguments reach it untouched.
-stage1=$(pwd)
-export MS_STD="$stage1/../minscript/std"
+# normalized. Stage 1 finds std through MS_STD (above), so a script's own `--` arguments reach it untouched.
 commands=(
     "../minscript/test/projects/basic|config"
     "../minscript/test/projects/basic|run"
@@ -85,7 +88,6 @@ commands=(
     "../minscript|test std test/prelude test/projects"
     "../minscript|test test/testing/failing"
     "../minscript|test test/testing/failing --run passes --reporter dots"
-    ".|test"
 )
 : > "$out/projects.0.all"; : > "$out/projects.1.all"
 for entry in "${commands[@]}"; do

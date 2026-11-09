@@ -1,5 +1,7 @@
 # MinScript
 
+> **Stage 0 is frozen.** The toolchain now lives in `../stage1/` (MinScript written in MinScript, with its own copy of the runtime, std, spec, corpus and VS Code extension; see its CLAUDE.md). Don't add features or fix bugs here: this TypeScript compiler stays only as a reference for `../stage1/tools/difftest.sh` and `lsp_compare.mjs`, until it is deleted.
+
 MinScript is a language that aims for TypeScript-style concision, Rust-style ownership (with no lifetime annotations) and Go-style simplicity. This folder is the spec-first restart. The deterministic, hand-written TypeScript lexer (`src/lexer.ts`) and the recursive-descent + Pratt parser (`src/parser.ts`) name resolution (`src/resolve.ts`, single package) a first type checker (`src/check.ts`, spec §9.12) a first ownership pass (`src/ownership.ts`, spec §9.13) lowering to HIR (`src/lower.ts`, spec §14.1) a first JS back end (`src/js/`, spec §14.2: `npm run run -- file.ms`), package loading (`src/loader.ts`, spec §8.1), the first std packages (`std/*/`, spec §10.4) and projects (`mod.ms` evaluated by `src/project.ts`, spec §17: `npm run run -- test/projects/basic`, `npm run config -- dir`) are done. Next candidates: registry/git dependencies and `mod.lock`, the §17.5 sandbox, `std.net.http`, more std, and the JS gaps listed in §14.2.
 
 ## Boundaries

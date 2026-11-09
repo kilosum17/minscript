@@ -19,10 +19,6 @@
 //   and its main package runs (`run.out`); `script_in_eval` must fail with E_SCRIPT_IN_EVAL;
 // - `ms test` (src/test_runner.ts): std's own tests (std/**/*_test.ms) and test/projects' pass, and
 //   test/testing/failing reports its failures as in `report.out`;
-// - ../stage1 (the self-hosted compiler): it checks cleanly, its tests pass, and its lexer, parser,
-//   resolver, checker, ownership pass and lowering produce exactly stage 0's output (dumps and
-//   diagnostics) on every file, and its loader and JS back end compile every runnable program (stage 1
-//   itself included) to exactly stage 0's JavaScript;
 // - `ms fmt` (src/fmt.ts): every valid file formats to the same AST, keeps its comments, and formatting
 //   again changes nothing; test/fmt/*.ms format to their `.fmt` snapshot.
 //
@@ -354,6 +350,39 @@ describe("ms test", () => {
         const r = await runTests(join(root, "testing", "failing"), { onOutput: quiet(lines), filter: "passes" })
         assert.deepEqual([r.failed, lines.filter((l) => /^(ok|FAIL) /.test(l)).length], [0, 1])
     })
+})
+
+/** A `;` means something only after a block's last statement (spec §5.4): forget the others. */
+function semis<T>(node: T): T {
+    const seen = new Set<object>()
+    const visit = (x: unknown): void => {
+        if (typeof x !== "object" || x === null || seen.has(x)) return
+        seen.add(x)
+        const stmts = (x as { stmts?: unknown }).stmts
+        if (Array.isArray(stmts)) stmts.slice(0, -1).forEach((s) => { if (s && typeof s === "object" && "semi" in s) (s as { semi: boolean }).semi = false })
+        for (const v of Object.values(x)) visit(v)
+    }
+    visit(node)
+    return node
+}
+
+describe("ms fmt (src/fmt.ts)", () => {
+    const valid = [...msFiles(STD_DIR), ...msFiles(root).filter((f) => !f.includes(`${join(root, "errors")}/`))]
+    for (const file of valid) {
+        const src = readFileSync(file, "utf8")
+        if (parse(src).diagnostics.length > 0) continue
+        test(`round trip: ${file.startsWith(STD_DIR) ? `std/${relative(STD_DIR, file)}` : rel(file)}`, () => {
+            const out = format(src).text!
+            const before = parse(src), after = parse(out)
+            assert.deepEqual(fmt(after.diagnostics), [], "the output parses")
+            assert.equal(printFile(semis(after.file)), printFile(semis(before.file)), "same AST")
+            assert.deepEqual(after.lex.trivia.map((t) => t.text.trim()), before.lex.trivia.map((t) => t.text.trim()), "every comment, in order")
+            assert.equal(format(out).text, out, "idempotent")
+        })
+    }
+    for (const file of msFiles(join(root, "fmt"))) {
+        test(`snapshot: ${rel(file)}`, () => snapshot(file, ".fmt", format(readFileSync(file, "utf8")).text!))
+    }
 })
 
 /** A `;` means something only after a block's last statement (spec §5.4): forget the others. */

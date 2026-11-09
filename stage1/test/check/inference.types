@@ -1,0 +1,110 @@
+10:21   rhs: Money
+20:22   r: f64
+21:20   s: f64
+31:25   v: T
+35:17   v: T
+36:16   a: A
+36:22   b: B
+39:9    a: int
+40:9    b: f64
+41:9    c: u8
+42:5    d: i64
+43:9    e: int
+44:9    f: f64
+45:9    s: string
+46:9    ch: char
+47:9    flag: bool
+51:9    v: Vec[int]
+52:9    names: Vec[string]
+53:9    empty: Vec[Point]
+54:9    later: Vec[Point]
+56:9    m: Map[string, int]
+57:9    set: Set[f64]
+58:9    tup: t(int, string, bool)
+59:9    first: int
+60:9    arr: Array[int, 3]
+61:9    rec: r{ age: int, name: string }
+62:9    age: int
+65:27   items: Vec[int]
+66:9    same: string
+67:9    p: t(int, string)
+68:9    doubled: Vec[int]
+68:32   it: &int
+69:9    labels: Vec[string]
+69:31   n: &int
+69:34   i: int
+70:9    big: Vec[int]
+70:31   it: &int
+71:9    total: int
+71:34   acc: int
+71:39   n: &int
+72:9    any_big: bool
+72:32   it: &int
+73:9    adder: (int, int) -> int
+73:20   a: int
+73:28   b: int
+74:9    seven: int
+77:13   users: Vec[Point]
+77:32   key: string
+77:45   cache: Map[string, int]
+78:9    first: Point?
+79:9    x: int
+80:9    hit: int
+81:9    found: int
+82:9    parsed: int
+83:9    maybe: int?
+83:39   it: int
+88:9    p: Point
+89:9    q: Point
+90:9    moved: Point
+91:9    shapes: Vec[Shape]
+92:9    s: Shape
+93:9    stack: Stack[string]
+95:9    top: string?
+96:9    wallet: Money
+100:18  n: int
+100:26  o: int?
+101:9   label: string
+102:9   size: string
+107:9   inner: int
+107:32  v: int
+108:9   i: int
+108:25  sq: int
+109:9   k: string
+109:12  v: int
+109:35  both: string
+110:9   item: string
+110:15  idx: int
+110:39  line: string
+111:9   found: int
+118:9   room: Topic[string]
+119:9   sub: Sub[string]
+121:9   online: Signal[int]
+122:9   now: int
+122:32  c: &mut int
+123:11  ready: Promise[int]
+123:18  resolver: Resolver[int]
+125:9   v: int
+126:9   got: int
+127:14  msg: string
+130:9   counter: Ref[int]
+131:23  c: &mut int
+138:23  n: int
+139:9   s: Shape2
+143:9   t2: Shape2
+146:14  k: int
+151:19  c: bool
+152:9   narrow: i32
+153:9   wide: i64
+154:9   either: i64
+162:9   names: Vec[string]
+163:9   ages: Map[string, int]
+164:9   maybe: int?
+169:22  p: Shape2
+170:9   same: bool
+171:9   apply: ((int) -> void) -> void
+171:20  f: (int) -> void
+175:10  x: int
+179:17  n: int
+180:9   stopped: void
+183:9   spins: never

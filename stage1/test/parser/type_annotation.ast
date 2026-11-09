@@ -1,0 +1,30 @@
+(file parser_type_annotation
+  (fun annotations
+    (params)
+    (block
+      (:= g (as (vec) (Vec (Map string int))))
+      (let ids (as (vec) (Vec u64)))
+      (:== seen (as (set) (Set string)))
+      (var cache (as (map) (Map string User)))
+      (:= grid (as (array) (Array i32 0)))
+      (let g2 (Vec (Map string int)) (vec))
+      (:= owner (as nil (Option User)))
+      (let parent (as nil (Option (Box (Node int)))))
+      (:= timeout (as 500 u16))
+      (let ratio (as 0.5 f32))
+      (:== mask (as 255 u8))
+      (:= cfg (as (_ (host "localhost") (port 80)) Config))
+      (let user (as (call (. json parse) raw) (Result User json.Error)))
+      (:= handlers (as (map) (Map string (fn (params Request) Response))))
+      (:= total (call sum (as (vec) (Vec int))))
+      (let pairs (as (vec (tuple 1 "a")) (Vec (t i64 string))))
+      (:= users (call (. (paren (?? (call load) (as (vec) (Vec User)))) len)))))
+  (fun casts
+    (params (big i64) (count int) (total int) (p (* u8)))
+    (block
+      (let small (as big u8))
+      (:= r (/ (as count f64) (as total f64)))
+      (let addr (as p usize))
+      (:= neg (as (- big) i32))
+      (let chained (as (as big i32) f64))
+      (var widened (+ (as count i64) 1)))))

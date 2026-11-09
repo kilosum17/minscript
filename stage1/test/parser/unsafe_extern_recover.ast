@@ -1,0 +1,42 @@
+(file parser_unsafe_extern_recover
+  (extern "C"
+    (fun malloc pub (params (size usize)) (-> (*mut u8)))
+    (fun free pub (params (ptr (*mut u8))))
+    (fun open pub (params (path (* u8)) (flags i32) (mode i32)) (-> i32))
+    (fun getpid (params) (-> i32)))
+  (fun open_fd pub
+    (params (path string))
+    (-> (Result i32 string))
+    (block
+      (let fd (unsafe (block (call open (call (. path as_ptr)) 0 0))))
+      (if (< fd 0) (block (return (call Err (template "Failed to open file descriptor: " fd "")))))
+      (call Ok fd)))
+  (fun write pub
+    (params (fd i32) (buf (* u8)) (count usize))
+    (-> isize)
+    (block
+      (unsafe
+        (block (as (call intrinsic_syscall3 1 (as fd i64) (as buf i64) (as count i64)) isize)))))
+  (fun raw_memory
+    (params)
+    (block
+      (unsafe (block (let p (call malloc 16)) (= (deref p) 42) (let v (deref p)) (call free p)))))
+  (fun element
+    (params (items (& (Vec i32))) (index int))
+    (-> i32)
+    (block
+      (call assert (>= index 0) "Index must be non-negative")
+      (if
+        (>= index (call (. items len)))
+        (block
+          (call panic
+            (template "Index out of bounds: length " (call (. items len)) ", got " index ""))))
+      (index items index)))
+  (fun recovering
+    (params)
+    (block
+      (let res (recover (block (let items (vec 1 3 5 7 11)) (call element items 10))))
+      (let (Err p) res (else (block (return))))
+      (call (. log println) (. p message) (. p file) (. p line))
+      (:= r2 (recover (block (call risky))))
+      (if r2 (block (call (. log println) "no panic"))))))

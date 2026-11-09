@@ -1,0 +1,12 @@
+int max + 1: Overflow: arithmetic overflow: 2147483648 doesn't fit in i32
+int * int: Overflow: arithmetic overflow: 10000000000 doesn't fit in i32
+min / -1: Overflow: arithmetic overflow: 2147483648 doesn't fit in i32
+divide by zero: Overflow: division by zero
+negate min: Overflow: arithmetic overflow: 2147483648 doesn't fit in i32
+u8 + 10: Overflow: arithmetic overflow: 260 doesn't fit in u8
+u32 0 - 1: Overflow: arithmetic overflow: -1 doesn't fit in u32
++= past the max: Overflow: arithmetic overflow: 2147483649 doesn't fit in i32
+casts: 44 255 4464 3 -3 2147483647 0
+i64: true 9223372036854775808 18446744073709551615 -1
+bits: 128 16 255 1073741824 true
+explicit: -2147483648 2147483647 true 255 4 99

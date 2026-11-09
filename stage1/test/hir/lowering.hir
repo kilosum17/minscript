@@ -1,0 +1,159 @@
+(struct Config (fields host port tls?))
+
+(struct Big (fields total))
+
+(struct Money (impls std.Plus) (fields cents))
+
+(union Shape (Circle r) (Square 0) Empty)
+
+(inter Named label)
+
+(struct Tag (impls Named) (fields name))
+
+(fun Money.plus
+  (params (this self) (rhs Money))
+  ->
+  Money
+  (do (struct Money (cents (+ (. this cents) (. rhs cents))))))
+
+(fun Tag.label (params (this self)) -> string (do (. this name)))
+
+(fun area
+  (params (s Shape))
+  ->
+  f64
+  (do (match s ((Shape.Circle r) (* r r)) ((Shape.Square x) (* x x)) (Shape.Empty 0.0))))
+
+(fun describe (params (n &Named)) -> string (do (dyn n label)))
+
+(fun log_all
+  (params (prefix string) (rest Slice[&Stringer]))
+  ->
+  void
+  (do (std.Log.println @std.log (vec prefix (... rest)))))
+
+(fun defaults_and_spread
+  (params)
+  ->
+  Config
+  (do
+    (let a: Config (struct Config (host "x") (port 8080) (tls std.Option.None)))
+    (let b: Config
+      (do (let $base: Config a) (struct Config (host (. $base host)) (port 1) (tls (. $base tls)))))
+    (let c: Config (struct Config (host "y") (port 8080) (tls std.Option.None)))
+    b))
+
+(fun variants_and_widen
+  (params (n i32))
+  ->
+  Big
+  (do
+    (let s: Shape (Shape.Square 2.0))
+    (let r: Result[void, string] (std.Result.Ok t()))
+    (let total: i64 (widen n))
+    (let wallet: Money (Money.plus (struct Money (cents 1n)) (struct Money (cents 2n))))
+    (struct Big (total (+ total 1n)))))
+
+(fun options
+  (params (o int?) (r Result[int, string]))
+  ->
+  Result[int, string]
+  (do
+    (let a: int (match o ((ok $v) $v) (_ 0)))
+    (let b: int (do (let $t: Result[int, string] r) (match $t ((ok $v'2) $v'2) (_ (return $t)))))
+    (let c: int (match o ((ok $v'3) $v'3) (fail (return (std.Result.Err "none")))))
+    (var slot: int? std.Option.None)
+    (if (not (is-some slot)) (do (= slot (std.Option.Some 5))))
+    (match slot ((std.Option.Some v) (std.Log.println @std.log (vec v))) (_ t()))
+    (let d: int (match o ((std.Option.Some d) d) (_ (return (std.Result.Err "no d")))))
+    (std.Result.Ok (+ (+ (+ a b) c) d))))
+
+(fun strings
+  (params (name string) (n int))
+  ->
+  string
+  (do (var s: string (concat "hi " name ", you are " (to_str n))) (= s (concat s "!")) s))
+
+(fun loops
+  (params (items Vec[string]) (m Map[string, int]))
+  ->
+  int
+  (do
+    (var total: int 0)
+    (do
+      (let $end: int 3)
+      (var $i: int 0)
+      (loop (step (+= $i 1)) (do (if (not (< $i $end)) (do (break))) (let i: int $i) (+= total i))))
+    (do
+      (let $items: Vec[string] items)
+      (var $i'2: int 0)
+      (loop
+        (step (+= $i'2 1))
+        (do
+          (if (not (< $i'2 (std.Vec.len $items))) (do (break)))
+          (let item: string (index $items $i'2))
+          (let idx: int $i'2)
+          (if (== idx 0) (do (continue)))
+          (+= total (std.string.len item)))))
+    (do
+      (let $iter: unknown (std.Map.iter m))
+      (loop
+        (do
+          (match
+            (dyn $iter next)
+            ((std.Option.Some $item)
+              (do (let k: string (. $item 0)) (let v: int (. $item 1)) (+= total v)))
+            (_ (break))))))
+    (var n: int 0)
+    (loop (do (if (not (< n 10)) (do (break))) (+= n 1)))
+    (loop outer:
+      (do
+        (do
+          (let $end'2: int 2)
+          (var $i'3: int 0)
+          (loop
+            (step (+= $i'3 1))
+            (do
+              (if (not (<= $i'3 $end'2)) (do (break)))
+              (let i'2: int $i'3)
+              (if (== i'2 2) (do (break outer))))))))
+    total))
+
+(fun conditions
+  (params (a int) (flag bool) (o int?))
+  ->
+  string
+  (do
+    (let kind: string (if (> a 10) (do "big") (do (if (< a 0) (do "negative") (do "small")))))
+    (if (and (is-some o) flag) (do (return kind)))
+    (let $v: t(int, int) (tuple 1 2))
+    (let x: int (. $v 0))
+    (let y: int (. $v 1))
+    kind))
+
+(fun waits async
+  (params (sub Sub[int]) (p Promise[int]))
+  ->
+  int
+  (do
+    (var s: Sub[int] sub)
+    (let v: int (select ((std.Option.Some n) = (std.Sub.next s) n) (else 0)))
+    (var sum: int 0)
+    (loop
+      (do
+        (match
+          (await (std.Sub.next s))
+          ((std.Option.Some $item) (do (let x: int $item) (+= sum x)))
+          (_ (break)))))
+    (+ (+ v sum) (await p))))
+
+(fun closures
+  (params (xs Vec[int]))
+  ->
+  Vec[int]
+  (do
+    (let k: int 2)
+    (var count: int 0)
+    (std.Vec.for_each xs (closure (params) (captures &mut count) (do (+= count 1))))
+    (log_all "count" (vec count))
+    (std.Vec.map xs (closure (params it) (captures &k) (do (* it k))))))

@@ -1,0 +1,43 @@
+(file parser_shared_state
+  (type User (fields (name string) (visits int (= 0))))
+  (fun maps
+    (params)
+    (block
+      (var ages (map ("ann" 31)))
+      (= (index ages "bob") 25)
+      (= (index ages "ann") 32)
+      (+= (index ages "ann") 1)
+      (let carl (?? (call (. ages get) "carl") 0))
+      (:= counts (as (map) (Map string int)))
+      (for-in word
+        (vec "a" "b" "a")
+        (block (= (index counts word) (+ (paren (?? (call (. counts get) word) 0)) 1))))))
+  (fun refs
+    (params)
+    (block
+      (:= users (call Ref (map ("ann" (struct User (name "Ann"))))))
+      (let counter (call Ref 0))
+      (:= n (call (. users read) (closure (call (. it len)))))
+      (let name (call (. users read) (closure (call (. (?. (call (. it get) "ann") name) to_str)))))
+      (:= id (call (. counter update) (closure (params c) (; (+= c 1)) c)))
+      (call (. users update) (closure (= (index it "bob") (struct User (name "Bob")))))
+      (let snapshot (call (. counter get)))
+      (call bump counter)
+      (call bump counter)
+      (call (. log println) (template "counter = " (call (. counter get)) ""))))
+  (fun bump (params (c (Ref int))) (block (call (. c update) (closure (params n) (+= n 1)))))
+  (fun handles_in_closures async
+    (params)
+    (block
+      (:= hits (call Ref 0))
+      (let room (call (generic (. Topic new) string)))
+      (let on_msg
+        (closure
+          (captures hits room)
+          (params msg)
+          (call (. hits update) (closure (params n) (+= n 1)))
+          (call (. room publish) msg)))
+      (call on_msg "hello")
+      (call
+        (. log println)
+        (template "hits: " (call (. hits get)) ", subscribers: " (call (. room subscribers)) "")))))

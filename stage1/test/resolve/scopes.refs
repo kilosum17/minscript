@@ -1,0 +1,133 @@
+10:13   Point → 103:1 type
+11:5    println → 6:1 import "std.io.println"
+11:13   json → 5:1 package "std.json"
+11:28   p → 10:9 local
+12:5    helper → 105:1 fun
+12:12   p → 10:9 local
+15:18   int → builtin
+15:26   int → builtin
+16:13   x → 15:15 param
+17:8    y → 16:9 local
+18:17   y → 16:9 local
+19:17   x → 18:13 local
+20:16   y → 19:13 local
+24:9    y → 23:13 local
+26:5    y → 16:9 local
+26:9    z → 22:9 local
+31:13   a → 30:9 local
+32:10   b → 31:9 local
+33:11   c → 32:5 local
+34:5    d → 33:5 local
+34:9    d → 33:5 local
+34:13   a → 30:9 local
+36:17   a → 30:9 local
+37:9    a → 36:13 local
+41:19   Result → prelude
+41:26   int → builtin
+41:31   string → builtin
+41:48   int → builtin
+41:53   int → builtin
+41:64   int → builtin
+42:12   Ok → prelude
+42:20   res → 41:14 param
+42:26   println → 6:1 import "std.io.println"
+42:34   v → 42:15 local
+43:11   res → 41:14 param
+44:9    Ok → prelude
+44:18   n → 44:12 local
+44:27   println → 6:1 import "std.io.println"
+44:35   n → 44:12 local
+45:9    Ok → prelude
+45:18   println → 6:1 import "std.io.println"
+45:27   n → 45:12 local
+46:9    Err → prelude
+46:19   println → 6:1 import "std.io.println"
+46:27   e → 46:13 local
+48:19   pair → 41:40 param
+49:9    Some → prelude
+49:19   opt → 41:59 param
+50:5    println → 6:1 import "std.io.println"
+50:13   w → 48:11 local
+50:17   h → 48:14 local
+50:21   o → 49:14 local
+51:21   pair → 41:40 param
+51:29   println → 6:1 import "std.io.println"
+51:37   i → 51:11 local
+51:41   j → 51:14 local
+52:11   pair → 41:40 param
+53:30   println → 6:1 import "std.io.println"
+53:38   k → 53:14 local
+58:21   Vec → prelude
+58:25   int → builtin
+58:34   Result → prelude
+58:41   int → builtin
+58:46   string → builtin
+61:5    items → 58:14 param
+61:20   closure captures total@59:9
+61:22   capture total → 59:9 local
+61:35   total → 59:9 local
+61:44   it → implicit it
+62:18   items → 58:14 param
+62:28   closure captures factor@60:9
+62:31   it → implicit it
+62:36   factor → 60:9 local
+63:17   items → 58:14 param
+63:27   closure captures factor@60:9
+63:35   closure captures n@63:30, factor@60:9
+63:41   int → builtin
+63:48   n → 63:30 closure-param
+63:52   m → 63:38 closure-param
+63:56   factor → 60:9 local
+64:17   items → 58:14 param
+65:35   Err → prelude
+65:54   it → implicit it
+66:38   Err → prelude
+66:42   e → 66:33 local
+67:5    Ok → prelude
+67:8    first → 64:9 local
+67:16   checked → 65:9 local
+67:26   named → 66:9 local
+70:17   Vec → prelude
+70:21   Vec → prelude
+70:25   int → builtin
+71:23   grid → 70:11 param
+72:21   row → 71:16 local
+73:16   cell → 72:13 local
+77:9    n → 76:9 local
+77:18   n → 76:9 local
+82:12   Vec → prelude
+82:16   T → 81:12 generic
+84:18   Self → 81:1 type
+84:25   Stack → 81:1 type
+85:28   T → 81:12 generic
+85:33   this → this
+85:49   v → 85:25 param
+86:24   T → 81:12 generic
+86:29   this → this
+90:17   f64 → builtin
+91:12   f64 → builtin
+94:24   f64 → builtin
+95:15   this → this
+96:13   Shape.Circle → 89:1 union
+96:35   r → 96:28 local
+96:39   r → 96:28 local
+97:13   Square → deferred
+97:26   s → 97:20 local
+97:30   s → 97:20 local
+98:13   Empty → deferred
+103:19  int → builtin
+103:27  int → builtin
+105:15  Point → 103:1 type
+105:25  Shape → 89:1 union
+106:13  Shape → 89:1 union
+106:26  p → 105:12 param
+106:33  f64 → builtin
+107:5   s → 106:9 local
+110:19  string → builtin
+110:33  int → builtin
+111:18  name → 110:13 param
+111:24  port → 110:27 param
+112:14  Point → 103:1 type
+112:25  port → 110:27 param
+113:5   println → 6:1 import "std.io.println"
+113:13  cfg → 111:9 local

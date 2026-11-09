@@ -1,0 +1,77 @@
+(struct Doc (fields lines title))
+
+(struct Counted (fields n))
+
+(fun Counted.clone (params (this self)) -> Counted (do (struct Counted (n (+ (. this n) 1)))))
+
+(fun build (params) -> Doc (do (struct Doc (lines (vec "a" "b")) (title "t"))))
+
+(fun moves
+  (params)
+  ->
+  void
+  (do
+    (let d: Doc (build))
+    (std.Log.println @std.log (vec (. d title)))
+    (let copy: Doc d)
+    (do
+      (let $end: int 2)
+      (var $i: int 0)
+      (loop
+        (step (+= $i 1))
+        (do
+          (if (not (< $i $end)) (do (break)))
+          (let i: int $i)
+          (let f: Doc (build))
+          (let g: Doc f)
+          (std.Log.println @std.log (vec i (. g title) (. copy title))))))
+    (let m: Doc (build))
+    (let lines: Vec[string] (. m lines))
+    (std.Log.println @std.log (vec (std.Vec.len lines)))))
+
+(fun keeps
+  (params (p Doc) (s Doc))
+  ->
+  void
+  (do
+    (let e: Doc (build))
+    (let a: Doc (dyn e clone))
+    (std.Log.println @std.log (vec (. e title) (. a title)))
+    (let h: Doc (build))
+    (do
+      (let $end: int 2)
+      (var $i: int 0)
+      (loop
+        (step (+= $i 1))
+        (do
+          (if (not (< $i $end)) (do (break)))
+          $i
+          (let k: Doc (dyn h clone))
+          (std.Log.println @std.log (vec (. k title))))))
+    (let q: Doc (dyn p clone))
+    (let part: Vec[string] (. s lines))
+    (let r: Vec[string] (dyn part clone))
+    (let t: Doc (build))
+    (let view: &str (std.string.trim (. t title)))
+    (let u: Doc (dyn t clone))
+    (std.Log.println @std.log (vec view (. u title) (. q title) (std.Vec.len r)))
+    (let w: Doc (build))
+    (let show: () -> int (closure (params) (captures &w) (do (std.string.len (. w title)))))
+    (let x: Doc (dyn w clone))
+    (std.Log.println @std.log (vec (callv show) (. x title)))
+    (let y: Doc (build))
+    (std.Log.println @std.log (vec (. y title) (. (dyn y clone) title)))
+    (var z: Doc (build))
+    (let z2: Doc (dyn z clone))
+    (= z (build))
+    (std.Log.println @std.log (vec (. z title) (. z2 title)))
+    (let c: Counted (struct Counted (n 0)))
+    (let c2: Counted (Counted.clone c))
+    (std.Log.println @std.log (vec (. c2 n)))
+    (let o: Doc (build))
+    (match
+      (std.Vec.len (. o lines))
+      (2 (do (let o2: Doc (dyn o clone)) (std.Log.println @std.log (vec (. o2 title)))))
+      (_ (do)))))
+
+(fun main (params) -> void (do (moves) (keeps (build) (build))))

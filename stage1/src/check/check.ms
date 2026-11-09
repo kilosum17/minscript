@@ -84,7 +84,16 @@ pub type CheckResult = {
     pub diagnostics: Vec[Diagnostic]
     /// the inference variables the types above mention (for `show_ty`)
     pub vars: Vec[VarState]
+    /// for the language server's completion: `x.__ms_c` (Member id) → every member `x.` can name
+    pub completions: Map[int, Vec[MemberItem]] = m{}
 }
+
+/// The placeholder name the language server puts at the cursor to complete `x.` (`x.__ms_c`).
+pub let COMPLETION_MARK = "__ms_c"
+
+/// A member offered after `x.`: kind "field", "method", "static", "variant" or "item"; `decl` is its
+/// declaration's node id (None for auto-generated methods); `sym` the item's symbol, for `pkg.item`.
+pub type MemberItem = { pub name: string, pub kind: string, pub decl: int?, pub sym: int? }
 
 /// A package this one imports, as the loader analysed it: its files and results.
 /// `moves`: the clones its ownership pass found can be moves (for lowering, spec §14.1).
@@ -316,6 +325,7 @@ fun index_file(index: &mut Map[int, Decl], file: &File) {
 // ---- the checker ----------------------------------------------------------------------------------
 
 type Checker = {
+    completions: Map[int, Vec[MemberItem]] = m{}
     syms: Vec[Sym]
     scopes: Vec[Scope]
     /// use → symbol (the prelude's and the package's)
@@ -437,7 +447,7 @@ pub fun check_loaded(files: &Vec[File], res: &mut Resolution, prelude_file: &Fil
     res.scopes = c.scopes.drain()
     CheckResult {
         types: c.types, symbols: c.sym_types, calls: c.calls, rets: c.rets, members: c.members, variants: c.variants,
-        diagnostics: c.diagnostics, vars: c.vars,
+        diagnostics: c.diagnostics, vars: c.vars, completions: c.completions,
     }
 }
 

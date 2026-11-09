@@ -1,0 +1,60 @@
+{
+  "name": "minscript",
+  "displayName": "MinScript",
+  "description": "MinScript language support: syntax highlighting, and errors, hover and navigation from the MinScript compiler",
+  "version": "0.1.0",
+  "publisher": "minscript",
+  "private": true,
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:minscript"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "minscript",
+        "aliases": ["MinScript", "minscript"],
+        "extensions": [".ms"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      { "language": "minscript", "scopeName": "source.minscript", "path": "./syntaxes/minscript.tmLanguage.json" }
+    ],
+    "commands": [
+      { "command": "minscript.restartServer", "title": "MinScript: Restart Language Server" }
+    ],
+    "configuration": {
+      "title": "MinScript",
+      "properties": {
+        "minscript.node": {
+          "type": "string",
+          "default": "node",
+          "description": "The Node.js executable (version 23.6 or later) that runs the language server."
+        },
+        "minscript.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to bin/ms1.js (the MinScript toolchain; the server is `ms1 lsp`). Empty: found next to this extension in the repository."
+        },
+        "minscript.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Log the messages between VS Code and the language server (Output → MinScript)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "grammar": "python3 syntaxes/build-grammar.py",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.2.0"
+  }
+}

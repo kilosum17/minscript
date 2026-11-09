@@ -322,17 +322,32 @@ pub fun type_sx(t: &Type) -> Sx {
     }
 }
 
+/// Set while `print_file_loose` prints: a `;` after a statement that isn't its block's last means
+/// nothing (spec §5.4), so it isn't shown.
+let LOOSE = Ref(false)
+
+/// `print_file`, without the `;`s that mean nothing (for comparing a file with its formatted text).
+pub fun print_file_loose(f: &File) -> string {
+    LOOSE.set(true)
+    let out = print_file(f)
+    LOOSE.set(false)
+    out
+}
+
 fun block(b: &Block) -> Sx {
     var out = [atom("block")]
+    let n = b.stmts.len()
+    var i = 0
     for s in b.stmts.iter() {
-        out.push(stmt(s))
+        i += 1
+        out.push(stmt(s, i == n || !LOOSE.get()))
     }
     List(out)
 }
 
-fun stmt(s: &Stmt) -> Sx {
+fun stmt(s: &Stmt, semi_counts: bool) -> Sx {
     match s {
-        ExprStmt(e) => if e.semi { List([atom(";"), expr(e.expr)]) } else { expr(e.expr) }
+        ExprStmt(e) => if e.semi && semi_counts { List([atom(";"), expr(e.expr)]) } else { expr(e.expr) }
         Let(l) => {
             let head = if l.short { if l.mutable { ":==" } else { ":=" } } else { if l.mutable { "var" } else { "let" } }
             var out = [atom(head), pattern(l.pattern)]
@@ -482,8 +497,11 @@ pub fun expr(e: &Expr) -> Sx {
             if let Some(t) = ret {
                 out.push(List([atom("->"), type_sx(t)]))
             }
+            let n = body.stmts.len()
+            var i = 0
             for s in body.stmts.iter() {
-                out.push(stmt(s))
+                i += 1
+                out.push(stmt(s, i == n || !LOOSE.get()))
             }
             List(out)
         }

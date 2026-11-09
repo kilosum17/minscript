@@ -1,0 +1,81 @@
+9:19    int → builtin
+9:27    int → builtin
+10:15   f64 → builtin
+12:13   int → builtin
+19:5    log → prelude
+31:5    send → 12:1 fun
+31:10   Text → deferred
+32:13   Close → deferred
+50:33   int → builtin
+54:24   int → builtin
+54:32   int → builtin
+56:31   int → builtin
+56:36   int → builtin
+57:19   p → 56:26 param
+60:26   int → builtin
+60:31   int → builtin
+61:11   p → 60:21 param
+62:30   k → 62:14 local
+84:8    int → builtin
+85:19   int → builtin
+88:35   panic → prelude
+98:22   int → builtin
+104:24  Light → 102:1 union
+105:11  l → 104:21 param
+106:9   Light.Blue → 102:1 union
+112:8   int → builtin
+113:8   string → builtin
+117:11  int → builtin
+118:24  int → builtin
+121:6   Clash → 116:1 type
+122:24  int → builtin
+123:24  int → builtin
+126:37  string → builtin
+127:38  string → builtin
+128:18  int → builtin
+129:6   Named → 126:1 inter
+129:16  Both → 128:1 type
+129:43  string → builtin
+130:6   Tagged → 127:1 inter
+130:17  Both → 128:1 type
+130:44  string → builtin
+132:6   Vec → prelude
+132:10  int → builtin
+133:25  int → builtin
+136:6   Stringer → prelude
+136:19  json.Value → 5:1 package "std.json"
+137:26  string → builtin
+140:6   Meters → 10:1 type
+141:22  f64 → builtin
+
+-- diagnostics --
+69:1    E_DUPLICATE_DECLARATION `undeclared_main` is declared more than once in this package (first declared at 67:1)
+7:1     E_DUPLICATE_DECLARATION the import binds `json`, which is already declared in this package; use `as` to rename it
+15:13   E_UNDECLARED_NAME unknown name `missing`
+19:17   E_UNDECLARED_NAME unknown name `nothing_here`
+22:24   E_UNDECLARED_TYPE unknown type `Pointt`
+25:5    E_UNDECLARED_ASSIGNMENT `counter` is not declared: declare it with `let`, `var`, `:=` or `:==`
+28:19   E_NOT_A_TYPE `undeclared_name` is a function, not a type
+36:13   E_UNDECLARED_NAME unknown name `b`
+42:9    E_DUPLICATE_BINDING `x` is already declared in this scope (first declared at 41:9); a new binding may only shadow it from an inner scope
+47:5    E_DUPLICATE_BINDING `y` is already declared in this scope (first declared at 46:5); a new binding may only shadow it from an inner scope
+51:9    E_DUPLICATE_BINDING `n` is already declared in this scope (first declared at 50:30); a new binding may only shadow it from an inner scope
+54:29   E_DUPLICATE_BINDING `a` is already declared in this scope (first declared at 54:21); a new binding may only shadow it from an inner scope
+57:14   E_DUPLICATE_BINDING `v` is bound twice in the same pattern
+62:19   E_INCONSISTENT_OR_BINDINGS every alternative of an or-pattern must bind the same names
+72:13   E_IT_OUTSIDE_CLOSURE `it` is only available in a closure without parameters (`#{ … }`) or after `or`
+76:9    E_RESERVED_IDENT `it2` is reserved for implicit closure parameters
+80:13   E_THIS_OUTSIDE_METHOD `this` is not available in a function without a receiver: only methods declared with `this`, `&this`, `&mut this` or `mut this` have it
+85:25   E_THIS_OUTSIDE_METHOD `this` is not available in a function without a receiver: only methods declared with `this`, `&this`, `&mut this` or `mut this` have it
+88:28   E_SELF_OUTSIDE_TYPE `Self` is only available inside a type, union, interface or impl
+91:15   E_INVALID_CAPTURE `undeclared_main` is a function; only local variables are captured
+95:15   E_UNDECLARED_NAME unknown name `ghost` in the capture list
+99:16   E_SIGIL_SHADOWS_BINDING `t` is a parameter here, so `t(…` is ambiguous; rename the parameter
+106:9   E_UNKNOWN_VARIANT `Light` has no variant `Blue`
+132:6   E_ORPHAN_IMPL methods for `Vec` can only be added in the package that declares it
+136:6   E_ORPHAN_IMPL `impl Stringer for json.Value` must be in the package of `Stringer` or of `json.Value`
+140:6   E_METHODS_ON_STRUCTURAL `Meters` is an alias for a structural type, so it can't have methods; declare it as `type Meters = { … }`
+113:5   E_DUPLICATE_FIELD `Dup` already has a field named `a`
+118:5   E_DUPLICATE_METHOD `Clash` already has a member named `size` (field)
+123:5   E_DUPLICATE_METHOD `Clash` already has a member named `area` (inherent)
+130:24  E_AMBIGUOUS_IMPL_METHOD `label` is defined by more than one interface implemented by `Both` (impl Named, impl Tagged)

@@ -1,0 +1,33 @@
+(file parser_variants
+  (union Shape
+    (variants (Circle (fields (r f64))) (Rect (fields (w f64) (h f64))) (Line Point Point) Empty))
+  (type Point (fields (x f64) (y f64)))
+  (union Message (variants (Text string) (Binary (Vec u8)) Close))
+  (type Envelope (fields (to string) (body Message)))
+  (fun send (params (msg Message)) (block (call (. log println) msg)))
+  (fun area (params (s Shape)) (-> f64) (block 0.0))
+  (fun as_arguments
+    (params)
+    (block
+      (call send (call Text "hi"))
+      (call send Close)
+      (:= a (call area (struct Circle (r 1.0))))
+      (let b (call area (call Line (struct Point (x 0.0) (y 0.0)) (struct Point (x 1.0) (y 1.0)))))))
+  (fun as_bindings
+    (params)
+    (block
+      (let m Message (call Binary (vec 1 2 3)))
+      (:= s (as (struct Rect (w 2.0) (h 3.0)) Shape))
+      (:= shapes (as (vec Empty (struct Circle (r 2.0))) (Vec Shape)))
+      (let env (struct Envelope (to "ann") (body (call Text "yo"))))))
+  (fun as_return
+    (params (n int))
+    (-> Shape)
+    (block (if (== n 0) (block (return Empty))) (struct Circle (r (as n f64)))))
+  (fun qualified_still_works
+    (params)
+    (block (call send (call (. Message Text) "explicit")) (let s (. Shape Empty))))
+  (fun in_match
+    (params (m Message))
+    (-> Message)
+    (block (match m (=> (Text t) (call Text (call (. t to_upper)))) (=> other other)))))

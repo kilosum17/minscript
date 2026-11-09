@@ -1,0 +1,120 @@
+// Formatter cases (`ms fmt`, spec §17.8): this file is deliberately unformatted; layout.fmt is the
+// expected output. One case per function.
+package fmt_layout
+
+type Point = { x: int, y: int }
+
+type Config = {
+    name: string
+    level: int = 1      // a default
+    tags: Vec[string] = []
+}
+
+union Big = {
+    First
+    Second
+    Third
+    Fourth
+    Fifth
+    Sixth
+    Seventh
+    Eighth
+    Ninth
+    Tenth
+    Eleventh
+    Twelfth
+}
+union Small = { A  B(int) }
+
+fun stray_semicolons() {
+    var a = 1
+    a += 2
+    log.println(a);     // kept: a `;` after the last expression discards its value (spec §5.4)
+}
+
+fun long_call() {
+    log.println(
+        "a fairly long first argument",
+        "and another long one",
+        "and a third to push it over",
+    )
+}
+
+fun hugged_closure(xs: Vec[int]) -> Vec[int] {
+    xs.map(#{ n =>
+        let doubled = n * 2
+        doubled + 1
+    })
+}
+
+fun struct_literals() {
+    let p = Point { x: 1, y: 2 }
+    let c = Config {
+        name: "x"
+        level: 2
+    }
+    log.println(p, c)
+}
+
+fun if_chain(n: int) -> string {
+    if n > 100 {
+        "a very large number indeed, more than a hundred"
+    } else if n > 10 {
+        "medium"
+    } else {
+        "small"
+    }
+}
+
+fun header_comment(n: int) -> int {      // stays after the brace
+    n + 1
+}
+
+fun aligned_comments() {
+    let a = 1                // aligned by hand
+    let bb = 2               // stays aligned
+    let a_much_longer_name_than_the_rest = 3  // two spaces after: its column is kept too
+}
+
+fun realigned() {
+    let a = 1               // too close to the code
+    let some_long_name = 2  // the run is realigned two spaces after its longest line
+}
+
+fun sigils(a: Vec[int], t: (int) -> int) -> int {
+    let first = a [0]
+    t (first)
+}
+
+fun chains(xs: Vec[int]) -> int {
+    xs.filter(#{ it > 1 })
+        .map(#{ it * 2 })
+        .fold(0, #{ acc, n => acc + n })
+}
+
+fun broken_binary(a: bool, b: bool, c: bool) -> bool {
+    a &&
+        b && c
+}
+
+fun blank_lines() {
+    let a = 1
+
+    let b = 2
+    log.println(a, b)
+}
+
+fun comment_inside_expression() {
+    let v = [1,   2, // one, two
+        3]
+    log.println(v)
+}
+
+fun matches(n: int) -> string {
+    let short = match n { 0 => "zero", _ => "other" }
+    match n {
+        0 => "zero"
+        1..=9 => "small"
+        _ => short
+    }
+}

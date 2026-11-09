@@ -1,0 +1,142 @@
+1:1        package
+1:9     ws Ident "lexer_numbers"
+3:1     nl fun
+3:5     ws Ident "main"
+3:9        ( → 3:10
+3:10       )
+3:12    ws { → 35:1
+5:5     nl let
+5:9     ws Ident "a"
+5:11    ws =
+5:13    ws Int 0
+6:5     nl let
+6:9     ws Ident "b"
+6:11    ws =
+6:13    ws Int 123
+7:5     nl let
+7:9     ws Ident "c"
+7:11    ws =
+7:13    ws Int 1000000
+8:5     nl let
+8:9     ws Ident "d"
+8:11    ws =
+8:13    ws Int 255
+9:5     nl let
+9:9     ws Ident "e"
+9:11    ws =
+9:13    ws Int 3735928559
+10:5    nl let
+10:9    ws Ident "f"
+10:11   ws =
+10:13   ws Int 170
+11:5    nl let
+11:9    ws Ident "g"
+11:11   ws =
+11:13   ws Int 15
+14:5    nl let
+14:9    ws Ident "h"
+14:11   ws =
+14:13   ws Float 1.5
+15:5    nl let
+15:9    ws Ident "i"
+15:11   ws =
+15:13   ws Float 1000000000
+16:5    nl let
+16:9    ws Ident "j"
+16:11   ws =
+16:13   ws Float 0.0025
+17:5    nl let
+17:9    ws Ident "k"
+17:11   ws =
+17:13   ws Float 6.02e+23
+18:5    nl let
+18:9    ws Ident "l"
+18:11   ws =
+18:13   ws Float 1000.5
+21:5    nl let
+21:9    ws Ident "r1"
+21:12   ws =
+21:14   ws Int 1
+21:15      ..
+21:17      Int 10
+22:5    nl let
+22:9    ws Ident "r2"
+22:12   ws =
+22:14   ws Int 1
+22:15      ..=
+22:18      Int 10
+23:5    nl let
+23:9    ws Ident "r3"
+23:12   ws =
+23:14   ws Int 0
+23:15      ..
+23:17      Ident "n"
+24:5    nl let
+24:9    ws Ident "s1"
+24:12   ws =
+24:14   ws Int 1
+24:15      .
+24:16      Ident "to_str"
+24:22      ( → 24:23
+24:23      )
+25:5    nl let
+25:9    ws Ident "s2"
+25:12   ws =
+25:14   ws Float 1.5
+25:17      .
+25:18      Ident "to_str"
+25:24      ( → 25:25
+25:25      )
+28:5    nl let
+28:9    ws Ident "t1"
+28:12   ws =
+28:14   ws Ident "pair"
+28:18      .
+28:19      Int 0
+29:5    nl let
+29:9    ws Ident "t2"
+29:12   ws =
+29:14   ws Ident "nested"
+29:20      .
+29:21      Int 0
+29:22      .
+29:23      Int 1
+30:5    nl let
+30:9    ws Ident "t3"
+30:12   ws =
+30:14   ws Ident "deep"
+30:18      .
+30:19      Int 1
+30:20      .
+30:21      Int 0
+30:22      .
+30:23      Int 2
+33:5    nl let
+33:9    ws Ident "neg"
+33:13   ws =
+33:15   ws -
+33:16      Int 42
+34:5    nl let
+34:9    ws Ident "negf"
+34:14   ws =
+34:16   ws -
+34:17      Float 0.5
+35:1    nl }
+36:1    nl EOF
+
+-- trivia --
+4:5     line "// integers"
+13:5    line "// floats"
+20:5    line "// a `.` belongs to the number only when a digit follows it"
+21:29   line "// INT(1) DOTDOT INT(10)"
+22:29   line "// INT(1) DOTDOTEQ INT(10)"
+23:29   line "// INT(0) DOTDOT IDENT(n)"
+24:29   line "// INT(1) DOT IDENT(to_str) LPAREN RPAREN"
+25:29   line "// FLOAT(1.5) DOT IDENT(to_str) …"
+27:5    line "// after a member `.`, only digits are lexed (tuple indexing)"
+28:29   line "// IDENT DOT INT(0)"
+29:29   line "// IDENT DOT INT(0) DOT INT(1), never FLOAT(0.1)"
+30:29   line "// IDENT DOT INT(1) DOT INT(0) DOT INT(2)"
+32:5    line "// unary minus is an operator, not part of the literal"
+33:29   line "// MINUS INT(42)"
+34:29   line "// MINUS FLOAT(0.5)"

@@ -1,0 +1,301 @@
+1:1        package
+1:9     ws Ident "lexer_sigils"
+4:1     nl fun
+4:5     ws Ident "t"
+4:6        [ → 4:8
+4:7        Ident "T"
+4:8        ]
+4:9        ( → 4:18
+4:10       Ident "value"
+4:15       :
+4:17    ws Ident "T"
+4:18       )
+4:20    ws ->
+4:23    ws Ident "T"
+4:25    ws { → 4:33
+4:27    ws Ident "value"
+4:33    ws }
+5:1     nl fun
+5:5     ws Ident "a"
+5:6        ( → 5:13
+5:7        Ident "x"
+5:8        :
+5:10    ws Ident "int"
+5:13       )
+5:15    ws ->
+5:18    ws Ident "int"
+5:22    ws { → 5:26
+5:24    ws Ident "x"
+5:26    ws }
+6:1     nl type
+6:6     ws Ident "m"
+6:8     ws =
+6:10    ws { → 6:19
+6:12    ws Ident "v"
+6:13       :
+6:15    ws Ident "int"
+6:19    ws }
+7:1     nl union
+7:7     ws Ident "s"
+7:9     ws =
+7:11    ws { → 7:22
+7:13    ws Ident "One"
+7:18    ws Ident "Two"
+7:22    ws }
+8:1     nl inter
+8:7     ws Ident "r"
+8:9     ws =
+8:11    ws { → 8:26
+8:13    ws fun
+8:17    ws Ident "f"
+8:18       ( → 8:24
+8:19       &
+8:20       this
+8:24       )
+8:26    ws }
+10:1    nl fun
+10:5    ws Ident "main"
+10:9       ( → 10:10
+10:10      )
+10:12   ws { → 47:1
+12:5    nl let
+12:9    ws Ident "rec"
+12:13   ws =
+12:15   ws r{ → 12:23
+12:18   ws Ident "a"
+12:19      :
+12:21   ws Int 1
+12:23   ws }
+13:5    nl let
+13:9    ws Ident "map"
+13:13   ws =
+13:15   ws m{ → 13:25
+13:18   ws String "a"
+13:21      :
+13:23   ws Int 1
+13:25   ws }
+14:5    nl let
+14:9    ws Ident "set"
+14:13   ws =
+14:15   ws s{ → 14:23
+14:18   ws Int 1
+14:19      ,
+14:21   ws Int 2
+14:23   ws }
+15:5    nl let
+15:9    ws Ident "tup"
+15:13   ws =
+15:15   ws t( → 15:21
+15:17      Int 1
+15:18      ,
+15:20   ws Int 2
+15:21      )
+16:5    nl let
+16:9    ws Ident "arr"
+16:13   ws =
+16:15   ws a[ → 16:21
+16:17      Int 1
+16:18      ,
+16:20   ws Int 2
+16:21      ]
+17:5    nl let
+17:9    ws Ident "inf"
+17:12      :
+17:14   ws Ident "Point"
+17:20   ws =
+17:22   ws _{ → 17:36
+17:25   ws Ident "x"
+17:26      :
+17:28   ws Int 1
+17:29      ,
+17:31   ws Ident "y"
+17:32      :
+17:34   ws Int 2
+17:36   ws }
+18:5    nl let
+18:9    ws Ident "clo"
+18:13   ws =
+18:15   ws #{ → 18:21
+18:18   ws Ident "it"
+18:21   ws }
+19:5    nl let
+19:9    ws Ident "cap"
+19:13   ws =
+19:15   ws #[ → 19:18
+19:17      Ident "x"
+19:18      ]
+19:19      { → 19:28
+19:21   ws Ident "it"
+19:24   ws +
+19:26   ws Ident "x"
+19:28   ws }
+20:5    nl let
+20:9    ws Ident "gen"
+20:13   ws =
+20:15   ws Ident "f"
+20:16      .[ → 20:21
+20:18      Ident "i32"
+20:21      ]
+20:22      ( → 20:24
+20:23      Int 1
+20:24      )
+21:5    nl let
+21:9    ws Ident "raw"
+21:13   ws =
+21:15   ws RawString "x\\y"
+22:5    nl let
+22:9    ws Ident "unit"
+22:14   ws =
+22:16   ws t( → 22:18
+22:18      )
+23:5    nl let
+23:9    ws Ident "vec"
+23:13   ws =
+23:15   ws [ → 23:20
+23:16      Int 1
+23:17      ,
+23:19   ws Int 2
+23:20      ]
+26:5    nl let
+26:9    ws Ident "idx"
+26:13   ws =
+26:15   ws Ident "a"
+26:17   ws [ → 26:19
+26:18      Int 0
+26:19      ]
+27:5    nl let
+27:9    ws Ident "call"
+27:14   ws =
+27:16   ws Ident "t"
+27:18   ws ( → 27:20
+27:19      Int 1
+27:20      )
+30:5    nl let
+30:9    ws Ident "x1"
+30:12   ws =
+30:14   ws Ident "data"
+30:18      [ → 30:20
+30:19      Int 0
+30:20      ]
+31:5    nl let
+31:9    ws Ident "x2"
+31:12   ws =
+31:14   ws Ident "cat"
+31:17      ( → 31:19
+31:18      Int 1
+31:19      )
+32:5    nl let
+32:9    ws Ident "x3"
+32:12   ws =
+32:14   ws Ident "items"
+32:19      .
+32:20      Ident "len"
+32:23      ( → 32:24
+32:24      )
+35:5    nl let
+35:9    ws Ident "x4"
+35:12   ws =
+35:14   ws Ident "obj"
+35:17      .
+35:18      Ident "a"
+35:19      [ → 35:21
+35:20      Int 0
+35:21      ]
+36:5    nl let
+36:9    ws Ident "x5"
+36:12   ws =
+36:14   ws Ident "obj"
+36:17      .
+36:18      Ident "t"
+36:19      ( → 36:21
+36:20      Int 1
+36:21      )
+37:5    nl let
+37:9    ws Ident "x6"
+37:12   ws =
+37:14   ws Ident "obj"
+37:17      .
+37:18      Ident "r"
+40:5    nl let
+40:9    ws Ident "_unused"
+40:17   ws =
+40:19   ws Int 1
+41:5    nl let
+41:9    ws t( → 41:20
+41:11      _
+41:12      ,
+41:14   ws Ident "second"
+41:20      )
+41:22   ws =
+41:24   ws Ident "pair"
+42:5    nl let
+42:9    ws Ident "w"
+42:11   ws =
+42:13   ws Ident "__x"
+45:5    nl let
+45:9    ws Ident "v"
+45:10      :
+45:12   ws Ident "Vec"
+45:15      [ → 45:32
+45:16      Ident "Map"
+45:19      [ → 45:31
+45:20      Ident "string"
+45:26      ,
+45:28   ws Ident "int"
+45:31      ]
+45:32      ]
+45:34   ws =
+45:36   ws [ → 45:37
+45:37      ]
+46:5    nl let
+46:9    ws Ident "nested"
+46:16   ws =
+46:18   ws Ident "Vec"
+46:21      .[ → 46:30
+46:23      Ident "Vec"
+46:26      [ → 46:29
+46:27      Ident "u8"
+46:29      ]
+46:30      ]
+46:31      .
+46:32      Ident "new"
+46:35      ( → 46:36
+46:36      )
+47:1    nl }
+48:1    nl EOF
+
+-- trivia --
+3:1     line "// no-glue contexts: a letter after `fun`, `type`, `union`, `inter` is a name, not a sigil"
+4:41    line "// IDENT(t) LBRACKET … (not TUPLE_OPEN, not ARRAY_OPEN)"
+5:41    line "// IDENT(a) LPAREN"
+6:41    line "// IDENT(m) (lowercase type: lint warning, lexes fine)"
+11:5    line "// glued sigils: one token each"
+12:41   line "// RECORD_OPEN"
+13:41   line "// MAP_OPEN"
+14:41   line "// SET_OPEN"
+15:41   line "// TUPLE_OPEN"
+16:41   line "// ARRAY_OPEN (the resolver would also report E_SIGIL_SHADOWS_BINDING because of `fun a` above; lexer tests ignore that)"
+17:41   line "// INFERRED_OPEN"
+18:41   line "// CLOSURE_OPEN"
+19:41   line "// CAPTURE_OPEN IDENT(x) RBRACKET LBRACE(glued)"
+20:41   line "// IDENT(f) GENERIC_OPEN IDENT(i32) RBRACKET …"
+21:41   line "// RAW_STRING"
+22:41   line "// TUPLE_OPEN RPAREN"
+23:41   line "// LBRACKET (plain Vec literal, no sigil)"
+25:5    line "// not glued: ordinary identifiers"
+26:41   line "// IDENT(a) LBRACKET INT RBRACKET  (index)"
+27:41   line "// IDENT(t) LPAREN INT RPAREN      (call)"
+29:5    line "// the letter is the tail of a longer identifier: no sigil"
+30:41   line "// IDENT(data) LBRACKET"
+31:41   line "// IDENT(cat) LPAREN"
+34:5    line "// after `.`: a member name, never a sigil"
+35:41   line "// IDENT DOT IDENT(a) LBRACKET"
+36:41   line "// IDENT DOT IDENT(t) LPAREN"
+37:41   line "// IDENT DOT IDENT(r)"
+39:5    line "// underscore forms"
+40:41   line "// IDENT(_unused)"
+41:41   line "// `_` alone is the wildcard"
+42:41   line "// IDENT(__x)"
+44:5    line "// generic args in type position use a glued `[`, not `.[`"
+45:41   line "// IDENT LBRACKET IDENT LBRACKET … RBRACKET RBRACKET"
+46:41   line "// GENERIC_OPEN IDENT LBRACKET IDENT RBRACKET RBRACKET"

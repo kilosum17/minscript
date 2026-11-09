@@ -1,0 +1,173 @@
+1:1        package
+1:9     ws Ident "lexer_keywords"
+3:1     nl fun
+3:5     ws Ident "main"
+3:9        ( → 3:10
+3:10       )
+3:12    ws { → 32:1
+5:5     nl let
+5:9     ws Ident "a"
+5:11    ws =
+5:13    ws Ident "x"
+5:14       .
+5:15       Ident "or"
+5:17       ( → 5:19
+5:18       Int 5
+5:19       )
+6:5     nl let
+6:9     ws Ident "b"
+6:11    ws =
+6:13    ws Ident "r"
+6:14       .
+6:15       Ident "in"
+6:17       ( → 6:23
+6:18       Ident "value"
+6:23       )
+7:5     nl let
+7:9     ws Ident "c"
+7:11    ws =
+7:13    ws Ident "p"
+7:14       .
+7:15       Ident "match"
+7:20       ( → 7:21
+7:21       )
+8:5     nl let
+8:9     ws Ident "d"
+8:11    ws =
+8:13    ws Ident "q"
+8:14       .
+8:15       Ident "type"
+9:5     nl let
+9:9     ws Ident "e"
+9:11    ws =
+9:13    ws Ident "cfg"
+9:16       .
+9:17       Ident "for"
+10:5    nl let
+10:9    ws Ident "f"
+10:11   ws =
+10:13   ws Ident "opt"
+10:16      ?.
+10:18      Ident "or"
+10:20      ( → 10:22
+10:21      Int 1
+10:22      )
+11:5    nl let
+11:9    ws Ident "g"
+11:11   ws =
+11:13   ws Ident "x"
+11:14      .
+11:15      Ident "as"
+11:17      .[ → 11:22
+11:19      Ident "i32"
+11:22      ]
+11:23      ( → 11:24
+11:24      )
+14:5    nl let
+14:9    ws Ident "h"
+14:11   ws =
+14:13   ws Ident "x"
+14:15   ws or
+14:18   ws Int 5
+15:5    nl let
+15:9    ws Ident "i"
+15:11   ws =
+15:13   ws Ident "n"
+15:15   ws as
+15:18   ws Ident "i64"
+16:5    nl let
+16:9    ws Ident "j"
+16:11   ws =
+16:13   ws await
+16:19   ws Ident "fetch"
+16:24      ( → 16:25
+16:25      )
+19:5    nl let
+19:9    ws Ident "k"
+19:11   ws =
+19:13   ws Ident "items"
+19:18      .
+19:19      Ident "map"
+19:22      ( → 19:30
+19:23      #{ → 19:29
+19:26   ws Ident "it"
+19:29   ws }
+19:30      )
+20:5    nl let
+20:9    ws Ident "l"
+20:11   ws =
+20:13   ws Ident "pairs"
+20:18      .
+20:19      Ident "map"
+20:22      ( → 20:44
+20:23      #{ → 20:43
+20:26   ws Ident "it1"
+20:30   ws +
+20:32   ws Ident "it2"
+20:36   ws +
+20:38   ws Ident "it10"
+20:43   ws }
+20:44      )
+21:5    nl let
+21:9    ws Ident "m1"
+21:12   ws =
+21:14   ws Ident "item"
+22:5    nl let
+22:9    ws Ident "n1"
+22:12   ws =
+22:14   ws Ident "it01"
+23:5    nl let
+23:9    ws Ident "o1"
+23:12   ws =
+23:14   ws Ident "items_"
+26:5    nl let
+26:9    ws Ident "p1"
+26:12   ws =
+26:14   ws Ident "Some"
+26:18      ( → 26:20
+26:19      Int 1
+26:20      )
+27:5    nl let
+27:9    ws Ident "p2"
+27:12   ws =
+27:14   ws Ident "None"
+28:5    nl let
+28:9    ws Ident "p3"
+28:12   ws =
+28:14   ws nil
+29:5    nl let
+29:9    ws Ident "p4"
+29:12   ws =
+29:14   ws Ident "Ok"
+29:16      ( → 29:20
+29:17      Ident "log"
+29:20      )
+30:5    nl let
+30:9    ws Ident "p5"
+30:12   ws =
+30:14   ws Ident "this_value"
+31:5    nl let
+31:9    ws Ident "p6"
+31:12   ws =
+31:14   ws Ident "Selfish"
+32:1    nl }
+33:1    nl EOF
+
+-- trivia --
+4:5     line "// a keyword after `.` or `?.` is a plain identifier"
+5:41    line "// IDENT DOT IDENT(or)"
+6:41    line "// IDENT DOT IDENT(in)"
+10:41   line "// QUESTION_DOT IDENT(or)"
+11:41   line "// IDENT(as) GENERIC_OPEN …"
+13:5    line "// keywords in normal position"
+14:41   line "// KW_OR"
+15:41   line "// KW_AS"
+16:41   line "// KW_AWAIT"
+18:5    line "// implicit closure params: reserved identifiers, not keywords"
+21:41   line "// plain IDENT: `it` is only a prefix"
+22:41   line "// plain IDENT: leading zero is not an implicit param"
+23:41   line "// plain IDENT"
+25:5    line "// prelude names are identifiers, not keywords"
+28:41   line "// KW_NIL"
+30:41   line "// IDENT, not KW_THIS"
+31:41   line "// IDENT, not KW_SELF"

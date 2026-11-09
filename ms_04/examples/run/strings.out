@@ -1,0 +1,7 @@
+bytes, chars: 19 14 19
+find / substring: 7 héllo wörld
+helpers: ünï ["a", "é", "😀"] ["é", "😀"] naïve
+search: true true true héllo world 😀!
+to_int: -42 true true
+bytes: 195 true
+cut inside a char: OutOfBounds

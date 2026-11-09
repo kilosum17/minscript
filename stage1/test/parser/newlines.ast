@@ -1,0 +1,29 @@
+(file parser_newlines
+  (fun main
+    (params)
+    (block
+      (let total (+ a (* b c)))
+      (let call (call compute 1 2))
+      (let list (vec 1 2))
+      (let cond (&& a b))
+      (let chain (?. (. user profile) display_name))
+      (let fallback (?? value "default"))
+      (let both (&& a b))
+      (let either (|| a b))
+      (let res (or (call read) (call Err "x")))
+      (let cast (as n i64))
+      (let r (if a (block 1) (block 2)))
+      foo
+      (paren bar)
+      baz
+      (vec 1 2)
+      (let n a)
+      (- b)
+      qux
+      (! flag)
+      (let nested (call run (closure (params x) (let y (+ x 1)) (* y 2))))
+      (let x 1)
+      (let y 2)
+      (let z 3)
+      (for (block (if x (block (break))) (if y (block (continue))) (break)))))
+  (fun value_on_next_line (params) (-> int) (block (return) 42)))

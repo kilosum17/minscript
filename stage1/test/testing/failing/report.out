@@ -1,0 +1,16 @@
+== test/testing/failing
+ok   test_passes (… ms)
+FAIL test_wrong_value (… ms)
+about to index past the end
+FAIL test_panics (… ms)
+FAIL test_err_expected (… ms)
+ok   test_runs_after_failures (… ms)
+--- FAIL test_wrong_value
+    assert_eq failed
+           got: 42
+          want: 41
+--- FAIL test_panics
+    index 10 out of bounds (length 3)
+--- FAIL test_err_expected
+    assert_err failed: the result is Ok
+2 passed, 3 failed

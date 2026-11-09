@@ -1,0 +1,5 @@
+a cancelled loop stops: true
+recover sees it: caught Cancelled
+the timeout won
+the loser was cancelled: caught Cancelled
+awaiting a cancelled task: Cancelled

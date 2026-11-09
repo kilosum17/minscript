@@ -8,8 +8,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-runtime="../../minscript/src/js/runtime.ts"      # relative to seed/, where the seed runs
-std="$(pwd)/../minscript/std"
+runtime="../runtime/runtime.ts"      # relative to seed/, where the seed runs
+std="$(pwd)/std"
 from_stage0() {
     (cd ../minscript && node src/cli.ts js ../stage1) > "$tmp/stage0.mjs"
     MS_STD="$std" node ../minscript/src/js/exec.ts "$tmp/stage0.mjs" js --runtime "$runtime" . > "$tmp/next.mjs"

@@ -782,6 +782,11 @@ impl Checker {
 
     fun check_member(&mut this, e: &Expr, object: &Expr, name: &str, index: bool, opt: bool, exp: Ty?) -> Ty {
         let obj = this.check_expr(object, None)
+        if name == COMPLETION_MARK {
+            // the language server completes `x.`: what can follow the object
+            let items = this.members_of(obj)
+            this.completions[e.id] = items
+        }
         if opt {
             let Some(o) = this.optional_inner(obj) else {
                 let k = tag(stripped(obj, this.vars))
@@ -1624,4 +1629,138 @@ fun call_target(c: &Callable, on_value: bool) -> CallTarget {
         return CStatic { decl, owner: o.clone() }
     }
     CFun(decl)
+}
+
+impl Checker {
+    /// Every member `x.` can name, for completion: fields, methods (a bounded impl's only when its
+    /// bounds hold), auto-generated methods; statics and variants of a type; a package's pub items.
+    fun members_of(&mut this, raw: &Ty) -> Vec[MemberItem] {
+        var out = [] as Vec[MemberItem]
+        var seen = Set.new() as Set[string]
+        let t = this.strip(raw)
+        match &t {
+            TyPackage { sym, .. } => {
+                let Some(s) = sym else { return out }
+                let Some(scope) = this.syms[s].target else { return out }
+                for name, item in this.scopes[scope].names.clone() {
+                    if this.syms[item].is_pub == Some(true) && !name.starts_with("_") && seen.insert(name.clone()) {
+                        out.push(MemberItem { name: name.clone(), kind: "item", decl: this.syms[item].decl, sym: Some(item) })
+                    }
+                }
+                return out
+            }
+            TyMeta(inner) => {
+                let m = this.prune(inner.get())
+                if tag(m) != "named" {
+                    return out
+                }
+                let Some(ii) = this.info(named_sym(m)) else { return out }
+                for v in this.infos[ii].variants.clone().iter() {
+                    if seen.insert(v.name.clone()) {
+                        out.push(MemberItem { name: v.name.clone(), kind: "variant", decl: Some(v.id), sym: None })
+                    }
+                }
+                for e in this.infos[ii].methods.clone().iter() {
+                    if e.f.receiver.is_none() && seen.insert(e.f.name.clone()) {
+                        out.push(MemberItem { name: e.f.name.clone(), kind: "static", decl: Some(e.f.id), sym: None })
+                    }
+                }
+                return out
+            }
+            TyNamed { sym, .. } => {
+                if let Some(ii) = this.info(sym) {
+                    if this.infos[ii].kind == "struct" {
+                        for f in this.infos[ii].fields.clone().iter() {
+                            if seen.insert(f.name.clone()) {
+                                out.push(MemberItem { name: f.name.clone(), kind: "field", decl: Some(f.id), sym: None })
+                            }
+                        }
+                    }
+                    let entries = this.infos[ii].methods.clone()
+                    this.add_methods(entries, t, out, seen)
+                }
+            }
+            TyPrim(p) => {
+                let key = if is_stringy(t) { "string" } else { p.clone() }
+                let entries = this.prim_methods.get(key) ?? []
+                this.add_methods(entries, t, out, seen)
+            }
+            TyParam(ps) => {
+                for b in this.bounds_of(ps).iter() {
+                    let bs = this.strip(b)
+                    if tag(bs) != "named" {
+                        continue
+                    }
+                    let Some(ii) = this.info(named_sym(bs)) else { continue }
+                    let entries = this.infos[ii].methods.clone()
+                    this.add_methods(entries, t, out, seen)
+                }
+            }
+            TyRecord(fields) => {
+                for f in fields.iter() {
+                    if seen.insert(f.name.clone()) {
+                        out.push(MemberItem { name: f.name.clone(), kind: "field", decl: None, sym: None })
+                    }
+                }
+            }
+            _ => {}
+        }
+        let k = tag(t)
+        if k != "unknown" && k != "never" && k != "var" {
+            for name in ["to_str", "clone", "eq", "hash"].iter() {
+                if seen.insert(name.to_str()) {
+                    out.push(MemberItem { name: name.to_str(), kind: "method", decl: None, sym: None })
+                }
+            }
+        }
+        out
+    }
+
+    fun add_methods(&mut this, entries: Vec[MethodEntry], recv: &Ty, out: &mut Vec[MemberItem], seen: &mut Set[string]) {
+        for e in entries.iter() {
+            if e.f.receiver.is_none() || e.f.name.starts_with("_") {
+                continue
+            }
+            if !this.bounds_hold(e, recv) {
+                continue
+            }
+            if seen.insert(e.f.name.clone()) {
+                out.push(MemberItem { name: e.f.name.clone(), kind: "method", decl: Some(e.f.id), sym: None })
+            }
+        }
+    }
+
+    /// Whether a method from a bounded impl (`impl[T: Stringer] Vec[T]`) applies to `recv`.
+    fun bounds_hold(&mut this, e: &MethodEntry, recv: &Ty) -> bool {
+        let Some(target) = &e.impl_target else { return true }
+        if e.from_inter.is_some() {
+            return true
+        }
+        let TName { args, .. } = &target.kind else { return true }
+        let r = this.strip(recv)
+        if tag(r) != "named" {
+            return true
+        }
+        let rargs = named_args(r)
+        var i = 0
+        for a in args.iter() {
+            let arg = rargs.get(i)
+            i += 1
+            let TName { path, .. } = &a.kind else { continue }
+            if path.len() != 1 {
+                continue
+            }
+            let Some(g) = e.outer.find(#{ s, _ => this.syms[s].name == path[0] }) else { continue }
+            let Some(at) = arg else { continue }
+            for b in this.bounds_of(g).iter() {
+                var env = m{} as Map[int, Ty]
+                env[g] = at.clone()
+                let bs = this.strip(this.subst(b, env))
+                if tag(bs) == "named" && !this.implements(at, named_sym(bs)) {
+                    return false
+                }
+            }
+        }
+        true
+    }
 }

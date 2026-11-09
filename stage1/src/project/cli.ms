@@ -231,7 +231,7 @@ pub async fun check_command(tc: &Toolchain, paths: &Vec[string]) -> int {
 
 /// The toolchain options every program command takes (`--std <dir>`, `--runtime <url>`, before any
 /// `--`), and the remaining arguments. `--std` defaults to `$MS_STD`. `--runtime` is for the output of
-/// `js` only: the modules the toolchain runs itself import `<std>/../src/js/runtime.ts`.
+/// `js` only: the modules the toolchain runs itself import `$MS_RUNTIME`, else `<std>/../runtime/runtime.ts`.
 pub fun toolchain_options(argv: &Vec[string]) -> Result[t(Toolchain, Vec[string]), string] {
     var std_dir = env.get("MS_STD") ?? ""
     var output_url = ""
@@ -259,7 +259,12 @@ pub fun toolchain_options(argv: &Vec[string]) -> Result[t(Toolchain, Vec[string]
     }
     let cwd = env.cwd()
     let std = resolve_from(cwd, std_dir)
-    let runtime_url = "file://${resolve_from(std, "../src/js/runtime.ts")}"
+    // the runtime the modules this toolchain runs import: `$MS_RUNTIME` (bin/ms1.js sets it to its
+    // own), else the one next to std
+    let runtime_url = match env.get("MS_RUNTIME") {
+        Some(r) => if r.starts_with("file:") { r } else { "file://${resolve_from(cwd, r)}" }
+        None => "file://${resolve_from(std, "../runtime/runtime.ts")}"
+    }
     let output_runtime_url = if output_url.is_empty() { runtime_url.clone() } else { output_url }
     Ok(t(Toolchain { std_dir: std, runtime_url, output_runtime_url, cwd }, rest))
 }

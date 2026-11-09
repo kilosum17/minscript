@@ -1,0 +1,28 @@
+{
+  "name": "basic",
+  "version": "0.1.0",
+  "main": "",
+  "deps": {
+    "shared": "path:../shared",
+    "http": "^2.1.0"
+  },
+  "dev_deps": {},
+  "scripts": {
+    "hello": {
+      "sh": "echo hello from a shell script"
+    },
+    "gen": {
+      "pkg": "./tools/gen"
+    },
+    "check": {
+      "task": "<MinScript>"
+    }
+  },
+  "sections": {
+    "fmt": {
+      "indent": 2,
+      "max_width": 100,
+      "trailing_commas": true
+    }
+  }
+}

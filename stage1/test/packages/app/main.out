@@ -1,0 +1,7 @@
+#1 Ted (admin)
+#2 Ann (guest)
+#3 Bo (operator)
+admins: 1, total id: 6
+{"id":1,"name":"Ted","role":"Admin"}
+round trip: Ted TED!
+error: missing field at `name`

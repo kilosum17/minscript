@@ -1,0 +1,64 @@
+(file parser_control_flow
+  (fun ifs
+    (params (score int) (opt (Option User)))
+    (block
+      (if (> score 90) (block (call (. log println) "A")))
+      (if (> score 90) (block (call (. log println) "A")) (block (call (. log println) "not A")))
+      (let grade
+        (if
+          (>= score 90)
+          (block (let bonus (call calc_bonus score)) "A")
+          (if (>= score 75) (block "B") (block "C"))))
+      (if (&& (paren (> score 10)) (paren (< score 20))) (block))
+      (if
+        (let (Some u) opt)
+        (block (call (. log println) (. u name)))
+        (block (call (. log println) "none")))
+      (if (== x P) (block (call (. log println) "x is P")))
+      (if (== x (paren (struct P (a 1)))) (block))))
+  (fun matches
+    (params (role Role) (n int) (res (Result int string)) (payment Payment))
+    (block
+      (let tier
+        (match role (=> "Admin" "Full Access") (=> "Operator" "Standard Access") (=> _ "Read Only")))
+      (let label
+        (match n (=> 0 "zero") (=> (..= 1 5) "small") (=> x (if (> x 100)) "huge") (=> _ "other")))
+      (let status
+        (match res
+          (=> (Ok val) (template "Success: " val ""))
+          (=> (Err e) (template "Error: " e ""))))
+      (match payment
+        (=> Cash (call process_cash))
+        (=> (Mpesa receipt) (block (call (. log println) receipt) (call process_mpesa receipt)))
+        (=> (Card (number) ..) (call process_card number))
+        (=> (Payment.Crypto (wallet)) (block (call (. log println) wallet))))
+      (let is_adult (match (=> (>= age 18) true) (=> _ false)))
+      (let bucket
+        (match
+          (=> (< n 0) "negative")
+          (=> (== n 0) "zero")
+          (=> (&& (< n 10) (== (% n 2) 0)) "small even")
+          (=> _ "other")))
+      (let n2 (match n (=> 0 1) (=> _ n)))))
+  (fun loops
+    (params (items (Vec int)) (users (Vec User)) (map (Map string int)) (grid (Vec (Vec int))))
+    (block
+      (for (block (break)))
+      (var count 0)
+      (for (< count 3) (block (+= count 1)))
+      (for-let (Some item) (call (. iter next)) (block (call (. log println) item)))
+      (for-in item items (block (if (== item 0) (block (continue))) (call (. log println) item)))
+      (for-in user idx users (block (call (. log println) (template "" idx ": " (. user name) ""))))
+      (for-in key val map (block (call (. log println) (template "" key " => " val ""))))
+      (for-in i (.. 0 10) (block (if (== i 2) (block (continue))) (if (== i 5) (block (break)))))
+      (for-in i (..= 0 (- (call (. items len)) 1)) (block))
+      (for-in (t a b) pairs (block))
+      (for-in x (call (. items iter_mut)) (block (+= x 1)))
+      (for-in outer: row grid
+        (block
+          (for-in cell row
+            (block (if (== cell 0) (block (continue outer))) (if (< cell 0) (block (break outer)))))))
+      (let found (for (block (let n (call next_number)) (if (> n 100) (block (break n))))))
+      (for (== (call (. items is_empty)) false) (block (break)))))
+  (fun returns (params) (-> int) (block (if (call early) (block (return 1))) (return 2)))
+  (fun void_returns (params) (block (if (call early) (block (return))) (return))))

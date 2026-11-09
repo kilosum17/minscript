@@ -23,6 +23,8 @@ pub type TestOptions = {
     /// Only tests whose name contains this.
     pub filter: string? = None
     pub reporter: string? = None
+    /// collect what the tests print in `TestReport.lines` instead of printing it (the corpus runner)
+    pub capture: bool = false
 }
 
 pub type TestFn = { pub name: string, pub is_async: bool }
@@ -42,6 +44,8 @@ pub type TestReport = {
     /// Packages whose tests didn't compile or crashed the runner.
     pub broken: int = 0
     pub diagnostics: Vec[FileDiagnostic] = []
+    /// with `TestOptions.capture`: everything the runner and the tests printed
+    pub lines: Vec[string] = []
 }
 
 fun skipped(name: &str) -> bool { name == "node_modules" || name == ".git" || name == "history" }
@@ -161,7 +165,11 @@ pub async fun run_tests(tc: &Toolchain, path: &str, opts: &TestOptions) -> TestR
                 let p = await open_project(tc, root)
                 report.diagnostics.extend(p.diagnostics.clone())
                 for e in p.errors.iter() {
-                    io.println("error: ${e}")
+                    if opts.capture {
+                        report.lines.push("error: ${e}")
+                    } else {
+                        io.println("error: ${e}")
+                    }
                 }
                 let usable = p.diagnostics.is_empty() && p.errors.is_empty()
                 projects[root.clone()] = if usable { Some(p) } else { None }
@@ -200,7 +208,10 @@ pub async fun run_tests(tc: &Toolchain, path: &str, opts: &TestOptions) -> TestR
             report.broken += 1
             continue
         }
-        let r = await runtime.run_module_result(code, [], false)
+        let r = if opts.capture { await runtime.run_module_captured(code, []) } else { await runtime.run_module_result(code, [], false) }
+        if opts.capture {
+            report.lines.extend(output_lines(r.stdout))
+        }
         if r.code != 0 {
             report.broken += 1
             continue
@@ -257,4 +268,13 @@ pub async fun test_command(tc: &Toolchain, argv: &Vec[string]) -> int {
         io.println("\n${packages} package${s}: ${outcome}")
     }
     if failed > 0 || broken > 0 { 1 } else { 0 }
+}
+
+/// The lines of a captured output (`run_module_captured`).
+pub fun output_lines(out: &str) -> Vec[string] {
+    if out.is_empty() {
+        return []
+    }
+    let text = if out.ends_with("\n") { out.substring(0, out.len() - 1) } else { out }
+    text.split("\n").map(#{ l => l.to_str() })
 }

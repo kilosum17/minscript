@@ -1,0 +1,62 @@
+(file parser_or_nullish
+  (import "std.fs")
+  (import "std.json")
+  (fun load_config async
+    (params (path string))
+    (-> (Result Config string))
+    (block
+      (let bytes
+        (or (await (call (. fs read_file) path)) (call Err (template "IO failed: " it ""))))
+      (let prefix (or (call get_env_prefix) (call Err "missing prefix")))
+      (let config
+        (or (call (generic (. json parse) Config) bytes) e => (call Err (call (. e to_str)))))
+      (let checked
+        (or
+          (call validate config)
+          e
+          =>
+          (block (call (. log println) (template "invalid config: " e "")) (call Err e))))
+      (let explicit (or (call maybe) (return (call Err "explicit return"))))
+      (let multi_line
+        (or (call compute_something) (call Err "newline before `or` continues the statement")))
+      (call Ok checked)))
+  (fun loops
+    (params (lines (&mut Lines)))
+    (block
+      (for
+        (block
+          (let line (or (call (. lines next)) (break)))
+          (let parsed (or (call (. line to_int)) (continue)))
+          (call (. log println) parsed)))))
+  (fun void_or
+    (params)
+    (block
+      (let user (or (call find_user 1) (block (call (. log println) "not found") (return))))
+      (let x (or (call get) (return)))))
+  (fun propagate
+    (params)
+    (-> (Result int string))
+    (block
+      (let a (? (call parse_a)))
+      (let b (. (paren (? (call await_free_call))) value))
+      (call Ok (+ a b))))
+  (fun fallbacks
+    (params (user (Option User)) (cfg (& Config)))
+    (block
+      (let name (?? (?. (?. user profile) name) "anonymous"))
+      (let port (?? (call (?. (call (. env get) "PORT") to_int)) 8080))
+      (let token (?? (call (. cache get) key) (call fetch_token)))
+      (let first (?? a (?? b (?? c "none"))))
+      (let email (call (. raw_email or) "guest@minscript.dev"))
+      (let lazy (call (. (. cfg timeout) or) (closure (call compute_default))))
+      (var slot (Option int) nil)
+      (??= slot 5)))
+  (fun truthy
+    (params (res (Result User string)) (opt (Option int)) (flag bool))
+    (block
+      (if res (block (call (. log println) "ok")))
+      (if (! opt) (block (call (. log println) "absent")))
+      (if (&& opt flag) (block (call (. log println) "both")))
+      (if (|| res opt) (block (call (. log println) "either")))
+      (for opt (block (break)))
+      (let both (&& (! res) (! opt))))))
