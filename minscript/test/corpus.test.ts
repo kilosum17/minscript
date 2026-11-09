@@ -209,8 +209,9 @@ describe("lowering (test/hir)", () => {
             assert.deepEqual(fmt(parsed.diagnostics), [], "must parse cleanly")
             const res = resolvePackage([parsed.file])
             const checked = checkPackage([parsed.file], res)
-            assert.deepEqual(fmt([...res.diagnostics, ...checked.diagnostics, ...checkOwnership([parsed.file], res, checked).diagnostics]), [], "must pass every check")
-            snapshot(file, ".hir", dumpHir(lowerPackage([parsed.file], res, checked)))
+            const owned = checkOwnership([parsed.file], res, checked)
+            assert.deepEqual(fmt([...res.diagnostics, ...checked.diagnostics, ...owned.diagnostics]), [], "must pass every check")
+            snapshot(file, ".hir", dumpHir(lowerPackage([parsed.file], res, checked, undefined, "main", [], undefined, owned.moves)))
         })
     }
 })
@@ -463,7 +464,8 @@ describe("stage 1 (../stage1, the self-hosted compiler)", () => {
             const p = parse(readFileSync(f))
             const res = resolvePackage([p.file])
             const checked = checkPackage([p.file], res)
-            return { f, p, res, checked, hir: dumpHir(lowerPackage([p.file], res, checked)) }
+            const moves = checkOwnership([p.file], res, checked).moves
+            return { f, p, res, checked, hir: dumpHir(lowerPackage([p.file], res, checked, undefined, "main", [], undefined, moves)) }
         })
         same(r.stdout, lowered.map(({ f, hir }) => `== ${f}\n${hir}`).join(""), "HIR dumps")
         same(r.stderr, lowered.map(({ f, p, res, checked }) => diagnosticLines(f, [...p.diagnostics, ...res.diagnostics, ...checked.diagnostics])).join(""), "diagnostics")

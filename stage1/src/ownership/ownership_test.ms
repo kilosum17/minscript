@@ -23,7 +23,7 @@ fun codes(src: &str) -> string {
     let p = parse_from(utf8.encode("package p\n${decls()}\n${src}\n"), pp.next_id)
     var res = resolve_package([p.file], Some(prelude.clone()), ResolveOptions {})
     var checked = check_package([p.file], res, pp.file, prelude)
-    let ds = check_ownership([p.file], res, checked)
+    let ds = check_ownership([p.file], res, checked).diagnostics
     ds.map(#{ d => "${d.code}@${d.span.line - 5}" }).join(" ")
 }
 

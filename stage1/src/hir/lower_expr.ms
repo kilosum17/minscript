@@ -647,6 +647,12 @@ impl Lowerer {
     // ---- calls ----
 
     fun call(&mut this, e: &Expr, callee: &Expr, args: &Vec[Elem], ty: Ty) -> HExpr {
+        // a clone whose source is never used again is a move (the ownership pass decided)
+        if this.moves.has(e.id) {
+            if let Member { object, .. } = &callee.kind {
+                return this.expr(object.get())
+            }
+        }
         var out = this.call_inner(e, callee, args, ty)
         // the callee's generics as instantiated here: type witnesses, if the callee needs them
         let env = match this.calls.get(e.id) {

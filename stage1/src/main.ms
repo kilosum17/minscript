@@ -98,12 +98,14 @@ async fun main() {
             if command == "types" {
                 io.print(check.dump_types(res, checked))
             } else if command == "hir" {
-                let program = hir.lower_package([parsed.file], res, checked, pf, pr)
+                // the ownership pass decides which clones are moves (its diagnostics are `ownership`'s)
+                let owned = ownership.check_ownership([parsed.file], res, checked)
+                let program = hir.lower_package([parsed.file], res, checked, pf, pr, owned.moves)
                 io.print(hir.dump_hir(program, checked.vars, res.symbols))
             } else {
                 let owned = ownership.check_ownership([parsed.file], res, checked)
-                io.print(ownership.dump_ownership(owned))
-                all.extend(owned)
+                io.print(ownership.dump_ownership(owned.diagnostics))
+                all.extend(owned.diagnostics)
             }
             report(file, all)
         }

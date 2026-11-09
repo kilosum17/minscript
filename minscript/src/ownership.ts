@@ -24,7 +24,9 @@ import type { Span } from "./token.ts"
 import * as T from "./types.ts"
 import type { Ty } from "./types.ts"
 
-export type OwnershipResult = { diagnostics: Diagnostic[] }
+/** `moves`: the `x.clone()` calls whose source is never observed again, which lowering turns into
+ *  moves (spec §14.1, "Clones at last use"). */
+export type OwnershipResult = { diagnostics: Diagnostic[], moves: Set<A.Expr> }
 
 export function checkOwnership(files: A.File[], res: Resolution, checked: CheckResult): OwnershipResult {
     return new Ownership(files, res, checked).run()
@@ -65,6 +67,8 @@ class Ownership {
     private readonly calls: Map<A.Node, CallInfo>
     private readonly diagnostics: Diagnostic[] = []
     private readonly reported = new Set<string>()
+    /** Bindings some scoped value borrows from (a `let` of a borrow, a borrowing closure). */
+    private readonly lentOwners = new Set<Sym>()
     private readonly usesOf = new Map<Sym, A.Node[]>()
     private readonly copyTypes = new Set<Sym>()
     private ctx!: FnCtx
@@ -88,7 +92,127 @@ class Ownership {
     run(): OwnershipResult {
         for (const file of this.files) this.collectCopy(file)
         for (const file of this.files) for (const item of file.items) this.checkItem(item)
-        return { diagnostics: this.diagnostics }
+        const moves = new Set<A.Expr>()
+        for (const file of this.files) for (const item of file.items) for (const f of funsOf(item)) this.findMoves(f, moves)
+        return { diagnostics: this.diagnostics, moves }
+    }
+
+    // ---- clones at last use (spec §14.1) --------------------------------------------------------
+
+    /**
+     * The `x.clone()` calls of a function that can be moves: `x` is a local declared by a plain `let`
+     * from a fresh value (it can't share an object with anything still alive), never reassigned, never
+     * an owner of a scoped value, and nothing reads it after the statement of the clone (nor in a later
+     * iteration of a loop, or call of a closure, it was declared outside of). The clone must be the
+     * auto-generated one (a user `clone` may have effects).
+     */
+    private findMoves(f: A.FunDecl, out: Set<A.Expr>): void {
+        if (f.body === null) return
+        const candidates = new Map<Sym, number>()              // binding → where it is declared
+        const reassigned = new Set<Sym>()
+        const pending: { call: A.Expr, sym: Sym, root: A.Node, stmts: number[], bounds: Span[] }[] = []
+        const bounds: Span[] = []
+        const stmts: number[] = []
+        const visit = (n: unknown): void => {
+            if (n === null || typeof n !== "object") return
+            if (Array.isArray(n)) { for (const x of n) visit(x); return }
+            const node = n as A.Node & Record<string, unknown>
+            if (typeof node.kind !== "string") return
+            const isStmt = node.kind === "Let" || node.kind === "ExprStmt"
+            const isBound = node.kind === "For" || node.kind === "Closure"
+            if (isStmt) stmts.push(node.span.start)
+            if (isBound) bounds.push(node.span)
+            if (node.kind === "Let") this.moveCandidate(node as Extract<A.Stmt, { kind: "Let" }>, candidates)
+            if (node.kind === "Assign") {
+                const t = (node as Extract<A.Expr, { kind: "Assign" }>).target
+                const r = this.root(t)
+                if (r && r.whole) reassigned.add(r.sym)
+            }
+            if (node.kind === "Call") {
+                const c = this.cloneSource(node as Extract<A.Expr, { kind: "Call" }>)
+                if (c) pending.push({ call: node as A.Expr, sym: c.sym, root: c.node, stmts: [...stmts], bounds: [...bounds] })
+            }
+            for (const key in node) {
+                if (key === "span" || key === "kind") continue
+                visit(node[key])
+            }
+            if (isBound) bounds.pop()
+            if (isStmt) stmts.pop()
+        }
+        visit(f.body)
+        if (pending.length === 0) return
+        const uses = new Map<Sym, A.Node[]>()
+        for (const [node, sym] of this.refs) {
+            if (!candidates.has(sym)) continue
+            const list = uses.get(sym) ?? []
+            list.push(node)
+            uses.set(sym, list)
+        }
+        for (const p of pending) {
+            const declared = candidates.get(p.sym)
+            if (declared === undefined || reassigned.has(p.sym) || this.lentOwners.has(p.sym)) continue
+            if (!p.bounds.every((b) => b.start <= declared && declared <= b.end)) continue
+            // the statement of the clone in the block that declares `x` (the outermost one after the
+            // declaration): every other use must be over before it starts (a `match` subject or a loop
+            // header around the clone still borrows `x`)
+            const stmt = p.stmts.find((start) => start > declared)
+            if (stmt === undefined) continue
+            const ok = (uses.get(p.sym) ?? []).every((u) => u === p.root || u.span.end <= stmt)
+            if (ok) out.add(p.call)
+        }
+    }
+
+    /** A `let` of a plain name holding a fresh owned value is a candidate source of moves. */
+    private moveCandidate(s: Extract<A.Stmt, { kind: "Let" }>, out: Map<Sym, number>): void {
+        if (s.pattern.kind !== "PBind" || s.else !== null) return
+        const sym = this.decls.get(s.pattern)
+        if (sym === undefined || sym.kind !== "local") return
+        const ty = this.symTypes.get(sym)
+        if (ty === undefined || T.prune(ty).k === "ref" || this.isCopy(ty) || this.isHandle(ty) || this.holdsBorrow(ty)) return
+        if (!this.fresh(s.value)) return
+        out.set(sym, s.span.start)
+    }
+
+    /** `x.clone()` / `x.f.clone()`, the auto-generated clone, on a place rooted at a local. */
+    private cloneSource(e: Extract<A.Expr, { kind: "Call" }>): { sym: Sym, node: A.Node } | null {
+        if (e.callee.kind !== "Member" || e.callee.name !== "clone" || e.args.length > 0) return null
+        const info = this.calls.get(e)
+        if (info?.target.kind !== "method" || info.target.auto !== "clone") return null
+        const r = this.root(e.callee.object)
+        if (r === null || r.node.kind !== "Ident" || r.sym.kind !== "local") return null
+        return { sym: r.sym, node: r.node }
+    }
+
+    /** A value that can't contain (part of) a place that stays alive: no field or element moved out of
+     *  something, at any depth. */
+    private fresh(e: A.Expr): boolean {
+        switch (e.kind) {
+            case "Paren": case "As": case "Try": return this.fresh(e.expr)
+            case "Ident": case "Int": case "Float": case "Str": case "Char": case "Bool": case "Nil": case "Template":
+            case "Range": case "Closure": case "Await":
+                return true
+            case "Binary": return e.op !== "??" || (this.fresh(e.left) && this.fresh(e.right))
+            case "Unary": return e.op === "-" || e.op === "!"
+            case "Or": return this.fresh(e.expr) && this.fresh(e.rhs)
+            case "Vec": case "Array": case "Tuple": case "Set":
+                return e.elems.every((x) => this.fresh(x.kind === "Spread" ? x.expr : x))
+            case "Map": return e.entries.every((x) => (x.kind === "Spread" ? this.fresh(x.expr) : this.fresh(x.key) && this.fresh(x.value)))
+            case "Record": case "Inferred": case "StructLit":
+                return e.fields.every((x) => (x.kind === "Spread" ? this.fresh(x.expr) : x.value === null || this.fresh(x.value)))
+            case "Call": {
+                // arguments passed by value (and a consumed receiver) end up in the result: they must be fresh
+                const info = this.calls.get(e)
+                if (info === undefined) return false
+                const callee = e.callee.kind === "GenericApply" ? e.callee.target : e.callee
+                if ((callee.kind === "Member" || callee.kind === "OptMember") && (info.receiver === "this" || info.receiver === "mut this") && !this.fresh(callee.object)) return false
+                return e.args.every((a, i) => {
+                    const p = T.prune(info.args[i] ?? T.UNKNOWN)
+                    if (p.k === "ref") return true
+                    return this.fresh(a.kind === "Spread" ? a.expr : a)
+                })
+            }
+            default: return false
+        }
     }
 
     private error(code: string, message: string, at: { span: Span }): void {
@@ -437,6 +561,7 @@ class Ownership {
                 const owners = this.ownersOf(s.value)
                 owners.delete(sym)
                 if (owners.size > 0) this.ctx.scoped.push({ sym, owners, defEnd: s.span.end, defPos: s.span.start })
+                for (const [o] of owners) this.lentOwners.add(o)
             }
         }
     }
@@ -1014,6 +1139,17 @@ function typeText(t: A.Type): string {
 }
 
 /** Calls `fn` on each direct sub-expression of `e` (used by `ownersOf`). */
+/** The functions an item declares (methods included). */
+function funsOf(item: A.Item): A.FunDecl[] {
+    switch (item.kind) {
+        case "FunDecl": return [item]
+        case "TypeDecl": return item.body.kind === "StructBody" ? item.body.methods : []
+        case "UnionDecl": case "ImplDecl": return item.methods
+        case "InterDecl": return item.methods ?? []
+        default: return []
+    }
+}
+
 function forEachChildExpr(e: A.Expr, fn: (x: A.Expr) => void): void {
     const visitBlock = (b: A.Block) => b.stmts.forEach((s) => (s.kind === "ExprStmt" ? fn(s.expr) : fn(s.value)))
     switch (e.kind) {

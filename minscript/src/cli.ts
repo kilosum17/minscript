@@ -167,7 +167,9 @@ for (const file of rest) {
         const res = resolvePackage([parsed.file])
         const checked = checkPackage([parsed.file], res)
         diagnostics = [...parsed.diagnostics, ...res.diagnostics, ...checked.diagnostics]
-        process.stdout.write(dumpHir(lowerPackage([parsed.file], res, checked)))
+        // the ownership pass decides which clones are moves (its diagnostics are `ms ownership`'s)
+        const owned = checkOwnership([parsed.file], res, checked)
+        process.stdout.write(dumpHir(lowerPackage([parsed.file], res, checked, undefined, "main", [], undefined, owned.moves)))
     }
     for (const d of diagnostics) {
         console.error(`${show(resolve(file))}:${d.span.line}:${d.span.col}: ${d.severity} ${d.code}: ${d.message}`)

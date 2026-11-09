@@ -37,6 +37,8 @@ export type Package = {
     links: Map<A.Import, { dep: Package, item: string | null, items: string[] | null, glob: boolean }>
     res?: Resolution
     checked?: CheckResult
+    /** The clones the ownership pass found can be moves (for lowering). */
+    moves?: Set<A.Expr>
 }
 
 /** `pass`: which stage reported it (`load`: a bad import, found while loading). */
@@ -269,6 +271,7 @@ class Loader {
         const owned = checkOwnership(asts, res, checked)
         pkg.res = res
         pkg.checked = checked
+        pkg.moves = owned.moves
         for (const f of pkg.files) for (const d of f.parsed.diagnostics) this.diagnostics.push({ ...d, file: f.path, pass: "parse" })
         const passes = [["resolve", res.diagnostics], ["check", checked.diagnostics], ["ownership", owned.diagnostics]] as const
         for (const [pass, list] of passes) for (const d of list) this.diagnostics.push({ ...d, file: attribute(d.span, pkg.files), pass })
@@ -318,7 +321,7 @@ export function lowerProgram(program: Program): H.Program {
         if (!pkg.res || !pkg.checked) continue
         const deps = [...loader.reachable(pkg)].filter((d) => d.res).map((d) => ({ files: d.files.map((f) => f.parsed.file), res: d.res!, name: d.name, checked: d.checked }))
         const names = new Map(pkg.files.map((f) => [f.parsed.file, displayPath(f.path)]))
-        const p = lowerPackage(pkg.files.map((f) => f.parsed.file), pkg.res, pkg.checked, loadPrelude(), pkg.name, deps, names)
+        const p = lowerPackage(pkg.files.map((f) => f.parsed.file), pkg.res, pkg.checked, loadPrelude(), pkg.name, deps, names, pkg.moves)
         out.types.push(...p.types)
         out.funs.push(...p.funs)
         out.globals.push(...p.globals)

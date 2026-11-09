@@ -500,7 +500,7 @@ impl Loader {
                 spans.push(collect_spans(f.parsed.file))
             }
         }
-        let passes = [t("resolve", res.diagnostics.clone()), t("check", checked.diagnostics.clone()), t("ownership", owned)]
+        let passes = [t("resolve", res.diagnostics.clone()), t("check", checked.diagnostics.clone()), t("ownership", owned.diagnostics.clone())]
         for entry in passes.iter() {
             let t(pass, list) = entry
             for d in list.iter() {
@@ -508,7 +508,7 @@ impl Loader {
                 this.diagnostics.push(FileDiagnostic { file, code: d.code.clone(), message: d.message.clone(), span: d.span, pass: pass.to_str() })
             }
         }
-        this.analysed.push(CheckedDep { files: asts, res, checked })
+        this.analysed.push(CheckedDep { files: asts, res, checked, moves: owned.moves })
         this.packages[pkg].slot = this.analysed.len() - 1
     }
 }
@@ -548,6 +548,11 @@ pub fun lower_program(p: &mut Program) -> hir.Program {
     // every package is lowered with the program's arenas (the last package's), handed from one to the next
     var arenas = p.take_arenas()
     arenas.tables = [hir.merge_program_tables(p.prelude, p.analysed)]
+    for d in p.analysed.iter() {
+        for id in d.moves.iter() {
+            let _ = arenas.moves.insert(id)
+        }
+    }
     var temps = prelude.temps
     for i in p.order.iter() {
         let pkg = &p.packages[i]

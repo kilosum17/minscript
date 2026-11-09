@@ -52,6 +52,8 @@ type Lowerer = {
     /// the result type of the function (or closure) being lowered
     ret: Ty
     current_file: string?
+    /// the clones that are moves (call ids)
+    moves: Set[int] = Set.new()
 }
 
 /// The qualified prefix of a package's items: none for `main`, `std.` for the prelude, else `<package>.`.
@@ -60,8 +62,8 @@ pub fun package_prefix(name: &str) -> string {
 }
 
 /// Lowers the files of one package (`main`) to HIR. `prelude` is the prelude's resolution and file.
-pub fun lower_package(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution) -> Program {
-    let arenas = Arenas { syms: res.symbols.clone(), scopes: res.scopes.clone(), vars: checked.vars.clone() }
+pub fun lower_package(files: &Vec[File], res: &Resolution, checked: &CheckResult, prelude_file: &File, prelude: &Resolution, moves: Set[int]) -> Program {
+    let arenas = Arenas { syms: res.symbols.clone(), scopes: res.scopes.clone(), vars: checked.vars.clone(), moves }
     let t(program, _) = lower_loaded(files, res, checked, prelude_file, prelude, "main", [], [], [], 0, arenas)
     program
 }
@@ -70,7 +72,8 @@ pub fun lower_package(files: &Vec[File], res: &Resolution, checked: &CheckResult
 /// Lowering takes them by value and hands them back, so they move from package to package, not copied.
 /// `tables` (none, or one): the program's merged side tables (`merge_program_tables`); without them,
 /// each package merges its own and its dependencies'.
-pub type Arenas = { pub syms: Vec[Sym], pub scopes: Vec[Scope], pub vars: Vec[VarState], pub tables: Vec[Tables] = [] }
+/// `moves`: the clones the ownership passes found can be moves (call ids, program-wide).
+pub type Arenas = { pub syms: Vec[Sym], pub scopes: Vec[Scope], pub vars: Vec[VarState], pub tables: Vec[Tables] = [], pub moves: Set[int] = Set.new() }
 
 /// The resolver's and checker's side tables lowering reads, merged over packages: node ids are
 /// unique across a program, so they merge. A dependency's expressions lowered elsewhere (an imported
@@ -155,6 +158,7 @@ pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult,
         calls, members, variants, rets,
         open: res.open.clone(), deferred, vars: given.vars.drain(), prelude_names: prelude.scopes[prelude.pkg_scope].names.clone(),
         package_name: package_name.to_str(), ret: void_ty(), current_file: None, temp_count: first_temp,
+        moves: given.moves,
     }
     var implicit = [] as Vec[t(int, int)]
     for s in l.syms.iter() {
@@ -209,7 +213,7 @@ pub fun lower_loaded(files: &Vec[File], res: &Resolution, checked: &CheckResult,
     }
     program.temps = l.temp_count
     let back = Tables { refs: l.refs, decls: l.decls, calls: l.calls, members: l.members, variants: l.variants, rets: l.rets }
-    t(program, Arenas { syms: l.syms.drain(), scopes, vars: l.vars.drain(), tables: [back] })
+    t(program, Arenas { syms: l.syms.drain(), scopes, vars: l.vars.drain(), tables: [back], moves: l.moves })
 }
 
 fun fun_info(f: &FunDecl) -> FunInfo {

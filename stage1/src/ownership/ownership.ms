@@ -70,7 +70,13 @@ type Ownership = {
     this_refs: Vec[Ref] = []
     copy_types: Set[int] = Set.new()
     ctxs: Vec[FnCtx] = []
+    /// bindings some scoped value borrows from (a `let` of a borrow, a borrowing closure)
+    lent_owners: Set[int] = Set.new()
 }
+
+/// `moves`: the `x.clone()` calls (by id) whose source is never observed again, which lowering turns
+/// into moves (spec §14.1, moves.ms).
+pub type OwnershipResult = { pub diagnostics: Vec[Diagnostic], pub moves: Set[int] }
 
 fun local_kind(k: &str) -> bool {
     match k {
@@ -95,7 +101,7 @@ fun is_copy_iface(t: &Type) -> bool {
 
 /// `res` and `checked` lend their arenas (symbols, inference variables) and side tables for the pass,
 /// and get them back.
-pub fun check_ownership(files: &Vec[File], res: &mut Resolution, checked: &mut CheckResult) -> Vec[Diagnostic] {
+pub fun check_ownership(files: &Vec[File], res: &mut Resolution, checked: &mut CheckResult) -> OwnershipResult {
     var caps = m{} as Map[int, Vec[int]]
     for id, c in res.captures {
         caps[id] = c.syms.clone()
@@ -124,6 +130,7 @@ pub fun check_ownership(files: &Vec[File], res: &mut Resolution, checked: &mut C
             o.check_item(itm)
         }
     }
+    let moves = o.find_all_moves(files)
     res.symbols = o.syms.drain()
     res.refs = o.refs.drain()
     res.decls = o.decls.drain()
@@ -131,7 +138,7 @@ pub fun check_ownership(files: &Vec[File], res: &mut Resolution, checked: &mut C
     checked.symbols = o.sym_types.drain()
     checked.calls = o.calls.drain()
     checked.vars = o.vars.drain()
-    o.diagnostics
+    OwnershipResult { diagnostics: o.diagnostics, moves }
 }
 
 impl Ownership {
@@ -627,6 +634,9 @@ impl Ownership {
             var owners = this.owners_of(l.value)
             let _ = owners.remove(sym)
             if !owners.is_empty() {
+                for o, _ in owners {
+                    let _ = this.lent_owners.insert(o)
+                }
                 let k = this.top()
                 this.ctxs[k].scoped.push(Scoped { sym, owners, def_end: l.span.end, def_pos: l.span.start })
             }

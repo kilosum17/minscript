@@ -14,7 +14,7 @@ The MinScript compiler, written in MinScript. It replaces the TypeScript compile
 
 - `mod.ms`: the project (`main` is `./src`); scripts: `difftest`, `reseed`.
 - `bin/ms1.js`: the `ms1` command (same commands as `ms`; std from `MS_STD`, default `../minscript/std`; `MS1_SEED` runs another build). `seed/stage1.mjs`: the seed. It imports the runtime by a path relative to `seed/`, so it runs in place.
-- `tools/seed.sh` (`ms1 run reseed`): the current seed compiles `src/`, and the result must compile `src/` to itself (a fixpoint) before it replaces the seed. Rebuild the seed after changing stage 1 when you want `ms1` to have the change; it isn't needed for the difftest, which compiles the sources with stage 0 once per run.
+- `tools/seed.sh` (`ms1 run reseed`): the current seed compiles `src/`, and each result compiles `src/` again until one compiles it to itself (a fixpoint) before it replaces the seed; a change to what the compiler emits takes two rounds. Rebuild the seed after changing stage 1 when you want `ms1` to have the change; it isn't needed for the difftest, which compiles the sources with stage 0 once per run.
 - `src/main.ms`: the CLI. Per file (each its own package): `lex|parse <file.ms>…`, `resolve|types|ownership|hir --prelude <prelude.ms> <file.ms>…`; programs and projects, as stage 0's `ms` (`--std <std dir>` or `$MS_STD`, `--runtime <url>`): `run [<path>|<script>] [-- args…]`, `check`, `test`, `js`, `config`, and `<script>` as the command. Dumps on stdout, diagnostics on stderr, as stage 0's commands of the same names.
 - `src/lexer/` (← `token.ts`, `lexer.ts`, `dump.ts`): `token.ms` (tokens, keyword and punctuator tables), `lexer.ms`, `dump.ms` (the `.tokens` dump), `lexer_test.ms`.
 - `src/ast/` (← `ast.ts`, `sexpr.ts`): `ast.ms` (the AST), `sexpr.ms` (the `.ast` dump).
@@ -50,6 +50,7 @@ The MinScript compiler, written in MinScript. It replaces the TypeScript compile
 
 - **`.clone()` is a deep copy**, and so are `get`, `first`, `last`, `find`, `filter` (they return copies). Never copy a whole structure to read one field: index in place (`this.analysed[n - 1].res.symbols`, `this.program.funs[fi].witnesses`), and give hot readers a narrow accessor (`Parser.cur_span()`, `skip()`).
 - **The program's arenas move, they are never copied per package:** each package's resolver takes the previous package's symbols and scopes with `drain()`, the checker and the ownership pass borrow their resolution's arenas and side tables (`&mut`, `drain()` in, assign back out), and lowering takes them as `hir.Arenas` (with the program-wide merged `Tables`) and hands them back. Only the last analysed package holds them.
+- **Clones at last use** (spec §14.1, `src/ownership/moves.ms` ← `findMoves`): the ownership pass lists the `x.clone()` calls whose source is never observed again, and lowering emits a move. It only applies to locals from a fresh `let`, so a clone out of a borrow (a loop item, a `match` binding, `this.f`, a parameter) stays a copy: avoid those in hot code by borrowing instead.
 - Measure before keeping a change: `node --cpu-prof` on `exec.ts <stage1.mjs> js .`, and A/B best-of-3 runs (the machine is noisy). Two plausible runtime "fast paths" for short strings made things slower and were reverted.
 
 ## Pitfalls found while porting

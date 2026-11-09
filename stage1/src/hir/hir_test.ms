@@ -20,7 +20,7 @@ fun lowered(src: &str) -> string {
     let p = parse_from(utf8.encode("package p\n${src}\n"), pp.next_id)
     let res = resolve_package([p.file], Some(prelude.clone()), ResolveOptions {})
     let checked = check_package([p.file], res, pp.file, prelude)
-    dump_hir(lower_package([p.file], res, checked, pp.file, prelude), checked.vars, res.symbols)
+    dump_hir(lower_package([p.file], res, checked, pp.file, prelude, Set.new()), checked.vars, res.symbols)
 }
 
 fun test_functions_and_types() {

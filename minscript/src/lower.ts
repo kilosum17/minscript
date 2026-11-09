@@ -22,9 +22,11 @@ export type LowerDep = { files: A.File[], res: Resolution, name: string, checked
  * `deps`: the packages it can reach, so calls into them get their qualified names.
  */
 /** `fileNames`: each file's name for panic locations (spec §9.8). */
-export function lowerPackage(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude = loadPrelude(), packageName = "main", deps: LowerDep[] = [], fileNames?: Map<A.File, string>): H.Program {
+/** `moves`: the clones the ownership pass found can be moves (`OwnershipResult.moves`). */
+export function lowerPackage(files: A.File[], res: Resolution, checked: CheckResult, prelude: Prelude = loadPrelude(), packageName = "main", deps: LowerDep[] = [], fileNames?: Map<A.File, string>, moves: Set<A.Expr> = new Set()): H.Program {
     const l = new Lowerer(files, res, checked, prelude, packageName, deps)
     l.fileNames = fileNames ?? new Map()
+    l.moves = moves
     return l.run()
 }
 
@@ -52,6 +54,7 @@ class Lowerer {
     private readonly members: Map<A.Node, MemberTarget>
     private readonly variants: Map<A.Node, VariantRef>
     private readonly rets: Map<A.FunDecl, Ty>
+    moves: Set<A.Expr> = new Set()
     private readonly open: Set<A.Node>
     private readonly deferred: Set<A.Node>
     private readonly implicitByOwner = new Map<A.Node, Sym[]>()
@@ -979,6 +982,8 @@ class Lowerer {
     // ---- calls --------------------------------------------------------------------------------
 
     private call(e: Extract<A.Expr, { kind: "Call" }>, ty: Ty): H.Expr {
+        // a clone whose source is never used again is a move (the ownership pass decided)
+        if (this.moves.has(e) && e.callee.kind === "Member") return this.expr(e.callee.object)
         const out = this.callInner(e, ty)
         // the callee's generics as instantiated here: type witnesses, if the callee needs them
         const env = this.calls.get(e)?.typeEnv

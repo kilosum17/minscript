@@ -1726,6 +1726,12 @@ After every check passes, `src/lower.ts` lowers the AST to the **HIR** (`src/hir
   - `computeWitnesses` (`src/witness.ts`) runs on the whole program and marks the generics each function needs: those it uses that way, directly or by passing them to a function that needs them (`decode.[Vec[T]]` inside `load[T]`). It is a fixpoint across packages and the prelude.
   - Only those functions get hidden parameters, after the others: a witness is a type's shape (`{ s: "app.User" }`, `{ vec: … }`, `{ p: "int" }`), built at each call from the caller's types and its own witnesses. Every other generic function is unchanged.
   - This makes `Vec.sum` (`T.default()`), `Config.section[T]` and generic JSON helpers ordinary MinScript.
+- **Clones at last use:** a `.clone()` whose source nobody can observe again is lowered to a move (no copy). The ownership pass decides (`OwnershipResult.moves`) and lowering reads it. `x.clone()` (or `x.f.clone()`) becomes a move when all of these hold:
+  - `x` is a local declared by a plain `let` / `var` / `:=` name from a **fresh** value: one that can't contain a field or element moved out of something still alive (calls whose by-value arguments are fresh, literals, operators, a whole-variable move; not `s.f` or `v[i]`). Parameters aren't candidates: a caller may pass a field it moved out (partial moves aren't checked yet, §9.13);
+  - `x` is never reassigned, and no scoped value borrows from it (a `let` of a borrow, a borrowing closure);
+  - no other use of `x` comes at or after the statement of the clone, in the block that declares `x` (so a `match` subject or a loop header around the clone keeps the copy), and the clone isn't in a loop or a closure that `x` was declared outside of;
+  - the clone is the auto-generated one: a user-defined `clone` method is always called.
+  The `Drop` interface isn't run by the JS back end yet; when it is, values whose type implements `Drop` will be excluded (a move drops once, a clone twice).
 - **Unknown members:** members of packages that aren't loaded (external dependencies) stay symbolic (`extern:acme.http.get`), and so do variants of their types.
 - **Checks:** `.hir` snapshots show the lowering (`test/hir/`). A validator (`src/hir_check.ts`) checks that every valid corpus file lowers to well-formed HIR: every local is bound before use, every label exists, and nothing is unsupported.
 

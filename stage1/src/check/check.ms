@@ -87,7 +87,8 @@ pub type CheckResult = {
 }
 
 /// A package this one imports, as the loader analysed it: its files and results.
-pub type CheckedDep = { pub files: Vec[File], pub res: Resolution, pub checked: CheckResult }
+/// `moves`: the clones its ownership pass found can be moves (for lowering, spec §14.1).
+pub type CheckedDep = { pub files: Vec[File], pub res: Resolution, pub checked: CheckResult, pub moves: Set[int] = Set.new() }
 
 // ---- internal structures ------------------------------------------------------------------------
 
