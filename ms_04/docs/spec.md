@@ -2299,7 +2299,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 8 | **Mechanism selection** (§15.2). **Done** (2026-11-10) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call (`test/mechanism/copy_on_write.ms`: 2 copies instead of 4); every `test/mechanism/` program prints the same with and without pass 8 |
 | 9 | **Lints** (§18.4). **Done** (2026-11-10) | `src/lint.ts` | each lint has a firing and a quiet test (`test/lint/`); levels from `mod.ms` and the command line are tested; every lint comment in `examples/` and `samples/` fires and nothing else does |
 | 10 | **std** in v0.4 MinScript. **Done** (2026-11-10) | `std/**`, `src/js/stdlib.ts`, `src/js/exec.ts`, `src/test_runner.ts` | every std package of §14.4 loads and checks cleanly; std's tests pass under `ms test` (`test/std.test.ts`), as do the prelude's, the samples' and the basic project's; every `examples/run/` and `examples/packages/` program prints its `.out`; both samples run. Evaluating `mod.ms` (§17.5) and scripts (§17.3), added after: `examples/projects/*` evaluate to their `config.json` and print their `run.out` (`test/projects.test.ts`), and the evaluation errors have tests (`test/projects/`) |
-| 11 | **Self-host:** port the stage1 compiler to v0.4 (identity AST nodes, `Symbol` identifiers, `once` fields) | self-hosted sources | it compiles itself |
+| 11 | **Self-host:** port the stage1 compiler to v0.4 (identity AST nodes, `Symbol` identifiers, `once` fields). *In progress:* the lexer and parser are written as the sample `samples/compiler` (2026-11-10), which reproduces the TypeScript compiler's token and AST dumps and diagnostics on the whole corpus (`test/compiler_sample.test.ts`); it grows into the compiler once the grammar settles (open questions 22–26) | self-hosted sources | it compiles itself |
 | 12 | **Benchmark** against the TS compiler on the same input | — | within 1.5× of the TS compiler (proposed) |
 
 ---
@@ -2331,6 +2331,11 @@ Each has a proposed default, which applies until it is decided.
 | 19 | **Error conversion with `?`:** convert through an interface when error types differ? | no: `.map_err(#{…})` |
 | 20 | **`Option.or` / `Result.or`** take "a value or `#{…}`"; should there be `or(v)` and `or_else(#{…})`? | loose for now |
 | 21 | **Specialization of generic code** (§15.4): an opt-in specialization of hot generic functions for concrete types, limited to one package so separate compilation holds (`--release` only, or an attribute). | none: every generic body is compiled once |
+| 22 | **Keywords as field names** (found writing `samples/compiler`): `match`, `type`, `else`, `package` are natural field names in compiler data. Allow a keyword after `.` and as a field / record key name? | not allowed |
+| 23 | **`it` everywhere:** `it` is reserved even as a `for` variable or a named closure parameter, where it is the most natural name. Reserve it only inside header-less closures? | reserved |
+| 24 | **`x?.f` after `?`:** `f()?.start` lexes `?.` (optional chaining), so a try followed by a field needs parentheses: `(f()?).start`. | parentheses |
+| 25 | **Local lint suppression:** a deliberate snapshot warns (`L_VIEW_FORCED_COPY`) and only mod.ms levels silence it, for the whole project. An `#[allow(L_…)]` on a statement or function? | mod.ms only |
+| 26 | **Identity nodes in unions:** an identity AST costs a struct and a variant wrapping it per kind; struct-like variants can't be `Identity`. Allow `union Expr: Identity { … }`? | two declarations |
 
 **Deferred features:** `any` and downcasting; associated types and `where` clauses; const generic params beyond `Array[T, N]`; default params and named args; range indexing (`v[1..3]`); expression-bodied functions; macros, custom operators and trailing closures; Unicode identifiers; width subtyping for records; positional struct construction; extension methods on foreign types; send arms in `select`; `select biased`; queue groups on topics; workspaces; dependency sources beyond `path:` and `git:`.
 

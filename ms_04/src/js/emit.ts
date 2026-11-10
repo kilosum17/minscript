@@ -98,6 +98,17 @@ function shapeOf(t: Ty, depth = 0): unknown {
     }
 }
 
+/** Integer casts that keep every value and the JS representation (a number stays a number). */
+const WIDENS: Record<string, string[]> = {
+    u8: ["u16", "u32", "i16", "i32", "int", "isize", "usize", "f32", "f64"],
+    i8: ["i16", "i32", "int", "isize", "f32", "f64"],
+    u16: ["u32", "i32", "int", "isize", "usize", "f32", "f64"],
+    i16: ["i32", "int", "isize", "f32", "f64"],
+    i32: ["int", "isize", "f64"], int: ["i32", "isize", "f64"], isize: ["int", "i32", "f64"],
+    u32: ["usize", "f64"], usize: ["u32", "f64"],
+};
+const widens = (from: string, to: string) => WIDENS[from]?.includes(to) ?? false;
+
 const isInter = (t: Ty) => {
     const p = T.prune(t);
     return p.k === "named" && p.sym.kind === "inter";
@@ -187,7 +198,8 @@ class Emitter {
                 if (s !== null) shapes[f.name] = s;
             }
             const c = className(t.name);
-            this.out.push(`class ${c} { constructor(${fields.map(ident).join(", ")}) { ${fields.map((f) => `this.${f} = ${ident(f)};`).join(" ")} } }`);
+            // positional parameters: a field may be named like a JS reserved word (`default`)
+            this.out.push(`class ${c} { constructor(${fields.map((_, i) => `a${i}`).join(", ")}) { ${fields.map((f, i) => `this.${f} = a${i};`).join(" ")} } }`);
             this.out.push(`Object.assign(${c}.prototype, { $t: ${JSON.stringify(short)}, $f: ${JSON.stringify(fields)}, $sh: ${JSON.stringify(shapes)}${t.identity ? ", $id: true" : ""} });`);
             // what `json` needs: field types, defaults, and which fields are cells or once
             const ft = t.fields.map((f) => `${JSON.stringify(f.name)}: ${this.desc(f.ty, t.generics, null)}`).join(", ");
@@ -655,6 +667,7 @@ class FnEmitter {
                 const from = primName(e.expr.ty);
                 const to = primName(e.to);
                 const v = this.expr(e.expr);
+                if (from && to && widens(from, to)) return v;
                 return from && to && from !== to ? `$rt.cast(${v}, ${JSON.stringify(from)}, ${JSON.stringify(to)})` : v;
             }
             case "await":

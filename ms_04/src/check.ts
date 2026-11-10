@@ -1644,7 +1644,13 @@ class Checker {
         let info: TypeInfo | undefined;
         if (typeExpr.kind === "Ident") {
             const s = this.w.refs.get(typeExpr);
-            if (s?.kind === "variant") variant = this.variantOf(s);
+            // a variant of the expected union comes before ordinary name resolution (§7.7):
+            // `Range { … }` with an `ExprKind` expected is the variant, not prelude's Range
+            const exp = expected ? T.prune(expected) : undefined;
+            const expInfo = exp?.k === "named" ? this.w.infos.get(exp.sym) : undefined;
+            const expVariant = expInfo?.kind === "union" ? expInfo.variants.get(typeExpr.name) : undefined;
+            if (s?.kind !== "variant" && expInfo && expVariant?.fields) variant = { info: expInfo, variant: expVariant };
+            else if (s?.kind === "variant") variant = this.variantOf(s);
             else if (s && (s.kind === "type" || s.kind === "union")) info = this.w.infos.get(s);
             else if (!s && this.w.deferred.has(typeExpr)) {
                 const exp = expected ? T.prune(expected) : undefined;

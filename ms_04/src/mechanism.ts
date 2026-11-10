@@ -37,8 +37,8 @@ export interface MechanismResult {
     unique: Set<Sym>;
     /** locals that live on the heap: reached by a `keeps` */
     heap: Set<Sym>;
-    /** writes per function, with whether the root is checked (for `ms mech`) */
-    writes: Map<H.Fun, { span: H.Span; path: string; checked: boolean }[]>;
+    /** writes per function, with whether the root is checked (for `ms mech`) and the locals live after it (for lints) */
+    writes: Map<H.Fun, { span: H.Span; path: string; checked: boolean; live: Set<Sym> }[]>;
     /** rounds of the ownership fixpoint (1: nothing new after the first) */
     rounds: number;
 }
@@ -123,7 +123,7 @@ class Mechanisms {
             for (const [k, v] of fm.tags) out.tags.set(k, v);
             for (const s of fm.uniqueLocals()) out.unique.add(s);
             for (const s of fm.heap) out.heap.add(s);
-            out.writes.set(fm.f, [...fm.writes.values()].map((w) => ({ span: w.span, path: w.path, checked: !(w.root && out.unique.has(w.root)) })));
+            out.writes.set(fm.f, [...fm.writes.values()].map((w) => ({ span: w.span, path: w.path, checked: !(w.root && out.unique.has(w.root)), live: w.live })));
         }
         return out;
     }
@@ -193,7 +193,7 @@ class FunctionMechanisms {
     readonly movedParams = new Set<number>();
     readonly heap = new Set<Sym>();
     /** keyed by position: a loop body is walked once per fixpoint round */
-    readonly writes = new Map<string, { span: H.Span; path: string; root: Sym | null }>();
+    readonly writes = new Map<string, { span: H.Span; path: string; root: Sym | null; live: Set<Sym> }>();
     /** locals that may be moved: declared in the body (or owned-candidate parameters), not aliased */
     readonly movable = new Set<Sym>();
     readonly paramIndex = new Map<Sym, number>();
@@ -330,7 +330,10 @@ class FunctionMechanisms {
     /** A place written (or passed to `*T`): a use of its root, with a uniqueness check. */
     written(p: H.Place, span: H.Span): void {
         const path = H_path(p);
-        this.writes.set(`${span.start}:${path}`, { span, path, root: p.root.k === "local" ? p.root.local : null });
+        // what is live after the write: a loop body walked again at the fixpoint widens it
+        const key = `${span.start}:${path}`;
+        const live = new Set([...(this.writes.get(key)?.live ?? []), ...this.live]);
+        this.writes.set(key, { span, path, root: p.root.k === "local" ? p.root.local : null, live });
         this.place(p, null, "view", T.UNKNOWN);
     }
 

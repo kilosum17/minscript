@@ -639,6 +639,31 @@ class Lowerer {
     }
 
     /** `a?.b`: `match a { ok(v) => Some(v.b), fail => None }` (no double Option). */
+    /** `o?.m(args)`: `match o { Some(v) => Some(v.m(args)), None => None }` (no extra Some when `m` returns an Option). */
+    optionalCall(e: A.Call, recvExpr: A.Expr, ty: Ty, span: H.Span): H.Expr {
+        const info = this.calls.get(e)!;
+        const target = info.target as CallTarget & { kind: "method" };
+        const subject = this.expr(recvExpr);
+        const inner = this.isPrelude(subject.ty, "Option") ? (T.prune(subject.ty) as { args: Ty[] }).args[0]! : T.UNKNOWN;
+        const v = this.temp(inner, "v");
+        const read: H.Expr = { k: "read", ty: inner, span, place: { root: { k: "local", local: v.sym, name: v.name }, segs: [] } };
+        const declared = target.decl ? this.rets.get(target.decl) : undefined;
+        const returnsOption = declared !== undefined ? this.isPrelude(declared, "Option") : false;
+        const callTy = returnsOption ? ty : this.isPrelude(ty, "Option") ? (T.prune(ty) as { args: Ty[] }).args[0]! : ty;
+        const name = (e.callee as A.Member).name;
+        const c: H.Callee = target.decl ? { k: "fn", name: this.fnNames.get(target.decl) ?? target.decl.name } : target.auto ? { k: "auto", method: target.auto } : { k: "dyn", method: name };
+        const witnessArgs = (info.env ?? []).map(([s, t]): [Sym, Ty] => [s, T.ground(t)]);
+        const call: H.Expr = { k: "call", ty: callTy, span, callee: c, recv: { mode: "read", expr: read }, args: this.args(e.args, info.params ?? [], target.decl), witnessArgs, async: info.async ?? false };
+        const wrapped: H.Expr = returnsOption ? call : { k: "variant", ty, span, union: "prelude.Option", variant: "Some", fields: [call] };
+        return {
+            k: "match", ty, span, subject,
+            arms: [
+                { pattern: { k: "ok", value: { k: "bind", local: v } }, guard: null, body: wrapped },
+                { pattern: { k: "fail", payload: { k: "wild" } }, guard: null, body: { k: "variant", ty, span, union: "prelude.Option", variant: "None", fields: [] } },
+            ],
+        };
+    }
+
     optionalMember(e: A.Member, ty: Ty, span: H.Span): H.Expr {
         const target = this.expr(e.target);
         const inner = this.isPrelude(target.ty, "Option") ? (T.prune(target.ty) as { args: Ty[] }).args[0]! : T.UNKNOWN;
@@ -659,14 +684,17 @@ class Lowerer {
 
     record(items: A.RecItem[], ty: Ty, span: H.Span): H.Expr {
         const fields: { name: string; value: H.Expr }[] = [];
+        const pre: H.Stmt[] = [];
         for (const it of items) {
             if (it.kind === "Spread") {
+                // the base is evaluated once, before the literal's fields
                 const base = this.expr(it.value);
                 const bt = T.prune(base.ty);
                 const names = bt.k === "record" ? bt.fields.map((f) => f.name) : bt.k === "named" ? this.structFields(bt.sym).map((f) => f.name) : [];
                 const tmp = this.temp(base.ty, "base");
+                pre.push({ k: "let", pattern: { k: "bind", local: tmp }, value: base, else: null });
                 const read = (n: string): H.Expr => ({ k: "read", ty: T.UNKNOWN, span, place: { root: { k: "local", local: tmp.sym, name: tmp.name }, segs: [{ k: "field", name: n, mode: null }] } });
-                for (const n of names) if (!fields.some((f) => f.name === n)) fields.push({ name: n, value: { k: "block", ty: T.UNKNOWN, span, block: { stmts: [{ k: "let", pattern: { k: "bind", local: tmp }, value: base, else: null }], value: read(n) } } });
+                for (const n of names) if (!fields.some((f) => f.name === n)) fields.push({ name: n, value: read(n) });
                 continue;
             }
             const value = this.recValue(it);
@@ -675,7 +703,7 @@ class Lowerer {
             fields.push({ name: it.name, value });
         }
         fields.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-        return { k: "record", ty, span, fields };
+        return this.withPre(pre, { k: "record", ty, span, fields });
     }
 
     recValue(it: A.RecItem & { kind: "Field" }): H.Expr {
@@ -696,8 +724,8 @@ class Lowerer {
         if (ref) {
             const d = this.typeDecls.get(ref.union);
             const variant = d?.kind === "UnionDecl" ? d.members.find((m): m is A.Variant => m.kind === "Variant" && m.name === ref.variant) : undefined;
-            const fields = this.fieldValues(variant?.fields ?? [], e.items, span);
-            return { k: "variant", ty, span, union: this.typeNames.get(ref.union) ?? ref.union.name, variant: ref.variant, fields: fields.map((f) => f.value) };
+            const { fields, pre } = this.fieldValues(variant?.fields ?? [], e.items, span);
+            return this.withPre(pre, { k: "variant", ty, span, union: this.typeNames.get(ref.union) ?? ref.union.name, variant: ref.variant, fields: fields.map((f) => f.value) });
         }
         const t = T.prune(ty);
         if (t.k === "named") return this.structLit(t, e.items, span, ty);
@@ -705,11 +733,17 @@ class Lowerer {
     }
 
     structLit(t: Ty & { k: "named" }, items: A.RecItem[], span: H.Span, ty: Ty): H.Expr {
-        return { k: "struct", ty, span, type: this.typeNames.get(t.sym) ?? t.sym.name, fields: this.fieldValues(this.structFields(t.sym), items, span) };
+        const { fields, pre } = this.fieldValues(this.structFields(t.sym), items, span);
+        return this.withPre(pre, { k: "struct", ty, span, type: this.typeNames.get(t.sym) ?? t.sym.name, fields });
+    }
+
+    /** `{ let base = …; Literal { … } }`: the spread's base is evaluated once, before the fields. */
+    withPre(pre: H.Stmt[], e: H.Expr): H.Expr {
+        return pre.length === 0 ? e : { k: "block", ty: e.ty, span: e.span, block: { stmts: pre, value: e } };
     }
 
     /** Every declared field, in order: given, from a spread, its default, or `None`. */
-    fieldValues(decl: A.Field[], items: A.RecItem[], span: H.Span): { name: string; value: H.Expr }[] {
+    fieldValues(decl: A.Field[], items: A.RecItem[], span: H.Span): { fields: { name: string; value: H.Expr }[]; pre: H.Stmt[] } {
         const given = new Map<string, H.Expr>();
         let spread: H.Local | null = null;
         const pre: H.Stmt[] = [];
@@ -729,8 +763,7 @@ class Lowerer {
             if (f.default) return { name: f.name, value: this.expr(f.default) };
             return { name: f.name, value: { k: "variant", ty: T.UNKNOWN, span, union: "prelude.Option", variant: "None", fields: [] } as H.Expr };
         });
-        if (pre.length > 0 && out[0]) out[0] = { name: out[0].name, value: { k: "block", ty: out[0].value.ty, span, block: { stmts: pre, value: out[0].value } } };
-        return out;
+        return { fields: out, pre };
     }
 
     closure(c: A.Closure, ty: Ty, span: H.Span): H.Expr {
@@ -989,6 +1022,8 @@ class Lowerer {
             }
             case "method": {
                 const recvExpr = callee.kind === "Member" ? callee.target : null;
+                // `o?.m(…)`: the call on the value of a Some, None otherwise (like `o?.field`)
+                if (callee.kind === "Member" && callee.optional && recvExpr) return this.optionalCall(e, recvExpr, ty, span);
                 const recv = recvExpr ? this.argOf(recvExpr, decl?.receiver === "*this") : null;
                 const c: H.Callee = target.decl ? { k: "fn", name: this.fnNames.get(target.decl) ?? target.decl.name } : target.auto ? { k: "auto", method: target.auto } : { k: "dyn", method: callee.kind === "Member" ? callee.name : "?" };
                 // an interface method dispatches on the receiver unless a concrete type supplies it

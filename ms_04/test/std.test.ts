@@ -41,7 +41,7 @@ for (const file of stdFiles(join(root, "std"))) {
     });
 }
 
-for (const dir of ["std", "examples/prelude", "samples/calc", "samples/shop", "examples/projects/basic"]) {
+for (const dir of ["std", "examples/prelude", "samples/calc", "samples/shop", "samples/compiler", "examples/projects/basic"]) {
     test(`ms test ${dir}`, async () => {
         const r = await ms("test", dir);
         assert.equal(r.code, 0, r.out);

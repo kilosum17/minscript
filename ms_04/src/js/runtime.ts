@@ -381,8 +381,40 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const utf8 = (s: string) => enc.encode(s);
 
+/**
+ * A string's UTF-8 bytes, or null when it is ASCII (then byte offsets are JS indices). Long strings
+ * are cached, so a lexer reading a source byte by byte doesn't re-encode it on every call.
+ */
+const utf8Cache = new Map<string, Uint8Array | null>();
+function utf8Of(s: string): Uint8Array | null {
+    // V8 keeps a string's hash, so the lookup is cheap even for long strings
+    const hit = utf8Cache.get(s);
+    if (hit !== undefined) return hit;
+    let ascii = true;
+    for (let i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) > 0x7f) {
+            ascii = false;
+            break;
+        }
+    }
+    const v = ascii ? null : enc.encode(s);
+    if (utf8Cache.size >= 512) utf8Cache.delete(utf8Cache.keys().next().value!);
+    utf8Cache.set(s, v);
+    return v;
+}
+const byteLen = (s: string) => {
+    const b = utf8Of(s);
+    return b === null ? s.length : b.length;
+};
+
 function sub(s: string, a: number, b: number): string {
-    const bytes = utf8(s);
+    const ascii = utf8Of(s);
+    if (ascii === null) {
+        a = Math.max(0, Math.min(a, s.length));
+        b = Math.max(a, Math.min(b, s.length));
+        return s.substring(a, b);
+    }
+    const bytes = ascii;
     a = Math.max(0, Math.min(a, bytes.length));
     b = Math.max(a, Math.min(b, bytes.length));
     const inside = (i: number) => i < bytes.length && (bytes[i]! & 0xc0) === 0x80;
@@ -779,15 +811,20 @@ const symbols = new Map<string, SymbolC>();
 // ---- builtins: the `_builtin()` functions of the prelude and std, by name --------------------------
 
 const strFns = {
-    len: (s: string) => utf8(s).length,
+    len: (s: string) => byteLen(s),
     substring: (s: string, a: Any, b: Any) => sub(s, Number(a), Number(b)),
     byte_at: (s: string, i: Any) => {
-        const b = utf8(s);
+        const b = utf8Of(s);
         const n = Number(i);
-        if (n < 0 || n >= b.length) panic("OutOfBounds", `byte ${i} out of bounds (length ${b.length})`);
-        return b[n]!;
+        const len = b === null ? s.length : b.length;
+        if (n < 0 || n >= len) panic("OutOfBounds", `byte ${i} out of bounds (length ${len})`);
+        return b === null ? s.charCodeAt(n) : b[n]!;
     },
     find: (s: string, needle: string, from: Any) => {
+        if (utf8Of(s) === null && utf8Of(needle) === null) {
+            const i = s.indexOf(needle, Number(from));
+            return i < 0 ? None : some(i);
+        }
         const b = utf8(s);
         const n = utf8(needle);
         outer: for (let i = Number(from); i + n.length <= b.length; i++) {

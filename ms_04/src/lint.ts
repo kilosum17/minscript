@@ -113,6 +113,23 @@ function parseSegs(rest: string): H.Seg[] {
     return out;
 }
 
+const segsOf = (p: string) => p.match(/[^.[\]]+|\[[^\]]*\]/g) ?? [];
+const sameSeg = (p: string, q: string) => p === q || (p.startsWith("[") && q.startsWith("[") && (p === "[*]" || q === "[*]"));
+
+/**
+ * Whether a write forces a live view to keep an old copy (§9.6): the write's path passes through
+ * the buffer the view points into. A view of an element (`v[*]`) points into the collection `v`;
+ * a view of a field value into that value. An assignment writes into the place's container (it
+ * replaces the value, whose old buffer the view keeps); a call writes into the value itself.
+ */
+function forcesCopy(view: string, w: { path: string; assign: boolean }): boolean {
+    const v = segsOf(view);
+    const pinned = v.length > 1 && v[v.length - 1]!.startsWith("[") ? v.slice(0, -1) : v;
+    const written = w.assign ? segsOf(w.path).slice(0, -1) : segsOf(w.path);
+    if (pinned.length > written.length) return false;
+    return pinned.every((s, i) => sameSeg(s, written[i]!));
+}
+
 /** Whether two access paths overlap: one is a prefix of the other (`[*]` matches any element). */
 function overlaps(a: string, b: string): boolean {
     const split = (p: string) => p.match(/[^.[\]]+|\[[^\]]*\]/g) ?? [];
@@ -209,6 +226,10 @@ interface Write {
     /** the types of the buffers the write goes through, root first */
     buffers: Ty[];
     loops: H.Expr[];
+    /** an assignment (writes into the place's container) or a call (writes into the value itself) */
+    assign: boolean;
+    /** made inside a user function's body, maybe on a path never taken: not this function's own write */
+    deep: boolean;
 }
 
 class Linter {
@@ -263,8 +284,9 @@ class Linter {
             const rootTy = locals.get(p.root.local)?.ty ?? T.UNKNOWN;
             const sum = through?.callee ? this.in.summaries.get(through.callee) : undefined;
             const deeper = sum ? [...sum.writes].filter((w) => rootOf(w) === through!.param).map((w) => w.slice(through!.param.length)) : [];
+            const deep = !!through?.callee && !through.callee.builtin;
             if (deeper.length === 0) {
-                list.push({ span, place: p, path: pathText(p), buffers: this.buffers(rootTy, p, leafTy), loops: [...loops] });
+                list.push({ span, place: p, path: pathText(p), buffers: this.buffers(rootTy, p, leafTy), loops: [...loops], assign: leafTy === null, deep });
             } else {
                 // what the callee writes through the argument: `other.at_mut(k)` writes `other.items[*]`
                 for (const rest of deeper) {
@@ -273,7 +295,7 @@ class Linter {
                     // the written path's own buffer counts too: `push` writes [this], the Vec itself
                     const bufs = this.buffers(rootTy, q, null);
                     bufs.push(q.segs.reduce((t, sg) => this.segTy(t, sg), rootTy));
-                    list.push({ span, place: p, path: pathText(q), buffers: bufs, loops: [...loops] });
+                    list.push({ span, place: p, path: pathText(q), buffers: bufs, loops: [...loops], assign: false, deep });
                 }
             }
             writes.set(p.root.local, list);
@@ -421,7 +443,11 @@ class Linter {
                 const src = v.place.root;
                 const tag = tags.get(v);
                 const isParam = this.f.params.some((x) => x.sym === src.local) && v.place.segs.length === 0;
-                if (tag === "share" && !isParam) why.set(l.local.sym, `\`${l.local.name}\` shares \`${pathText(v.place)}\`, which is used again`);
+                if (tag === "share" && !isParam) {
+                    // a part of a value is always shared (another holder of the whole may reach it)
+                    const reason = v.place.segs.length > 0 ? `a part of \`${src.name}\` (a part is shared, never moved)` : "which is used again";
+                    why.set(l.local.sym, `\`${l.local.name}\` shares \`${pathText(v.place)}\`, ${reason}`);
+                }
                 else if ((tag === "share" && isParam) || (tag === "move" && owned.has(src.local))) why.set(l.local.sym, `\`${l.local.name}\` holds the parameter \`${src.name}\`, which the caller may still use`);
                 else if (tag === "move" && why.has(src.local)) why.set(l.local.sym, why.get(src.local)!.replace(/^`[^`]*`/, `\`${l.local.name}\``));
             }
@@ -468,15 +494,23 @@ class Linter {
             }
             return out;
         };
+        // the locals live after each write, from pass 8's liveness (branches and loops exact)
+        const liveAfter = new Map<number, Set<Sym>>();
+        for (const w of this.in.mechanisms.writes.get(this.f) ?? []) {
+            const prev = liveAfter.get(w.span.start);
+            liveAfter.set(w.span.start, prev ? new Set([...prev, ...w.live]) : w.live);
+        }
         for (const l of lets) {
+            // a Copy value, or a str (immutable: no write can change its buffer), is never forced to copy
+            if (isCopy(l.local.ty)) continue;
             const view = this.viewOf(l.value);
             if (!view) continue;
             for (const owner of follow(view.root)) {
                 const viewPath = view.path.replace(/^[^.[]*/, nameOf.get(owner) ?? "");
                 for (const w of writes.get(owner) ?? []) {
-                    if (!overlaps(viewPath, w.path)) continue;
-                    if (w.span.start < l.value.span.end && !w.loops.some((lp) => !l.loops.includes(lp))) continue;
-                    if (!usedAfter(reads.get(l.local.sym), w.span, w.loops, l.loops)) continue;
+                    if (w.deep || !forcesCopy(viewPath, w)) continue;
+                    const live = liveAfter.get(w.span.start);
+                    if (live ? !live.has(l.local.sym) : !usedAfter(reads.get(l.local.sym), w.span, w.loops, l.loops)) continue;
                     this.report("L_VIEW_FORCED_COPY", `this write copies \`${pathText(w.place)}\`: \`${l.local.name}\`, a view of it, is still used below and keeps the old value`, w.span, this.f.file,
                         `finish with \`${l.local.name}\` before the write, or make it its own value`);
                 }
@@ -487,7 +521,7 @@ class Linter {
             const it = e.iterable;
             if (it.k !== "read" || it.place.root.k !== "local") continue;
             for (const w of writes.get(it.place.root.local) ?? []) {
-                if (!w.loops.includes(e)) continue;
+                if (!w.loops.includes(e) || w.deep || !forcesCopy(pathText(it.place), w)) continue;
                 this.report("L_VIEW_FORCED_COPY", `this write copies \`${pathText(w.place)}\` while the loop iterates over \`${pathText(it.place)}\`: the loop keeps seeing the old value`, w.span, this.f.file,
                     "collect the changes and apply them after the loop");
             }
@@ -497,8 +531,7 @@ class Linter {
     /** What a value is a view of: a read with a path, or a call that returns a view of an argument's path. */
     viewOf(e: H.Expr): { root: Sym; path: string } | null {
         if (e.k === "read") {
-            const viewTy = !isCopy(e.ty) || (T.prune(e.ty).k === "prim" && (T.prune(e.ty) as { name: string }).name === "str");
-            return e.place.root.k === "local" && e.place.segs.length > 0 && viewTy ? { root: e.place.root.local, path: pathText(e.place) } : null;
+            return e.place.root.k === "local" && e.place.segs.length > 0 && !isCopy(e.ty) ? { root: e.place.root.local, path: pathText(e.place) } : null;
         }
         if (e.k === "match") return this.viewOf(e.subject);
         if (e.k === "block" && e.block.value && e.block.stmts.length === 0) return this.viewOf(e.block.value);

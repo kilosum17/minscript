@@ -19,9 +19,9 @@ fn main() {
     log.println(e.lines.len(), copy.lines.len())
 
     t := build()
-    view := t.lines.get(0) ?? ""                 // a view of t.lines[0]
+    view := t.lines.get(0) ?? ""                 // a str: immutable, its own buffer
     var other = t
-    other.lines.clear()                          // copies `lines`; `view` keeps the old buffer
+    other.lines.clear()                          // `t` moved: written in place; `view` is unaffected
     log.println(view, other.lines.len())
 
     h := build()
