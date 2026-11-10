@@ -208,3 +208,9 @@ fn break_outside(o: int?) {
     for { y := o or continue; break }
     [1].for_each(#{ continue })               //~ E_BREAK_OUTSIDE_LOOP
 }
+
+fn break_value(xs: Vec[int]) -> int {
+    for x in xs { if x > 2 { break x } }      //~ E_BREAK_VALUE
+    n := for { break 3 }
+    n
+}

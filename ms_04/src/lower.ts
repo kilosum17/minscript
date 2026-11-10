@@ -45,6 +45,7 @@ class Lowerer {
     readonly ops = new Map<object, CallTarget>();
     readonly symTypes = new Map<Sym, Ty>();
     readonly rets = new Map<A.FnDecl, Ty>();
+    readonly declTypes = new Map<A.Type, Ty>();
     readonly captures = new Map<A.Closure, Sym[]>();
     readonly implicit = new Map<object, Map<string, Sym>>();
     readonly thisOf = new Map<object, Sym>();
@@ -83,6 +84,7 @@ class Lowerer {
             for (const [k, v] of checked.ops) this.ops.set(k, v);
             for (const [k, v] of checked.symTypes) this.symTypes.set(k, v);
             for (const [k, v] of checked.rets) this.rets.set(k, v);
+            for (const [k, v] of checked.declTypes) this.declTypes.set(k, v);
         }
         for (const p of packages) for (const f of p.files) for (const item of f.ast.items) this.name(item, p.name);
         for (const p of packages) for (const f of p.files) for (const item of f.ast.items) if (item.kind === "ImplDecl") this.nameImpl(item);
@@ -250,6 +252,7 @@ class Lowerer {
         } else if (item.kind === "UnionDecl") {
             const variants = item.members.filter((m): m is A.Variant => m.kind === "Variant").map((v) => ({
                 name: v.name, fields: v.fields ? v.fields.map((f) => f.name) : (v.tuple ?? []).map((_, i) => String(i)), positional: !v.fields,
+                tys: v.fields ? v.fields.map((f) => this.fieldTy(f)) : (v.tuple ?? []).map((t) => this.declTy(t)),
             }));
             this.out.types.push({ kind: "union", name, variants });
         } else {
@@ -258,7 +261,13 @@ class Lowerer {
     }
 
     /** A field's declared type, from its default's or a constructor's recorded type, else by name. */
+    declTy(t: A.Type): Ty {
+        return this.declTypes.has(t) ? T.ground(this.declTypes.get(t)!) : T.UNKNOWN;
+    }
+
     fieldTy(f: A.Field): Ty {
+        const known = this.declTy(f.type);
+        if (known !== T.UNKNOWN) return known;
         if (f.type.kind === "TName" && f.type.args.length === 0) {
             const s = this.refs.get(f.type);
             if (s && (s.kind === "type" || s.kind === "union")) return { k: "named", sym: s, args: [] };

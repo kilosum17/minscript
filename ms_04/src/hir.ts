@@ -36,7 +36,7 @@ export interface FieldDef {
 
 export type TypeDef =
     | { kind: "struct"; name: string; sym: Sym | null; fields: FieldDef[]; identity: boolean; unique: boolean }
-    | { kind: "union"; name: string; variants: { name: string; fields: string[]; positional: boolean }[] }
+    | { kind: "union"; name: string; variants: { name: string; fields: string[]; positional: boolean; tys: Ty[] }[] }
     | { kind: "inter"; name: string; methods: string[] };
 
 export interface Local {

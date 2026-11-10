@@ -68,6 +68,8 @@ export interface CheckResult {
     ops: Map<object, CallTarget>;
     /** the declared result of each function and method (for `async fn`: the value, not the Promise) */
     rets: Map<A.FnDecl, Ty>;
+    /** the declared type of each field and variant payload (generic parameters unsubstituted) */
+    declTypes: Map<A.Type, Ty>;
     diagnostics: Diagnostic[];
 }
 
@@ -285,7 +287,7 @@ class Checker {
         this.res = res;
         this.std = std;
         this.out = {
-            pkg: res.pkg, types: new Map(), symTypes: w.symTypes, calls: new Map(), members: new Map(), variants: new Map(), ops: new Map(), rets: new Map(), diagnostics: [],
+            pkg: res.pkg, types: new Map(), symTypes: w.symTypes, calls: new Map(), members: new Map(), variants: new Map(), ops: new Map(), rets: new Map(), declTypes: new Map(), diagnostics: [],
         };
     }
 
@@ -1120,7 +1122,7 @@ class Checker {
                 } else {
                     for (const m of item.members) {
                         if (m.kind === "Variant") {
-                            for (const t of m.tuple ?? []) this.ty(t, true);
+                            for (const t of m.tuple ?? []) this.out.declTypes.set(t, this.ty(t, true));
                             for (const f of m.fields ?? []) this.fieldDecl(f);
                         } else {
                             this.fnBody(m, this.selfType(info));
@@ -1164,6 +1166,7 @@ class Checker {
 
     fieldDecl(f: A.Field): void {
         const t = this.ty(f.type, true);
+        this.out.declTypes.set(f.type, t);
         if (f.default) this.withFn({ ret: T.UNKNOWN, async: false, selfTy: null, loops: [] }, () => this.expect(f.default!, t));
     }
 
@@ -1454,7 +1457,10 @@ class Checker {
                     loop.broke = true;
                     if (e.value) {
                         if (loop.breakTy) this.expect(e.value, loop.breakTy);
-                        else this.check(e.value);
+                        else {
+                            this.check(e.value);
+                            this.error("E_BREAK_VALUE", "only an infinite `for { … }` loop has a value; `break` here takes none", e.value);
+                        }
                     }
                 }
                 return T.NEVER;

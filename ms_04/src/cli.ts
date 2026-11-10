@@ -8,6 +8,8 @@
 //   node src/cli.ts check   <entry>...   the whole front end on each program (parse, resolve, check,
 //                                        effects, access) (a file, a folder or a
 //                                        project); diagnostics only, exit 1 on errors
+//   node src/cli.ts js      <entry>      the program compiled to JavaScript
+//   node src/cli.ts run     <entry>      compile to JavaScript and run it
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve as resolvePath } from "node:path";
@@ -22,6 +24,7 @@ import { dumpFun } from "./hir_dump.ts";
 import { frontEnd } from "./pipeline.ts";
 import { showSummary } from "./effects.ts";
 import { parse } from "./parser.ts";
+import { compile, runJs } from "./js/run.ts";
 import { sexpr } from "./sexpr.ts";
 
 function msFiles(path: string): string[] {
@@ -51,9 +54,25 @@ function printDiagnostics(ds: Diagnostic[]): number {
     return ds.length;
 }
 
-function main(args: string[]): number {
+function main(args: string[]): number | Promise<number> {
     const [cmd, ...rest] = args;
     switch (cmd) {
+        case "js": case "run": {
+            if (rest.length !== 1) {
+                console.log(`usage: ms ${cmd} <entry>`);
+                return 2;
+            }
+            const c = compile(rest[0]!);
+            const errors = c.diagnostics.filter((d) => d.severity === "error");
+            printDiagnostics(cmd === "run" ? errors : c.diagnostics);
+            for (const p of c.hirProblems) console.error(`HIR: ${p}`);
+            if (c.js === null) return 1;
+            if (cmd === "js") {
+                console.log(c.js);
+                return 0;
+            }
+            return runJs(c.js);
+        }
         case "lex": {
             for (const f of rest) process.stdout.write(dumpTokens(lex(readFileSync(f))));
             return 0;
@@ -135,9 +154,11 @@ function main(args: string[]): number {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms check <entry>...");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms check <entry>... | ms js <entry> | ms run <entry>");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }
 
-process.exitCode = main(process.argv.slice(2));
+Promise.resolve(main(process.argv.slice(2))).then((code) => {
+    process.exitCode = code;
+});

@@ -2033,6 +2033,7 @@ Each mistake produces **exactly one** diagnostic. Common mistakes are recognised
 | `E_USE_NULLISH` | checker | `\|\|` used as a value fallback: fix-it `??` |
 | `E_LET_ELSE_MUST_DIVERGE` | checker | the `else` block of `let … else` can finish normally |
 | `E_BREAK_OUTSIDE_LOOP` | checker | `break` or `continue` outside a loop (a closure body starts outside any loop), e.g. `x := f() or break` at a function's top level |
+| `E_BREAK_VALUE` | checker | `break value` in a loop other than `for { … }`, which has no value (§5.3) |
 | `E_NOT_INDEXABLE` | checker | `x[i]` on a type that can't be indexed |
 | `E_NOT_ITERABLE` | checker | `for … in` over a value that can't be iterated |
 | `E_NON_EXHAUSTIVE_MATCH` | checker | a `match` that doesn't cover every case |
@@ -2280,7 +2281,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 4 | **HIR with places:** every read and write names its path (`u.tags[*]`), truncated to 4 segments; which type parameters each generic function needs at run time (§15.4). **Done** (2026-11-10) | `src/hir.ts`, `src/lower.ts`, `src/witness.ts`, `src/hir_check.ts`, `src/hir_dump.ts` | `ms hir` prints paths and witness parameters; the prelude and every program of `examples/` and `samples/` lower to HIR that passes the validator |
 | 5 | **Effect summaries** (§15.1), including `consumes`, `invokes` and `#[effects]`. **Done** (2026-11-10) | `src/effects.ts` | `ms effects` matches the golden file for Appendix A (`test/effects/`); a 60-function recursive ring converges without `L_SUMMARY_WIDENED`, and every program of `examples/` and `samples/` does too. The stage1 parser is v0.2 code: measure its SCC when it is ported (step 11) |
 | 6 | **Access check** (pass 7, §15.1): the access errors of §18.3. **Done** (2026-11-10) | `src/access.ts` | one passing and one failing test per error (`test/access/`); every program of `examples/` and `samples/` passes, and the shop sample's commented-out mistakes give the errors their comments name |
-| 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`) | `src/js/*` | std tests pass on Node |
+| 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`). **Done** (2026-11-10) | `src/js/emit.ts`, `src/js/runtime.ts`, `src/js/run.ts` | every program of `examples/run/` and `examples/packages/` prints its `.out` (`test/run.test.ts`), except those that need std packages written in step 10, which are skipped by name; every program of `examples/` and `samples/` compiles to JS that parses. The std tests run on Node once step 10 writes them |
 | 8 | **Mechanism selection** (§15.2) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call |
 | 9 | **Lints** (§18.4) | `src/lint.ts` | each lint has a firing and a quiet test |
 | 10 | **std** in v0.4 MinScript | `std/**` | std tests pass |

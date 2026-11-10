@@ -17,7 +17,9 @@
     "types": "node src/cli.ts types",
     "hir": "node src/cli.ts hir",
     "effects": "node src/cli.ts effects",
-    "check": "node src/cli.ts check"
+    "check": "node src/cli.ts check",
+    "js": "node src/cli.ts js",
+    "run": "node src/cli.ts run"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

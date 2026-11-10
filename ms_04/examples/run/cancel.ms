@@ -1,5 +1,6 @@
 // Cancelling tasks (spec §11.1): a cancelled task stops at its next `await` with a `Cancelled` panic,
-// which `recover` can catch; a task that loses a `select` is cancelled.
+// which `recover` can catch. A task that loses a `select` keeps running (spec §4.9), so it is cancelled
+// explicitly.
 // v0.4: the v0.2 `Ref[int]` counter is a `shared var` passed to a `*int` parameter (spec §10.1).
 package main
 
@@ -41,7 +42,10 @@ async fn main() {
     slow := guarded()
     select {
         _ = slow => log.println("the slow task won")
-        time.after(2) => log.println("the timeout won")
+        time.after(2) => {
+            log.println("the timeout won")
+            slow.cancel()
+        }
     }
     log.println("the loser was cancelled: ${await slow}")
 
