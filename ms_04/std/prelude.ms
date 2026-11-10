@@ -19,7 +19,7 @@ fn _panic_kind(kind: PanicKind, msg: str) -> never { _builtin() }
 
 // ---- Option, Result, Ordering ------------------------------------------------------------------
 
-pub union Option[T] {
+pub union Option[T: Unique] {
     Some(T)
     None
 
@@ -70,7 +70,7 @@ pub union Option[T] {
     }
 }
 
-pub union Result[T, E] {
+pub union Result[T: Unique, E: Unique] {
     Ok(T)
     Err(E)
 
@@ -136,6 +136,9 @@ pub union Ordering { Less  Equal  Greater }
 
 // ---- collections -------------------------------------------------------------------------------
 
+// Containers that may hold `Unique` values (a Vec of subscriptions, a job carrying a Resolver)
+// declare `[T: Unique]` (§9.2): the bound admits Unique and non-Unique types alike.
+
 // The core is storage and hashing (`len`, `push`, `pop`, `insert`, `remove`, `truncate`, `swap`,
 // `sort_by`, `iter`, Map / Set access). Getters return views, never copies (§9.6).
 
@@ -146,7 +149,7 @@ pub type Range[T] {
     pub fn iter(this) -> Iterator[T] { _builtin() }
 }
 
-pub type Vec[T] {
+pub type Vec[T: Unique] {
     pub fn new() -> Vec[T] { [] }
     pub fn with_capacity(n: int) -> Vec[T] { _builtin() }
 
@@ -246,6 +249,7 @@ pub type Vec[T] {
         for x in this { acc = f(acc, x) }
         acc
     }
+    pub fn reduce[A](this, init: A, f: (A, T) -> A) -> A { this.fold(init, f) }
     pub fn take(this, n: int) -> Vec[T] { this.filter(#{ _, i => i < n }) }
     pub fn skip(this, n: int) -> Vec[T] { this.filter(#{ _, i => i >= n }) }
     pub fn to_vec(this) -> Vec[T] { this.filter(#{ true }) }
@@ -297,7 +301,7 @@ impl[T: Plus[T, T] & Default] Vec[T] {
     }
 }
 
-pub type Array[T, N] {
+pub type Array[T: Unique, N] {
     pub fn len(this) -> int { _builtin() }
     #[effects(returns_view: [this])]
     pub fn get(this, i: int) -> T? { _builtin() }
@@ -310,7 +314,7 @@ pub type Array[T, N] {
     }
 }
 
-pub type Slice[T] {
+pub type Slice[T: Unique] {
     pub fn len(this) -> int { _builtin() }
     pub fn is_empty(this) -> bool { this.len() == 0 }
     #[effects(returns_view: [this])]
@@ -324,7 +328,7 @@ pub type Slice[T] {
     }
 }
 
-pub type Map[K, V] {
+pub type Map[K, V: Unique] {
     pub fn new() -> Map[K, V] { _builtin() }
     pub fn len(this) -> int { _builtin() }
     pub fn is_empty(this) -> bool { this.len() == 0 }
@@ -588,7 +592,7 @@ pub type Id[T] {
 
 pub type Timeout {}
 
-pub type Promise[T] {
+pub type Promise[T: Unique] {
     pub fn new() -> t(Promise[T], Resolver[T]) { _builtin() }
     pub fn all(promises: Vec[Promise[T]]) -> Promise[Vec[T]] { _builtin() }
     #[effects(keeps: [this, f])]
@@ -602,7 +606,7 @@ pub type Promise[T] {
 }
 
 /// Completes its promise once (§11.1). Dropping it unresolved panics the awaiter (`ResolverDropped`).
-pub type Resolver[T]: Unique {
+pub type Resolver[T: Unique]: Unique {
     #[effects(consumes: [this])]
     pub fn resolve(this, v: T) { _builtin() }
 }
@@ -619,9 +623,9 @@ pub fn race[T](...promises: Promise[T]) -> Promise[T] { _builtin() }
 pub type TopicOptions { buffer: int = 64, replay: int = 0 }
 pub type QueueOptions { capacity: int = 1024 }
 
-pub union PublishError[T] { Full(T)  Closed(T) }
+pub union PublishError[T: Unique] { Full(T)  Closed(T) }
 
-type ChannelState[T] {
+type ChannelState[T: Unique] {
     open: bool = true
 }
 
@@ -637,7 +641,7 @@ pub type Topic[T] {
     pub fn close(this) { _builtin() }
 }
 
-pub type Queue[T] {
+pub type Queue[T: Unique] {
     shared state: ChannelState[T] = ChannelState {}
 
     pub fn new() -> Queue[T] { _builtin() }
@@ -654,7 +658,7 @@ pub type Queue[T] {
 }
 
 /// A subscription to a Topic or Queue: one owner (§9.2). Dropping it unsubscribes.
-pub type Sub[T]: Unique {
+pub type Sub[T: Unique]: Unique {
     pub async fn next(*this) -> T? { _builtin() }
     pub fn try_next(*this) -> T? { _builtin() }
     pub fn missed(*this) -> int { _builtin() }
@@ -729,11 +733,11 @@ pub inter RemainderAssign[R] { fn remainder_assign(*this, rhs: R) }
 
 pub inter Index[I, T] { fn index(this, i: I) -> T }
 pub inter IndexMut[I, T] { fn index_mut(*this, i: I) -> *T }
-pub inter Iterator[T] {
+pub inter Iterator[T: Unique] {
     fn next(*this) -> T?
     fn map[U](*this, f: (T) -> U) -> Iterator[U] { _builtin() }
     fn filter(*this, f: (T) -> bool) -> Iterator[T] { _builtin() }
     fn collect(*this) -> Vec[T] { _builtin() }
 }
-pub inter AsyncIterator[T] { async fn next(*this) -> T? }
-pub inter Iterable[T] { fn iter(this) -> Iterator[T] }
+pub inter AsyncIterator[T: Unique] { async fn next(*this) -> T? }
+pub inter Iterable[T: Unique] { fn iter(this) -> Iterator[T] }

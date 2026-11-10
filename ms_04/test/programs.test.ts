@@ -1,5 +1,5 @@
-// Whole programs (spec §8.1, §8.7): every program in examples/ and samples/ is loaded, parsed and
-// resolved. A file's diagnostics must match its `//~ CODE` annotations exactly; most files have none.
+// Whole programs (spec §8.1, §8.7, §13.5): every program in examples/ and samples/ is loaded,
+// parsed, resolved and type-checked. A file's diagnostics must match its `//~ CODE` annotations exactly; most files have none.
 //
 // Entries: every folder with a mod.ms (a project), then every `main.ms`, then any file not yet
 // loaded by an earlier entry (a single-file program, or a package nobody imports).
@@ -10,6 +10,7 @@ import { dirname, join, relative } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { LineMap, type Diagnostic } from "../src/diagnostic.ts";
+import { checkProgram } from "../src/check.ts";
 import { loadPrelude, loadProgram } from "../src/loader.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,16 +35,17 @@ export function annotations(file: string): string[] {
 
 const sort = (xs: string[]) => [...xs].sort((a, b) => parseInt(a) - parseInt(b) || a.localeCompare(b));
 
-test("the prelude resolves cleanly", () => {
+test("the prelude resolves and type-checks cleanly", () => {
     const { res, file } = loadPrelude();
-    assert.deepEqual([...file.diagnostics, ...res.diagnostics].map((d) => `${d.code}: ${d.message}`), []);
+    const checked = checkProgram({ packages: [], prelude: res, diagnostics: [] }, file);
+    assert.deepEqual([...file.diagnostics, ...res.diagnostics, ...checked.prelude.diagnostics].map((d) => `${d.code}: ${d.message}`), []);
     for (const name of ["Identity", "Unique", "Symbol", "sym", "Weak", "PMap", "Some", "Ok", "log", "all"]) {
         assert.ok(res.exports.has(name), `prelude exports ${name}`);
     }
 });
 
 for (const dir of ["examples", "samples"]) {
-    test(`${dir}/ programs load and resolve; diagnostics match their annotations`, () => {
+    test(`${dir}/ programs load, resolve and type-check; diagnostics match their annotations`, () => {
         const files = walk(join(root, dir));
         const projects = [...new Set(files.filter((f) => f.endsWith("/mod.ms")).map(dirname))];
         // a `main.ms` marks a program folder: every `package main` file in it is one package
@@ -54,6 +56,7 @@ for (const dir of ["examples", "samples"]) {
         for (const entry of entries) {
             if (entry.endsWith(".ms") ? loaded.has(entry) : loaded.has(join(entry, "main.ms"))) continue;
             const program = loadProgram(entry, { tests: true });
+            program.diagnostics.push(...checkProgram(program, loadPrelude().file).diagnostics);
             const fresh = new Set<string>();
             for (const p of program.packages) {
                 for (const f of p.files) {
@@ -71,6 +74,7 @@ for (const dir of ["examples", "samples"]) {
                 // mod.ms is a package of its own (package mod)
                 loaded.add(join(entry, "mod.ms"));
                 const m = loadProgram(join(entry, "mod.ms"), { tests: true });
+                m.diagnostics.push(...checkProgram(m, loadPrelude().file).diagnostics);
                 for (const d of m.diagnostics) found.set(d.file ?? entry, [...(found.get(d.file ?? entry) ?? []), d]);
             }
         }

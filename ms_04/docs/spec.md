@@ -1018,6 +1018,7 @@ Some values must have exactly one owner: files, sockets, `Sub[T]`, `Resolver[T]`
 - **Consuming parameters.** A `Unique` parameter (or `this` receiver) that the body moves, or calls a `*this` method on (`for await` included), is *consumed*. Its summary records `consumes [p]` (§9.5), the caller must move the argument, and inside the body the parameter behaves as an owned `var`. So `async fn worker(sub: Sub[int]) { for await job in sub { … } }` and `conn.split()` need no extra syntax. The same inference applies to closure parameters of a `Unique` type (`#{ sub => worker(sub) }`).
 - **Unique arguments.** Passing a `Unique` value to a `T` parameter whose summary says `keeps` or `consumes` moves it. Otherwise it lends a view.
 - **Generics.** A type parameter is non-Unique by default; instantiating it with a `Unique` type is `E_UNIQUE_TYPE_ARG`. A function or type that accepts `Unique` arguments declares `[T: Unique]`. That bound admits Unique and non-Unique types alike, and the body is checked with move rules for `T`, so using a `T` value twice is `E_USE_AFTER_MOVE`. The check happens once, at the definition.
+- **std containers admit Unique items.** `Vec`, `Slice`, `Array`, `Option`, `Result`, `Map` (values), `Promise`, `Queue`, `Sub`, `Resolver`, `PublishError` and the iterator interfaces declare `[T: Unique]`, so a `Vec[Sub[T]]` of subscriptions or a `Queue` of jobs carrying a `Resolver` is ordinary code. `Topic`, `Signal`, `Set` and `PMap` don't: they share their values.
 
 ### 9.3 Drop [D]
 
@@ -1421,7 +1422,7 @@ node.ty = other             // second write: panics with PanicKind.AlreadySet
 t := node.ty ?? unknown     // reading an unset once field gives None
 ```
 
-- The field's type when read is `T?`. Writing it is allowed through a read-only view, because a write-once cell is thread-safe.
+- The field's type when read is `T?`; a write takes a `T` (`node.ty = int_type`). Writing it is allowed through a read-only view, because a write-once cell is thread-safe.
 - Lowering: an atomic compare-and-set on native and WASM, a plain property on JS.
 - `once` fields are allowed only on identity types (`E_ONCE_OUTSIDE_IDENTITY`): on a value type, copy-on-write would make "once" ambiguous between copies.
 - A field that must be rewritten later is a `shared` field instead. Side tables (`Map[Expr, Type]`) remain the alternative when a pass's output should stay separate from the tree.
@@ -1530,7 +1531,10 @@ The checker is **bidirectional**: every expression is checked against the type i
 - **Iteration:** `for x in e` iterates `Vec`, `Array`, `Slice`, `Set`, `PVec` (with `for x, i in` giving the index), `Map` / `PMap` (`for k, v in`), `Range`, and anything with `next() -> T?` or `iter()`. A `str` needs `.chars()`, `.bytes()` or `.lines()` (`E_NOT_ITERABLE`).
 - **Exhaustiveness:** a `match` on a union must cover every variant with an irrefutable payload, or have a catch-all. `bool` must cover `true` and `false`, and a literal union every literal. Other types, and a `match` without a subject, need `_ =>`.
 - **Methods named after keywords** (`fn or`, `fn lock`) are allowed, since they are only called after `.`.
-- **Gradual typing:** members of an external dependency that isn't loaded, and of a package checked on its own (`ms check file.ms`), have the type `unknown`. `unknown` is compatible with everything and never produces a diagnostic.
+- **Gradual typing:** members of a package that isn't loaded (§8.1), and of a package checked on its own, have the type `unknown`. `unknown` is compatible with everything and never produces a diagnostic. Arguments of a call to something `unknown` are checked against `unknown`, so `[]`, `nil` and bare variant names there need no annotation. In an open file (§8.7) an unknown name is never an error.
+- **The expected type is a hint, not an equation.** It guides inference before the arguments are checked (`let v: Vec[u8] = Vec.new()`), except when it is an interface: `log.println(xs.fold(0, #{ a, x => a + x }))` infers `int` for `fold`, which then must implement `Stringer`.
+- **Missing trailing arguments** are allowed for `void` parameters, and for parameters whose type is still unknown, which become `void`: `Ok()` in an untyped closure is `Ok(t())`.
+- **Exhaustiveness is checked on nested patterns**: `Some(Circle(_)) | Some(Square(_))` doesn't cover `Some(Empty)`. The message names a missing case.
 
 ---
 
@@ -1956,7 +1960,7 @@ Each mistake produces **exactly one** diagnostic. Common mistakes are recognised
 | `E_METHODS_ON_STRUCTURAL` | resolver | methods on an alias |
 | `E_ORPHAN_IMPL` | resolver | `impl X for T` where neither `X` nor `T` is local |
 | `E_INCONSISTENT_OR_BINDINGS` | resolver | or-pattern alternatives bind different names |
-| `E_UNKNOWN_VARIANT` | resolver | `Union.X` in a pattern, where the local union has no variant `X` |
+| `E_UNKNOWN_VARIANT` | resolver, checker | `Union.X` in a pattern where the union has no variant `X`, or a bare name the expected or matched union doesn't have |
 | `E_IT_OUTSIDE_CLOSURE` | resolver | `it` / `itN` outside a header-less closure or unnamed `or` |
 | `E_IT_IN_NAMED_CLOSURE` | resolver | `it` used in a closure with named parameters |
 | `E_RESERVED_IDENT` | resolver | declaring `it` / `itN` |
@@ -2234,7 +2238,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | --- | --- | --- | --- |
 | 1 | **Lexer + parser** (§1–§8, §19). **Done** (2026-11-09) | `src/lexer.ts`, `src/parser.ts`, `src/ast.ts`, `src/sexpr.ts` | `examples/` and `samples/` parse with zero diagnostics; every §18.1 / §18.2 code has an `errors/` test; the §20 corpus has snapshots |
 | 2 | **Resolver and loader:** `Identity`, `Unique`, `Symbol`, `sym`, `Weak` in the prelude. **Done** (2026-11-10) | `src/resolve.ts`, `src/loader.ts`, `std/prelude.ms` | the prelude resolves cleanly; every program in `examples/` and `samples/` loads and resolves with exactly its annotated diagnostics; every resolver and loader code of §18.3 has a test |
-| 3 | **Type checker:** view types as ordinary types; identity `==` / `hash`; `once` reads as `T?`; automatic boxing of recursive value types | `src/check.ts` | std and the prelude type-check |
+| 3 | **Type checker:** view types as ordinary types; identity `==` / `hash`; `once` reads as `T?`; automatic boxing of recursive value types. **Done** (2026-11-10) | `src/types.ts`, `src/check.ts`, `src/check_dump.ts` | the prelude type-checks cleanly; every program in `examples/` and `samples/` type-checks with exactly its annotated diagnostics; every checker code of §18.3 has a `test/check/` case |
 | 4 | **HIR with places:** every read and write names its path (`u.tags[*]`), truncated to 4 segments | `src/hir.ts`, `src/lower.ts` | `ms dump-hir` prints paths |
 | 5 | **Effect summaries** (§15.1), including `consumes` and `#[effects]` | `src/effects.ts` | `ms dump-effects` matches golden files for Appendix A; the stage1 parser's SCC converges without `L_SUMMARY_WIDENED` |
 | 6 | **Access check:** the access errors of §18.3 | `src/access.ts` | one passing and one failing test per error |

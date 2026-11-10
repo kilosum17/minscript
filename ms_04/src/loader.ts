@@ -133,6 +133,10 @@ class Loader {
     }
 
     load(entry: string): Program {
+        if (entry === join(STD_DIR, "prelude.ms")) {
+            // the prelude is loaded once, as itself
+            return { packages: [], prelude: this.prelude.res, diagnostics: [...this.prelude.file.diagnostics, ...this.prelude.res.diagnostics] };
+        }
         const isDir = statSync(entry).isDirectory();
         this.project = findProject(isDir ? entry : dirname(entry));
         if (isDir) {

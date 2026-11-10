@@ -2,7 +2,8 @@
 //   node src/cli.ts lex     <file.ms>    tokens
 //   node src/cli.ts parse   <file.ms>    AST (S-expressions); the file on its own
 //   node src/cli.ts resolve <file.ms>    what each name binds to; the file's whole program is loaded
-//   node src/cli.ts check   <entry>...   parse + load + resolve each program (a file, a folder or a
+//   node src/cli.ts types   <file.ms>    the type of each binding and parameter (whole program checked)
+//   node src/cli.ts check   <entry>...   parse + load + resolve + type-check each program (a file, a folder or a
 //                                        project); diagnostics only, exit 1 on errors
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -10,8 +11,10 @@ import { join, relative, resolve as resolvePath } from "node:path";
 import { LineMap, formatDiagnostic, type Diagnostic } from "./diagnostic.ts";
 import { dumpTokens } from "./dump.ts";
 import { lex } from "./lexer.ts";
-import { loadProgram } from "./loader.ts";
+import { checkProgram } from "./check.ts";
+import { loadPrelude, loadProgram } from "./loader.ts";
 import { dumpResolution } from "./resolve_dump.ts";
+import { dumpTypes } from "./check_dump.ts";
 import { parse } from "./parser.ts";
 import { sexpr } from "./sexpr.ts";
 
@@ -72,12 +75,28 @@ function main(args: string[]): number {
             }
             return errors > 0 ? 1 : 0;
         }
+        case "types": {
+            let errors = 0;
+            for (const f of rest) {
+                const program = loadProgram(f, { tests: true });
+                const checked = checkProgram(program, loadPrelude().file);
+                const full = resolvePath(f);
+                const pkg = program.packages.find((p) => p.files.some((x) => x.path === full));
+                const file = pkg?.files.find((x) => x.path === full);
+                const result = pkg ? checked.packages.get(pkg) : undefined;
+                if (pkg && file && result) process.stdout.write(dumpTypes(pkg.res, result, full, file.src));
+                errors += printDiagnostics([...program.diagnostics, ...checked.diagnostics]);
+            }
+            return errors > 0 ? 1 : 0;
+        }
         case "check": {
             let errors = 0;
             const seen = new Set<string>();
             for (const entry of rest) {
                 const program = loadProgram(entry, { tests: true });
-                const fresh = program.diagnostics.filter((d) => !seen.has(`${d.file}:${d.start}:${d.code}`));
+                const checked = checkProgram(program, loadPrelude().file);
+                const all = [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics];
+                const fresh = all.filter((d) => !seen.has(`${d.file}:${d.start}:${d.code}`));
                 for (const d of fresh) seen.add(`${d.file}:${d.start}:${d.code}`);
                 errors += printDiagnostics(fresh);
                 const files = program.packages.reduce((n, p) => n + p.files.length, 0);
@@ -87,7 +106,7 @@ function main(args: string[]): number {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms check <entry>...");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms check <entry>...");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }

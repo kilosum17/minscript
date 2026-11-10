@@ -5,7 +5,8 @@
 // - test/lexer/*.ms lex cleanly and match their `.tokens` snapshot;
 // - test/resolve/*.ms, each resolved as a package of its own with the prelude: a file with `//~`
 //   annotations must produce exactly those diagnostics; one without must resolve cleanly and match
-//   its `.refs` snapshot.
+//   its `.refs` snapshot;
+// - test/check/*.ms, resolved and type-checked the same way: annotations, or a `.types` snapshot.
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (`npm run test:update`): review the diff.
 
 import assert from "node:assert/strict";
@@ -18,6 +19,8 @@ import { dumpTokens } from "../src/dump.ts";
 import { lex } from "../src/lexer.ts";
 import { loadPrelude } from "../src/loader.ts";
 import { parse } from "../src/parser.ts";
+import { checkPackage } from "../src/check.ts";
+import { dumpTypes } from "../src/check_dump.ts";
 import { resolvePackage } from "../src/resolve.ts";
 import { dumpResolution } from "../src/resolve_dump.ts";
 import { sexpr } from "../src/sexpr.ts";
@@ -114,5 +117,26 @@ for (const f of msFiles(join(root, "test/lexer"))) {
         const r = lex(readFileSync(f));
         assert.equal(show(r.diagnostics, f, r.src), "");
         snapshot(f.replace(/\.ms$/, ".tokens"), dumpTokens(r));
+    });
+}
+
+for (const f of msFiles(join(root, "test/check"))) {
+    test(`check/${relative(join(root, "test/check"), f)}`, () => {
+        const text = readFileSync(f, "utf8");
+        const r = parse(text);
+        const file = { path: f, ast: r.file, src: r.lexed.src };
+        const prelude = loadPrelude();
+        const res = resolvePackage([file], { name: "test", prelude: prelude.res });
+        const checked = checkPackage([file], res, prelude);
+        const all = [...r.diagnostics, ...res.diagnostics, ...checked.diagnostics];
+        const lines = new LineMap(r.lexed.src);
+        const expected = expectedCodes(text);
+        if (expected.length > 0) {
+            const actual = all.map((d) => `${lines.line(d.start)}: ${d.code}`);
+            assert.deepEqual(sortCodes(actual), sortCodes(expected), show(all, f, r.lexed.src));
+        } else {
+            assert.equal(show(all, f, r.lexed.src), "");
+            snapshot(f.replace(/\.ms$/, ".types"), dumpTypes(res, checked, f, r.lexed.src));
+        }
     });
 }

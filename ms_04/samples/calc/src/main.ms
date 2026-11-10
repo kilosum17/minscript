@@ -28,7 +28,8 @@ let BAD = """
 type Source = r{ name: str, text: str }
 
 async fn load(path: str) -> Source {
-    text := await fs.read_text(path) or e => "# can't read ${path}: ${e}"
+    // `??`, not `or`: `or`'s right side would be returned from `load` (§4.6)
+    text := await fs.read_text(path) ?? "# can't read ${path}"
     r{ name: path, text }
 }
 

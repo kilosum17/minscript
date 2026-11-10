@@ -58,6 +58,8 @@ export interface Resolution {
     items: Map<string, Sym>;
     /** what other packages see: `pub` items and `import pub` re-exports */
     exports: Map<string, Sym>;
+    /** files with a glob import of a package that isn't loaded: their unknown names are not errors */
+    openFiles: Set<string>;
     diagnostics: Diagnostic[];
 }
 
@@ -119,7 +121,10 @@ class Scope {
     closure: A.Closure | null = null;
     /** closure without a header, or `or` without a name: provides `it` */
     provider = false;
-    implicit: Sym | null = null;
+    /** the closure or `or` node that owns the implicit parameters */
+    owner: object | null = null;
+    /** `it` (= `it1`), `it2`, …: one symbol each */
+    implicit = new Map<string, Sym>();
     /** function scope: the receiver, when there is one */
     thisSym: Sym | null = null;
     /** file scope: a glob import of a package that isn't loaded */
@@ -158,7 +163,7 @@ class Resolver {
         this.res = {
             pkg: opts.name ?? "main",
             symbols: [], refs: new Map(), decls: new Map(), captures: new Map(), deferred: [],
-            items: new Map(), exports: new Map(), diagnostics: [],
+            items: new Map(), exports: new Map(), openFiles: new Set(), diagnostics: [],
         };
         this.prelude = opts.prelude ?? null;
         this.std = opts.std ?? false;
@@ -287,6 +292,7 @@ class Resolver {
             if (li.glob) {
                 if (!li.pkg) {
                     this.fileScope.open = true;
+                    this.res.openFiles.add(this.file.path);
                     continue;
                 }
                 for (const [name, s] of li.pkg.exports) {
@@ -611,8 +617,13 @@ class Resolver {
         const crossed: A.Closure[] = [];
         for (let s: Scope | null = this.scope; s && s.kind !== "function" && s.kind !== "file" && s.kind !== "type"; s = s.parent) {
             if ((s.kind === "closure" || s.kind === "or") && s.provider) {
-                s.implicit ??= this.sym("it", "implicit", s.closure, this.file.path, node.span.start);
-                this.use(node, { sym: s.implicit, crossed }, node);
+                const name = node.name === "it1" ? "it" : node.name;
+                let sym = s.implicit.get(name);
+                if (!sym) {
+                    sym = this.sym(name, "implicit", s.owner, this.file.path, node.span.start);
+                    s.implicit.set(name, sym);
+                }
+                this.use(node, { sym, crossed }, node);
                 return;
             }
             if (s.kind === "closure") {
@@ -911,6 +922,7 @@ class Resolver {
                 this.expr(e.expr);
                 const scope = new Scope("or", this.scope);
                 scope.provider = e.name === null;
+                scope.owner = e;
                 return this.withScope(scope, () => {
                     if (e.name !== null) this.declare(e.name, "local", e, false);
                     this.expr(e.rhs);
@@ -1020,6 +1032,7 @@ class Resolver {
     closure(c: A.Closure): void {
         const scope = new Scope("closure", this.scope);
         scope.closure = c;
+        scope.owner = c;
         scope.provider = c.params === null;
         this.res.captures.set(c, []);
         this.withScope(scope, () => {
