@@ -38,7 +38,7 @@ const sort = (xs: string[]) => [...xs].sort((a, b) => parseInt(a) - parseInt(b) 
 
 test("the prelude resolves and type-checks cleanly", () => {
     const { res, file } = loadPrelude();
-    const checked = checkProgram({ packages: [], prelude: res, diagnostics: [] }, file);
+    const checked = checkProgram({ packages: [], prelude: res, diagnostics: [], lint: { allow: [], warn: [], deny: [], strict: false } }, file);
     assert.deepEqual([...file.diagnostics, ...res.diagnostics, ...checked.prelude.diagnostics].map((d) => `${d.code}: ${d.message}`), []);
     for (const name of ["Identity", "Unique", "Symbol", "sym", "Weak", "PMap", "Some", "Ok", "log", "all"]) {
         assert.ok(res.exports.has(name), `prelude exports ${name}`);

@@ -20,7 +20,8 @@
     "check": "node src/cli.ts check",
     "js": "node src/cli.ts js",
     "run": "node src/cli.ts run",
-    "mech": "node src/cli.ts mech"
+    "mech": "node src/cli.ts mech",
+    "lint": "node src/cli.ts lint"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

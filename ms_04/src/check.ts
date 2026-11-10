@@ -70,6 +70,8 @@ export interface CheckResult {
     rets: Map<A.FnDecl, Ty>;
     /** the declared type of each field and variant payload (generic parameters unsubstituted) */
     declTypes: Map<A.Type, Ty>;
+    /** lint findings the checker is placed to see (L_SHADOWED_VARIANT); reported by the lint stage */
+    lints: Diagnostic[];
     diagnostics: Diagnostic[];
 }
 
@@ -287,7 +289,7 @@ class Checker {
         this.res = res;
         this.std = std;
         this.out = {
-            pkg: res.pkg, types: new Map(), symTypes: w.symTypes, calls: new Map(), members: new Map(), variants: new Map(), ops: new Map(), rets: new Map(), declTypes: new Map(), diagnostics: [],
+            pkg: res.pkg, types: new Map(), symTypes: w.symTypes, calls: new Map(), members: new Map(), variants: new Map(), ops: new Map(), rets: new Map(), declTypes: new Map(), lints: [], diagnostics: [],
         };
     }
 
@@ -759,6 +761,13 @@ class Checker {
         if (!info || !variant) return null;
         const ctor = this.constructorOf(info, variant, at);
         this.assignable(ctor.k === "fn" ? ctor.ret : ctor, exp);
+        // a type of the same name is never ambiguous (a type isn't a value); a function or global is
+        if ((s.kind === "fn" || s.kind === "global") && s.pkg === this.out.pkg) {
+            this.out.lints.push({
+                ...diag("L_SHADOWED_VARIANT", `\`${name}\` is the variant \`${T.show(exp)}.${name}\` here, not the ${s.kind === "fn" ? "function" : "global"} \`${name}\` of this package (§7.7)`, at.span.start, at.span.end, `${s.pkg}.${name} for the ${s.kind === "fn" ? "function" : "global"}, or rename it`),
+                file: this.file,
+            });
+        }
         return ctor;
     }
 
@@ -2453,7 +2462,19 @@ class Checker {
         const s = this.w.refs.get(p);
         let info: TypeInfo | undefined;
         let variant: A.Variant | undefined;
-        if (s?.kind === "variant") {
+        // a variant of the scrutinee's union comes before ordinary name resolution (§7.7)
+        const scrut = T.prune(ty);
+        const own = p.path.length === 1 && s?.kind !== "variant" && scrut.k === "named" ? this.w.infos.get(scrut.sym) : undefined;
+        if (own?.kind === "union" && own.variants.has(p.path[0]!)) {
+            info = own;
+            variant = own.variants.get(p.path[0]!);
+            if (s && (s.kind === "fn" || s.kind === "global") && s.pkg === this.out.pkg) {
+                this.out.lints.push({
+                    ...diag("L_SHADOWED_VARIANT", `\`${p.path[0]}\` is the variant \`${own.sym.name}.${p.path[0]}\` here, not the ${s.kind === "fn" ? "function" : "global"} \`${p.path[0]}\` of this package (§7.7)`, p.span.start, p.span.end, "rename the function or global"),
+                    file: this.file,
+                });
+            }
+        } else if (s?.kind === "variant") {
             const v = this.variantOf(s);
             info = v?.info;
             variant = v?.variant;

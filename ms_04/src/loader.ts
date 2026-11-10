@@ -43,7 +43,20 @@ export interface Program {
     prelude: Resolution;
     /** parse, load and resolve diagnostics of every file, each with its `file` */
     diagnostics: Diagnostic[];
+    /** the `lint.setup(…)` settings of the project's mod.ms (§18.4), read without evaluating it */
+    lint: LintSettings;
 }
+
+/** Lint levels set in mod.ms: `lint.setup(_{ allow: […], warn: […], deny: […], strict: true })`. */
+export interface LintSettings {
+    allow: string[];
+    warn: string[];
+    deny: string[];
+    /** every lint that warns is an error */
+    strict: boolean;
+}
+
+const noLint = (): LintSettings => ({ allow: [], warn: [], deny: [], strict: false });
 
 export interface LoadOptions {
     /** include `*_test.ms` files in their packages (`ms test`, `ms check`) */
@@ -75,6 +88,7 @@ interface Project {
     root: string;
     main: string;
     deps: Map<string, string>;
+    lint: LintSettings;
 }
 
 function findProject(start: string): Project | null {
@@ -89,6 +103,7 @@ function findProject(start: string): Project | null {
 function readProject(root: string, mod: string): Project {
     const deps = new Map<string, string>();
     let main = "";
+    const lint = noLint();
     const ast = parse(readFileSync(mod)).file;
     const visit = (v: unknown): void => {
         if (!v || typeof v !== "object") return;
@@ -101,6 +116,7 @@ function readProject(root: string, mod: string): Project {
                 deps.set(k.value, resolvePath(root, val.value.slice(5)));
             }
         }
+        if (o.kind === "Call") readLintSetup(o as unknown as A.Call, lint);
         if (o.kind === "Field" && o.name === "main" && (o.value as A.Expr | null)?.kind === "Str") {
             main = (o.value as A.StrLit).value;
         }
@@ -108,7 +124,23 @@ function readProject(root: string, mod: string): Project {
     };
     visit(ast);
     const mainDir = main !== "" ? resolvePath(root, main) : existsSync(join(root, "src")) ? join(root, "src") : root;
-    return { root, main: mainDir, deps };
+    return { root, main: mainDir, deps, lint };
+}
+
+/** `lint.setup(_{ deny: ["L_IMPLICIT_COPY"], strict: true })`: string lists and a bool, read statically. */
+function readLintSetup(call: A.Call, out: LintSettings): void {
+    const c = call.callee;
+    if (c.kind !== "Member" || c.name !== "setup" || c.target.kind !== "Ident" || c.target.name !== "lint") return;
+    const arg = call.args[0]?.value;
+    if (!arg || (arg.kind !== "Inferred" && arg.kind !== "Struct")) return;
+    for (const item of arg.items) {
+        if (item.kind !== "Field" || !item.value) continue;
+        const v = item.value;
+        if (item.name === "strict" && v.kind === "Bool") out.strict = v.value;
+        if ((item.name === "allow" || item.name === "warn" || item.name === "deny") && v.kind === "Vec") {
+            for (const el of v.elems) if (el.value.kind === "Str") out[item.name].push(el.value.value);
+        }
+    }
 }
 
 // ---- loading -------------------------------------------------------------------------------------
@@ -135,7 +167,7 @@ class Loader {
     load(entry: string): Program {
         if (entry === join(STD_DIR, "prelude.ms")) {
             // the prelude is loaded once, as itself
-            return { packages: [], prelude: this.prelude.res, diagnostics: [...this.prelude.file.diagnostics, ...this.prelude.res.diagnostics] };
+            return { packages: [], prelude: this.prelude.res, diagnostics: [...this.prelude.file.diagnostics, ...this.prelude.res.diagnostics], lint: noLint() };
         }
         const isDir = statSync(entry).isDirectory();
         this.project = findProject(isDir ? entry : dirname(entry));
@@ -165,6 +197,7 @@ class Loader {
             packages: this.order,
             prelude: this.prelude.res,
             diagnostics: [...this.diagnostics, ...this.order.flatMap((p) => [...p.files.flatMap((f) => f.diagnostics), ...p.res.diagnostics])],
+            lint: this.project?.lint ?? noLint(),
         };
     }
 

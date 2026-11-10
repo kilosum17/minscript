@@ -9,6 +9,8 @@
 //                                        effects, access) (a file, a folder or a
 //                                        project); diagnostics only, exit 1 on errors
 //   node src/cli.ts mech    <file.ms>    pass 8: move / share / view per use, copy-on-write checks, heap
+//   node src/cli.ts lint    <entry>...   the lints (§18.4); --allow / --warn / --deny L_CODE, --strict;
+//                                        exit 1 when a lint is denied
 //   node src/cli.ts js      <entry>      the program compiled to JavaScript
 //   node src/cli.ts run     <entry>      compile to JavaScript and run it (--stats: copies made;
 //                                        --no-mech: without pass 8, every handed-over read shares)
@@ -158,13 +160,34 @@ function main(args: string[]): number | Promise<number> {
             }
             return errors > 0 ? 1 : 0;
         }
+        case "lint": {
+            // ms lint <entry>... [--allow L_X] [--warn L_X] [--deny L_X] [--strict]
+            const settings = { allow: [] as string[], warn: [] as string[], deny: [] as string[], strict: false };
+            const entries: string[] = [];
+            for (let i = 0; i < rest.length; i++) {
+                const a = rest[i]!;
+                if (a === "--strict") settings.strict = true;
+                else if (a === "--allow" || a === "--warn" || a === "--deny") settings[a.slice(2) as "allow" | "warn" | "deny"].push(rest[++i] ?? "");
+                else entries.push(a);
+            }
+            let errors = 0;
+            let total = 0;
+            for (const entry of entries) {
+                const fe = frontEnd(entry, { tests: true, lint: settings });
+                const ds = [...fe.diagnostics.filter((d) => d.severity === "error"), ...fe.lints];
+                total += printDiagnostics(ds);
+                errors += ds.filter((d) => d.severity === "error").length;
+            }
+            console.log(`${total} finding(s), ${errors} error(s)`);
+            return errors > 0 ? 1 : 0;
+        }
         case "check": {
             let errors = 0;
             const seen = new Set<string>();
             for (const entry of rest) {
                 const fe = frontEnd(entry, { tests: true });
                 const program = fe.program;
-                const all = fe.diagnostics;
+                const all = [...fe.diagnostics, ...fe.lints];
                 const fresh = all.filter((d) => !seen.has(`${d.file}:${d.start}:${d.code}`));
                 for (const d of fresh) seen.add(`${d.file}:${d.start}:${d.code}`);
                 errors += printDiagnostics(fresh);
@@ -175,7 +198,7 @@ function main(args: string[]): number | Promise<number> {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms mech <file> | ms check <entry>... | ms js <entry> | ms run <entry>");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms mech <file> | ms lint <entry>... | ms check <entry>... | ms js <entry> | ms run <entry>");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }

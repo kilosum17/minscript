@@ -247,8 +247,8 @@ class Lowerer {
         const marks = (impls: A.Type[], n: string) => impls.some((i) => i.kind === "TName" && this.refs.get(i)?.pkg === "prelude" && this.refs.get(i)?.name === n);
         if (item.kind === "TypeDecl") {
             if (item.alias) return;
-            const fields = (item.members ?? []).filter((m): m is A.Field => m.kind === "Field").map((f) => ({ name: f.name, mode: f.mode, ty: this.fieldTy(f) }));
-            this.out.types.push({ kind: "struct", name, sym: sym ?? null, fields, identity: marks(item.impls, "Identity"), unique: marks(item.impls, "Unique") });
+            const fields = (item.members ?? []).filter((m): m is A.Field => m.kind === "Field").map((f) => ({ name: f.name, mode: f.mode, ty: this.fieldTy(f), span: { start: f.span.start, end: f.span.end } }));
+            this.out.types.push({ kind: "struct", name, sym: sym ?? null, fields, identity: marks(item.impls, "Identity"), unique: marks(item.impls, "Unique"), file: this.file, span: { start: item.span.start, end: item.span.end } });
         } else if (item.kind === "UnionDecl") {
             const variants = item.members.filter((m): m is A.Variant => m.kind === "Variant").map((v) => ({
                 name: v.name, fields: v.fields ? v.fields.map((f) => f.name) : (v.tuple ?? []).map((_, i) => String(i)), positional: !v.fields,

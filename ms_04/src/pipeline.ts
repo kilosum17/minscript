@@ -11,6 +11,8 @@ import { computeWitnesses } from "./witness.ts";
 import { computeEffects, type EffectsResult } from "./effects.ts";
 import { checkAccess } from "./access.ts";
 import { selectMechanisms, type MechanismResult } from "./mechanism.ts";
+import { lint, lintLevels } from "./lint.ts";
+import type { LintSettings } from "./loader.ts";
 
 export interface FrontEnd {
     program: Program;
@@ -21,10 +23,20 @@ export interface FrontEnd {
     effects: EffectsResult;
     /** pass 8; null when there are errors */
     mechanisms: MechanismResult | null;
+    /** errors and front-end warnings */
     diagnostics: Diagnostic[];
+    /** pass 9: the lints at their levels (mod.ms, then `opts.lint`); a denied lint is an error. Empty when there are errors */
+    lints: Diagnostic[];
 }
 
-export function frontEnd(entry: string, opts: LoadOptions = {}): FrontEnd {
+export interface FrontEndOptions extends LoadOptions {
+    /** lint levels set on the command line, after mod.ms */
+    lint?: LintSettings;
+    /** pass 6's safety cap (§15.1), for tests */
+    effectsCap?: number;
+}
+
+export function frontEnd(entry: string, opts: FrontEndOptions = {}): FrontEnd {
     const program = loadProgram(entry, opts);
     const prelude = loadPrelude();
     const checked = checkProgram(program, prelude.file);
@@ -34,14 +46,20 @@ export function frontEnd(entry: string, opts: LoadOptions = {}): FrontEnd {
     ];
     const hir = lowerProgram(packages);
     computeWitnesses(hir);
-    const effects = computeEffects(hir);
+    const effects = computeEffects(hir, { cap: opts.effectsCap });
     const frontDiagnostics = [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics];
     // the access check needs well-typed code: after type errors its findings would be noise
     const ok = !frontDiagnostics.some((d) => d.severity === "error");
     const access = ok ? checkAccess(hir, effects.summaries) : [];
     const mechanisms = ok && !access.some((d) => d.severity === "error") ? selectMechanisms(hir, effects.summaries) : null;
+    const userFiles = new Set(packages.filter((p) => !p.std).flatMap((p) => p.files.map((f) => f.path)));
+    const earlier = [...effects.diagnostics.filter((d) => d.code.startsWith("L_")), ...[...checked.packages.values()].flatMap((c) => c.lints)];
+    const lints = mechanisms
+        ? lint({ hir, summaries: effects.summaries, mechanisms, earlier, isUser: (f) => userFiles.has(f), target: "js" }, lintLevels(program.lint, ...(opts.lint ? [opts.lint] : [])))
+        : [];
     return {
         program, checked, hir, hirProblems: checkHir(hir), effects, mechanisms,
-        diagnostics: [...frontDiagnostics, ...effects.diagnostics, ...access],
+        diagnostics: [...frontDiagnostics, ...effects.diagnostics.filter((d) => !d.code.startsWith("L_")), ...access],
+        lints,
     };
 }

@@ -811,7 +811,7 @@ let event: Event = match o.status { Paid { total, .. } => Sold { order: o.id, to
 ```
 
 - The expected type comes from the same places that drive `_{}`: a parameter type, an annotated binding (`let x: T` or `as T`), a field type, a return type, a `match` arm whose type is already known, a Vec element type, and so on.
-- **Lookup order:** a variant of the expected union comes first, then ordinary name resolution. A local item with the same name stays reachable through its qualified path; shadowing a variant this way is the lint `L_SHADOWED_VARIANT`.
+- **Lookup order:** a variant of the expected union comes first, then ordinary name resolution. In a pattern, the scrutinee's type is the expected type, so `Empty =>` matches the variant even when the package also declares an item `Empty`. A local item with the same name stays reachable through its qualified path; shadowing a function or global of the package this way is the lint `L_SHADOWED_VARIANT`. A type of the same name (`union Shape { Square(Square) }`) is never ambiguous, since a type is not a value, and is not linted.
 - **Branches guide each other:** without an expected type, a later `match` arm or `else` branch gets the named type the earlier branches settled on.
 - With no expected union type, the bare name falls back to normal lookup. If that fails: `E_CANNOT_INFER_VARIANT`, fix-it `Union.Variant`.
 - The qualified forms (`Message.Text`, `ws.Message.Text`) are always valid. **The parser is unaffected**: `Text("hi")` is a call and `Circle { r: 1.0 }` a struct literal either way.
@@ -1239,7 +1239,7 @@ Without `shared`, a value given to another place is a copy (cheap until written)
 | Situation | Diagnostic |
 | --- | --- |
 | An escaping closure or task **writes** a captured `var` | `E_WRITE_TO_CAPTURED_COPY`, fix-it: `shared var` |
-| A task reads a `var` that the spawning function writes afterwards | `L_TASK_SEES_SNAPSHOT` (warning), fix-it: `shared var` |
+| A closure handed to a task reads a captured `var` that the spawning function writes afterwards | `L_TASK_SEES_SNAPSHOT` (warning), fix-it: `shared var` |
 | A non-shared field is written after the struct was stored in two places | `L_DIVERGED_COPIES` (warning) |
 
 ### 10.4 Globals [D]
@@ -1629,7 +1629,7 @@ The ownership work is one bottom-up pass that writes a summary per function, fol
 | 6 | **Effect summaries** | call graph, SCC order | linear in call edges × rounds; rounds bounded by summary size (§15.1) | one summary per function |
 | 7 | **Access check** | per function | linear | `*` argument overlap, write views, concurrent statements, `Unique` moves |
 | 8 | **Mechanism selection** | per function | linear | each use tagged view / move / share / copy; heap promotion; `shared` lowering |
-| 9 | Lints | per function | linear | §9, §10.3 and §18.3 warnings |
+| 9 | Lints | per function (plus the type graph) | linear | the §18.4 lints at their levels (`ms lint`) |
 | 10 | Back ends | per function | linear | JS / WASM / native |
 
 Passes don't modify the AST: the resolver and the checker return side tables keyed by AST node, and lowering builds a new tree. Lowering reads the checker's recorded decisions; it never re-derives type rules.
@@ -2067,19 +2067,19 @@ Each mistake produces **exactly one** diagnostic. Common mistakes are recognised
 
 ### 18.4 Lints [D]
 
-Each can be turned on or off in the `lint` section of `mod.ms`.
+Lints are pass 9 (§15): they run on code without errors, after mechanism selection, and never stop compilation unless denied. Each lint is `allow` (off), `warn` (the default) or `deny` (an error). Levels are set in `mod.ms`, `lint.setup(_{ allow: […], warn: […], deny: […], strict: true })` (`strict` denies every lint that warns), and then on the command line: `ms lint <entry> --deny L_IMPLICIT_COPY`. `ms check` shows lints with the other diagnostics. The prelude and std are never linted. Until `mod.ms` is evaluated (§17), the toolchain reads the `lint.setup` call statically: string lists and a bool literal.
 
 | Code | Default | Fires when |
 | --- | --- | --- |
-| `L_IMPLICIT_COPY` | warn (collections), off (strings) | a write may copy a shared buffer (§9.1) |
-| `L_VIEW_FORCED_COPY` | warn | a write forces a live view to keep an old copy (§9.6) |
-| `L_TASK_SEES_SNAPSHOT` | warn | a task reads a `var` the spawner writes afterwards (§10.3) |
+| `L_IMPLICIT_COPY` | warn (collections), off (strings) | a write to a `Vec`, `Map` or `Set` reached from a binding that shares a source used again, or that holds a parameter the caller may still use (§9.1, Appendix A.2); writes through `*T` calls and write views count, by the callee's summary |
+| `L_VIEW_FORCED_COPY` | warn | a write to a path that overlaps a view still used afterwards (§9.6), or to the collection a `for` loop iterates |
+| `L_TASK_SEES_SNAPSHOT` | warn | a closure handed to a task not awaited in its statement captured a `var` the spawner writes afterwards (§10.3). Passing a non-Copy `var` itself is `E_VIEW_ACROSS_TASK`; passing a Copy value is an explicit snapshot |
 | `L_DIVERGED_COPIES` | warn | a non-shared field is written after the value was stored in two places (§10.3) |
-| `L_SHARED_CYCLE` | warn | a type can form a refcount cycle through `shared` or identity fields (§9.8) |
+| `L_SHARED_CYCLE` | warn | a type can reach itself through a `shared` or `once` field (§9.8); plain fields of identity types are fixed at construction and can't close a cycle; `Weak[T]` breaks the edge |
 | `L_SUMMARY_WIDENED` | warn | a recursive SCC hit the pass-6 safety cap and some paths were widened (§15.1) |
 | `L_NESTED_LOCK` | warn | a `lock` block nested in another: fix-it `lock a, b` (§10.1) |
 | `L_SELF_WAIT` | warn | `for await` over a subscription whose topic or queue the same task keeps open until after the loop (§11.3) |
-| `L_SHADOWED_VARIANT` | warn | a local item has the same name as a variant of the expected union (§7.7) |
+| `L_SHADOWED_VARIANT` | warn | a function or global of the package has the name of a variant of the expected union, in an expression or a pattern (§7.7) |
 | `L_INT_NOT_PORTABLE` | warn | an `int` literal outside the i32 range (§7.2) |
 | `L_BIGINT_ON_JS` | warn on the JS target | `i64` / `u64` arithmetic, which lowers to `BigInt` (§16.1) |
 
@@ -2289,7 +2289,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 6 | **Access check** (pass 7, §15.1): the access errors of §18.3. **Done** (2026-11-10) | `src/access.ts` | one passing and one failing test per error (`test/access/`); every program of `examples/` and `samples/` passes, and the shop sample's commented-out mistakes give the errors their comments name |
 | 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`). **Done** (2026-11-10) | `src/js/emit.ts`, `src/js/runtime.ts`, `src/js/run.ts` | every program of `examples/run/` and `examples/packages/` prints its `.out` (`test/run.test.ts`), except those that need std packages written in step 10, which are skipped by name; every program of `examples/` and `samples/` compiles to JS that parses. The std tests run on Node once step 10 writes them |
 | 8 | **Mechanism selection** (§15.2). **Done** (2026-11-10) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call (`test/mechanism/copy_on_write.ms`: 2 copies instead of 4); every `test/mechanism/` program prints the same with and without pass 8 |
-| 9 | **Lints** (§18.4) | `src/lint.ts` | each lint has a firing and a quiet test |
+| 9 | **Lints** (§18.4). **Done** (2026-11-10) | `src/lint.ts` | each lint has a firing and a quiet test (`test/lint/`); levels from `mod.ms` and the command line are tested; every lint comment in `examples/` and `samples/` fires and nothing else does |
 | 10 | **std** in v0.4 MinScript | `std/**` | std tests pass |
 | 11 | **Self-host:** port the stage1 compiler to v0.4 (identity AST nodes, `Symbol` identifiers, `once` fields) | self-hosted sources | it compiles itself |
 | 12 | **Benchmark** against the TS compiler on the same input | — | within 1.5× of the TS compiler (proposed) |
