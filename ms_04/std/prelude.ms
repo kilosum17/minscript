@@ -197,6 +197,7 @@ pub type Vec[T: Unique] {
         }
     }
     /// A write view of item `i` (§9.7).
+    #[effects(returns_view: [this])]
     pub fn at_mut(*this, i: int) -> *T { _builtin() }
 
     #[effects(returns_view: [this])]
@@ -342,7 +343,7 @@ pub type Map[K, V: Unique] {
     /// Moves every entry out into a new Map and leaves this one empty.
     pub fn drain(*this) -> Map[K, V] { _builtin() }
     /// A write view of the entry for `k`, inserting `v` first if it is missing (§9.7).
-    #[effects(keeps: [k, v])]
+    #[effects(keeps: [k, v], returns_view: [this])]
     pub fn entry(*this, k: K, v: V) -> *V { _builtin() }
     pub fn keys(this) -> Vec[K] {
         out :== [] as Vec[K]

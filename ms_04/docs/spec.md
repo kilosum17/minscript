@@ -1073,16 +1073,20 @@ User.birthday   reads [this.age]  writes [this.age]
 User.tag        writes [this.tags]                keeps [t]
 ```
 
-**The six effects:**
+**The effects:**
 
 | Effect | Meaning | Used for |
 | --- | --- | --- |
 | `reads [p]` | path `p` is read | conflict checks, parallelism |
 | `writes [p]` | path `p` is written (only on `*` params, `*this`, `shared` fields and cells, `once` fields) | conflict checks, copy-on-write placement |
-| `keeps [p]` | `p` is stored beyond the call (field, global, escaping closure, task) | move vs share at the call site, heap promotion |
+| `keeps [p]` | `p` is stored beyond the call: in a field of a parameter, a global, or a task that isn't awaited | move vs share at the call site, heap promotion |
 | `consumes [p]` | a `Unique` parameter is moved or mutated by the body (§9.2) | forces a move at the call site |
-| `returns_view [p]` | the result is a view into `p` | view checking in the caller (§9.6) |
+| `returns_view [p]` | the result is a view into `p`, or holds shares of it (a returned Vec of views, a returned closure capturing `p`) | view checking in the caller (§9.6); the caller decides whether it keeps the result |
+| `invokes [f(paths)]` | the function calls its function parameter `f`, passing those paths (`f(this.stock.items[*])`) | analysing a closure literal passed as `f` in place, at the call site |
 | `awaits` | the function suspends | views across suspension (§11.2) |
+
+- **Storing into the function's own locals is not keeping.** `out.push(v)` with a local `out` makes `out` hold `v`'s sources; if `out` is returned, they show up as `returns_view`, otherwise nowhere.
+- **Aliases carry their sources.** A local bound from a parameter's path (`x := p.items`, a `for` item, a pattern binding) is a view of it: reads through the local are reads of the parameter. Writes through it reach the parameter only when it is a write view returned by `-> *T`; a copy is written in place (§9.1), so `var c = base; c.tags.push(t)` writes nothing of `base`.
 
 **Paths.** A path is a parameter or `this` followed by up to **4** segments:
 
@@ -1642,9 +1646,9 @@ Passes don't modify the AST: the resolver and the checker return side tables key
 
 - Functions are processed in reverse topological order of the call graph, one SCC at a time. Callees are always summarised before callers.
 - A summary is a bounded set of paths (≤ 4 segments), so it has a finite size and a finite lattice.
-- *Precomputed call lists.* Before any iteration, each body is scanned once into its **local effects** (what it does to its own parameters directly) and its **call list**: every call with the argument path substituted for each callee parameter. Bodies are never walked again; a round only substitutes callee summaries into call lists, so it costs one step per call edge.
-- *Fixpoint in a recursive SCC.* Every member starts from its local effects. A worklist re-evaluates a member only when a callee's summary in the same SCC grew. Summaries only grow, and each is a bounded set of paths, so this terminates, with rounds bounded by summary size (§0.2). In practice it takes a handful of rounds even for a parser-sized SCC: around 50 functions and a few hundred call edges cost a few thousand substitutions. Non-recursive functions need no iteration, and simple self-recursion converges in one extra round.
-- *Safety cap.* If one SCC has not converged after 32 rounds, only the paths that changed in the last round are widened, each to its first segment (`writes [this.diagnostics[*].span]` becomes `writes [this.diagnostics]`). From then on, every new path in that SCC is added at its first segment. There are only as many of those as the parameters have fields, so the SCC finishes within a few more rounds, and `L_SUMMARY_WIDENED` names the SCC and the widened paths. Paths that were already stable keep their precision, so a view of `this.tokens` held across a call that writes `this.pos` stays valid.
+- *One evaluation* walks a body once: it resolves the locals that alias parameter paths, collects the body's own effects and its calls, and substitutes each callee's current summary into its arguments' paths. It is linear in the body. (A local bound to a call's result is a view of what the callee's `returns_view` says, so a body can't be summarised once into call lists independent of its callees: inside a recursive component a member is re-evaluated, not just re-substituted.)
+- *Fixpoint in a recursive SCC.* Every member starts from an empty summary. A worklist re-evaluates a member only when a callee's summary in the same SCC grew. Summaries only grow, and each is a bounded set of paths, so this terminates, with rounds bounded by summary size (§0.2). In practice it takes a handful of evaluations per member even for a parser-sized SCC: the calc sample's parser needs at most 6, and a ring of 60 functions each calling the next at most 3. Non-recursive functions are evaluated once.
+- *Safety cap.* If a member of an SCC is re-evaluated more than 32 times, only the paths that changed in the last round are widened, each to its first segment (`writes [this.diagnostics[*].span]` becomes `writes [this.diagnostics]`). From then on, every new path in that SCC is added at its first segment. There are only as many of those as the parameters have fields, so the SCC finishes within a few more rounds, and `L_SUMMARY_WIDENED` names the SCC and the widened paths. Paths that were already stable keep their precision, so a view of `this.tokens` held across a call that writes `this.pos` stays valid.
 - Calls through interfaces, function values and `extern` use the signature-level summary and never trigger iteration.
 
 ### 15.2 Pass 8: mechanism selection [D]
@@ -2264,7 +2268,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 2 | **Resolver and loader:** `Identity`, `Unique`, `Symbol`, `sym`, `Weak` in the prelude. **Done** (2026-11-10) | `src/resolve.ts`, `src/loader.ts`, `std/prelude.ms` | the prelude resolves cleanly; every program in `examples/` and `samples/` loads and resolves with exactly its annotated diagnostics; every resolver and loader code of §18.3 has a test |
 | 3 | **Type checker:** view types as ordinary types; identity `==` / `hash`; `once` reads as `T?`; automatic boxing of recursive value types. **Done** (2026-11-10) | `src/types.ts`, `src/check.ts`, `src/check_dump.ts` | the prelude type-checks cleanly; every program in `examples/` and `samples/` type-checks with exactly its annotated diagnostics; every checker code of §18.3 has a `test/check/` case |
 | 4 | **HIR with places:** every read and write names its path (`u.tags[*]`), truncated to 4 segments; which type parameters each generic function needs at run time (§15.4). **Done** (2026-11-10) | `src/hir.ts`, `src/lower.ts`, `src/witness.ts`, `src/hir_check.ts`, `src/hir_dump.ts` | `ms hir` prints paths and witness parameters; the prelude and every program of `examples/` and `samples/` lower to HIR that passes the validator |
-| 5 | **Effect summaries** (§15.1), including `consumes` and `#[effects]` | `src/effects.ts` | `ms dump-effects` matches golden files for Appendix A; the stage1 parser's SCC converges without `L_SUMMARY_WIDENED` |
+| 5 | **Effect summaries** (§15.1), including `consumes`, `invokes` and `#[effects]`. **Done** (2026-11-10) | `src/effects.ts` | `ms effects` matches the golden file for Appendix A (`test/effects/`); a 60-function recursive ring converges without `L_SUMMARY_WIDENED`, and every program of `examples/` and `samples/` does too. The stage1 parser is v0.2 code: measure its SCC when it is ported (step 11) |
 | 6 | **Access check:** the access errors of §18.3 | `src/access.ts` | one passing and one failing test per error |
 | 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`) | `src/js/*` | std tests pass on Node |
 | 8 | **Mechanism selection** (§15.2) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call |
@@ -2359,7 +2363,7 @@ type Token {
     span: Span
 }
 
-pub fn lex(src: str) -> Vec[Token] {     // reads [src] keeps [src]
+pub fn lex(src: str) -> Vec[Token] {     // reads [src] returns_view [src]
     var out = [] as Vec[Token]
     var i = 0
     bytes := src.bytes()
@@ -2374,7 +2378,7 @@ pub fn lex(src: str) -> Vec[Token] {     // reads [src] keeps [src]
 ```
 
 - `substring` is a free local view; stored in a `Token` it becomes a counted share of `src`'s buffer. The source text is never copied.
-- `out` moves to the caller. `src` leaves scope; its buffer lives while the tokens do.
+- `out` moves to the caller. The tokens are stored in `out`, a local, so `lex` itself keeps nothing; its result holds shares of `src` (`returns_view [src]`), and the caller keeps them if it stores the tokens. `src` leaves scope; its buffer lives while the tokens do.
 
 ### A.4 Checker pass: `once` and `Symbol`
 
@@ -2385,7 +2389,7 @@ type Ident: Identity {
     once ty: Type
 }
 
-fn check_ident(id: Ident, scope: Scope) -> Type {   // reads [scope]
+fn check_ident(id: Ident, scope: Scope) -> Type {   // reads [id.name, scope] writes [id.ty]
     t := scope.lookup(id.name) ?? Type.Unknown
     id.ty = t
     t

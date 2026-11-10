@@ -154,9 +154,24 @@ class Lowerer {
         let l = this.locals.get(s);
         if (!l) {
             l = { sym: s, name: s.name, ty: this.symTy(s), mutable, shared };
+            if (this.isUniqueTy(l.ty)) l.unique = true;
             this.locals.set(s, l);
         }
         return l;
+    }
+
+    /** A type declared `Unique` (§9.2); a struct with a Unique field is Unique too. */
+    isUniqueTy(t: Ty, seen = new Set<Sym>()): boolean {
+        const p = T.prune(t);
+        if (p.k !== "named" || seen.has(p.sym)) return false;
+        seen.add(p.sym);
+        const d = this.typeDecls.get(p.sym);
+        if (!d || d.kind === "InterDecl") return false;
+        if (d.impls.some((i) => i.kind === "TName" && this.refs.get(i)?.pkg === "prelude" && this.refs.get(i)?.name === "Unique")) return true;
+        if (d.kind === "TypeDecl") {
+            for (const m of d.members ?? []) if (m.kind === "Field" && m.type.kind === "TName" && this.refs.get(m.type) && this.isUniqueTy({ k: "named", sym: this.refs.get(m.type)!, args: [] }, seen)) return true;
+        }
+        return false;
     }
 
     /** A compiler temporary. */
@@ -260,6 +275,8 @@ class Lowerer {
             self: this.selfLocal,
             selfMode: fn.receiver === null ? null : fn.receiver === "*this" ? "write" : "read",
             ret: T.ground(this.rets.get(fn) ?? T.UNKNOWN),
+            retMode: fn.retStar ? "write" : "read",
+            effectsAttr: effectsAttr(fn),
             async: fn.isAsync,
             body: fn.body && !builtin ? this.body(fn.body) : null,
             builtin,
@@ -1057,6 +1074,13 @@ class Lowerer {
 }
 
 // ---- helpers -------------------------------------------------------------------------------------
+
+function effectsAttr(fn: A.FnDecl): H.Fun["effectsAttr"] {
+    const a = fn.attrs.find((x) => x.name === "effects");
+    if (!a) return null;
+    const get = (n: string) => a.args.find((x) => x.name === n)?.paths ?? [];
+    return { keeps: get("keeps"), consumes: get("consumes"), returnsView: get("returns_view") };
+}
 
 function isBuiltinBody(b: A.Block): boolean {
     if (b.stmts.length !== 1) return false;

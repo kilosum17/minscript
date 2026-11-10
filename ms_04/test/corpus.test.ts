@@ -7,7 +7,8 @@
 //   annotations must produce exactly those diagnostics; one without must resolve cleanly and match
 //   its `.refs` snapshot;
 // - test/check/*.ms, resolved and type-checked the same way: annotations, or a `.types` snapshot;
-// - test/hir/*.ms, lowered with the whole front end: valid HIR and a `.hir` snapshot.
+// - test/hir/*.ms, lowered with the whole front end: valid HIR and a `.hir` snapshot;
+// - test/effects/*.ms: every function's effect summary, an `.effects` snapshot (spec §9.5).
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (`npm run test:update`): review the diff.
 
 import assert from "node:assert/strict";
@@ -24,6 +25,7 @@ import { checkPackage } from "../src/check.ts";
 import { dumpTypes } from "../src/check_dump.ts";
 import { dumpFun } from "../src/hir_dump.ts";
 import { frontEnd } from "../src/pipeline.ts";
+import { showSummary } from "../src/effects.ts";
 import { resolvePackage } from "../src/resolve.ts";
 import { dumpResolution } from "../src/resolve_dump.ts";
 import { sexpr } from "../src/sexpr.ts";
@@ -151,5 +153,16 @@ for (const f of msFiles(join(root, "test/hir"))) {
         assert.equal(show(fe.diagnostics, f, src), "");
         assert.deepEqual(fe.hirProblems, []);
         snapshot(f.replace(/\.ms$/, ".hir"), fe.hir.funs.filter((x) => x.file === f).map(dumpFun).join("\n\n") + "\n");
+    });
+}
+
+for (const f of msFiles(join(root, "test/effects"))) {
+    test(`effects/${relative(join(root, "test/effects"), f)}`, () => {
+        const fe = frontEnd(f);
+        const src = readFileSync(f);
+        assert.equal(show(fe.diagnostics, f, src), "");
+        const funs = fe.hir.funs.filter((x) => x.file === f);
+        const width = Math.max(...funs.map((x) => x.name.length));
+        snapshot(f.replace(/\.ms$/, ".effects"), funs.map((x) => `${x.name.padEnd(width)}  ${showSummary(fe.effects.summaries.get(x)!)}`).join("\n") + "\n");
     });
 }

@@ -44,6 +44,8 @@ export interface Local {
     mutable: boolean;
     /** `shared var` (§10) */
     shared: boolean;
+    /** its type is `Unique` (§9.2): moved, never shared */
+    unique?: boolean;
 }
 
 export interface Fun {
@@ -55,6 +57,10 @@ export interface Fun {
     self: Local | null;
     selfMode: "read" | "write" | null;
     ret: Ty;
+    /** `-> *T`: the result is a write view (§9.7) */
+    retMode: "read" | "write";
+    /** `#[effects(keeps: [v], …)]`: the stated summary of a builtin (§9.5) */
+    effectsAttr: { keeps: string[]; consumes: string[]; returnsView: string[] } | null;
     async: boolean;
     /** null: an extern or interface signature */
     body: Block | null;

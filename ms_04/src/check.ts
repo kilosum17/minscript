@@ -2535,22 +2535,24 @@ class Checker {
      * of a value they miss. Constructors: union variants, `true` / `false`, the literals of a
      * literal union, and a tuple's or struct's single shape; anything else needs a wildcard.
      */
-    missing(rows: A.Pattern[][], tys: Ty[], depth: number): string | null {
+    missing(rows: A.Pattern[][], tys: Ty[], depth: number, budget = { left: 5000 }): string | null {
         if (tys.length === 0) return rows.length > 0 ? null : "_";
-        if (depth > 12) return null;
+        // a row of wildcards covers everything; past the budget, assume covered (never exponential)
+        if (depth > 12 || --budget.left < 0) return null;
         rows = rows.flatMap((r) => expandOr(r));
+        if (rows.some((r) => r.every(irrefutable))) return null;
         const t = T.prune(tys[0]!);
         const rest = tys.slice(1);
         const isWild = (p: A.Pattern) => p.kind === "PWild" || p.kind === "PBind" || p.kind === "PError";
         const defaults = () => rows.filter((r) => isWild(r[0]!)).map((r) => r.slice(1));
         if (T.isOpen(t)) {
-            if (rows.some((r) => isWild(r[0]!))) return this.missing(defaults(), rest, depth + 1);
+            if (rows.some((r) => isWild(r[0]!))) return this.missing(defaults(), rest, depth + 1, budget);
             // patterns we couldn't type: assume they cover
             return null;
         }
         const ctors = this.constructors(t);
         if (!ctors) {
-            const m = this.missing(defaults(), rest, depth + 1);
+            const m = this.missing(defaults(), rest, depth + 1, budget);
             return m === null ? null : "_";
         }
         for (const c of ctors) {
@@ -2563,7 +2565,7 @@ class Checker {
                     if (sub) spec.push([...sub, ...r.slice(1)]);
                 }
             }
-            const m = this.missing(spec, [...c.args, ...rest], depth + 1);
+            const m = this.missing(spec, [...c.args, ...rest], depth + 1, budget);
             if (m !== null) return c.args.length === 0 || m === "_" ? c.name : `${c.name}(…)`;
         }
         return null;

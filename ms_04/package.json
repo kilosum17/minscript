@@ -16,6 +16,7 @@
     "resolve": "node src/cli.ts resolve",
     "types": "node src/cli.ts types",
     "hir": "node src/cli.ts hir",
+    "effects": "node src/cli.ts effects",
     "check": "node src/cli.ts check"
   },
   "devDependencies": {

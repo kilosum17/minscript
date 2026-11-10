@@ -4,6 +4,7 @@
 //   node src/cli.ts resolve <file.ms>    what each name binds to; the file's whole program is loaded
 //   node src/cli.ts types   <file.ms>    the type of each binding and parameter (whole program checked)
 //   node src/cli.ts hir     <file.ms>    the file's functions lowered to HIR, with access paths and witnesses
+//   node src/cli.ts effects <file.ms>    the effect summary of each of the file's functions
 //   node src/cli.ts check   <entry>...   parse + load + resolve + type-check each program (a file, a folder or a
 //                                        project); diagnostics only, exit 1 on errors
 
@@ -18,6 +19,7 @@ import { dumpResolution } from "./resolve_dump.ts";
 import { dumpTypes } from "./check_dump.ts";
 import { dumpFun } from "./hir_dump.ts";
 import { frontEnd } from "./pipeline.ts";
+import { showSummary } from "./effects.ts";
 import { parse } from "./parser.ts";
 import { sexpr } from "./sexpr.ts";
 
@@ -103,6 +105,18 @@ function main(args: string[]): number {
             }
             return errors > 0 ? 1 : 0;
         }
+        case "effects": {
+            let errors = 0;
+            for (const f of rest) {
+                const fe = frontEnd(f, { tests: true });
+                const full = resolvePath(f);
+                const funs = fe.hir.funs.filter((x) => x.file === full);
+                const width = Math.max(...funs.map((x) => x.name.length), 0);
+                for (const fun of funs) console.log(`${fun.name.padEnd(width)}  ${showSummary(fe.effects.summaries.get(fun)!)}`);
+                errors += printDiagnostics(fe.diagnostics);
+            }
+            return errors > 0 ? 1 : 0;
+        }
         case "check": {
             let errors = 0;
             const seen = new Set<string>();
@@ -120,7 +134,7 @@ function main(args: string[]): number {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms check <entry>...");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms check <entry>...");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }

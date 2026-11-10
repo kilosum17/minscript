@@ -7,6 +7,7 @@ import { checkHir } from "./hir_check.ts";
 import { loadPrelude, loadProgram, type LoadOptions, type Program } from "./loader.ts";
 import { lowerProgram, type LowerPackage } from "./lower.ts";
 import { computeWitnesses } from "./witness.ts";
+import { computeEffects, type EffectsResult } from "./effects.ts";
 
 export interface FrontEnd {
     program: Program;
@@ -14,6 +15,7 @@ export interface FrontEnd {
     hir: H.Program;
     /** HIR invariants lowering broke: compiler bugs */
     hirProblems: string[];
+    effects: EffectsResult;
     diagnostics: Diagnostic[];
 }
 
@@ -27,5 +29,9 @@ export function frontEnd(entry: string, opts: LoadOptions = {}): FrontEnd {
     ];
     const hir = lowerProgram(packages);
     computeWitnesses(hir);
-    return { program, checked, hir, hirProblems: checkHir(hir), diagnostics: [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics] };
+    const effects = computeEffects(hir);
+    return {
+        program, checked, hir, hirProblems: checkHir(hir), effects,
+        diagnostics: [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics, ...effects.diagnostics],
+    };
 }
