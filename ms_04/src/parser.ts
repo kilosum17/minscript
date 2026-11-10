@@ -290,8 +290,10 @@ class Parser {
         try {
             if (!this.at("package")) this.unexpected("`package`");
             this.advance();
-            pkg = [this.bindingName("a package name")];
-            while (this.eat(".")) pkg.push(this.bindingName("a package name"));
+            // `package unsafe` is std.unsafe (§8.6): the one keyword that names a package
+            const segment = () => (this.at("unsafe") ? (this.advance(), "unsafe") : this.bindingName("a package name"));
+            pkg = [segment()];
+            while (this.eat(".")) pkg.push(segment());
         } catch (e) {
             if (!(e instanceof Sync)) throw e;
             this.syncItem(this.i);

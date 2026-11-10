@@ -225,12 +225,17 @@ class FunctionMechanisms {
                 for (const c of e.captures) captured.add(c.sym);
                 for (const l of e.params) cells.add(l.sym); // closure parameters are never moved
             }
-            if (e.k === "match") for (const a of e.arms) declare(a.pattern);
+            // a local bound by a pattern holds part of another value: never provably unique
+            const bound = (p: H.Pattern) => {
+                declare(p);
+                for (const l of patternLocals(p)) this.notUnique.add(l.sym);
+            };
+            if (e.k === "match") for (const a of e.arms) bound(a.pattern);
             if (e.k === "foreach") {
-                declare(e.item);
-                if (e.second) declare(e.second);
+                bound(e.item);
+                if (e.second) bound(e.second);
             }
-            if (e.k === "select") for (const a of e.arms) declare(a.pattern);
+            if (e.k === "select") for (const a of e.arms) bound(a.pattern);
             eachChild(e, visit, false);
         };
         const stmts = (b: H.Block) => {
@@ -354,7 +359,8 @@ class FunctionMechanisms {
                 // a lent local the result may still point into can't be proven unique
                 const lent = (x: H.Expr, name: string) => {
                     if (x.k !== "read" || x.place.root.k !== "local" || x.place.segs.length > 0) return;
-                    if (!auto && (!sum || [...sum.returnsView].some((v) => rootOf(v) === name))) this.notUnique.add(x.place.root.local);
+                    // on JS a callee with a body may also set the shared bit (a `for` loop's snapshot)
+                    if (!auto && (!sum || !callee?.builtin || [...sum.returnsView].some((v) => rootOf(v) === name))) this.notUnique.add(x.place.root.local);
                 };
                 for (let i = e.args.length - 1; i >= 0; i--) {
                     const a = e.args[i]!;
@@ -465,6 +471,8 @@ class FunctionMechanisms {
                     for (const l of items) this.live.delete(l.sym);
                     this.live = union(this.live, after);
                 });
+                // the loop iterates a snapshot (a share)
+                if (e.iterable.k === "read" && e.iterable.place.root.k === "local") this.notUnique.add(e.iterable.place.root.local);
                 return this.expr(e.iterable, "view");
             }
             case "break": {

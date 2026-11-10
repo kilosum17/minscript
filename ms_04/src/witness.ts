@@ -65,6 +65,8 @@ function directNeeds(f: H.Fun): { js: Set<Sym>; native: Set<Sym> } {
     for (const l of [...f.params, ...(f.self ? [f.self] : [])]) holds(l.ty);
     holds(f.ret);
     if (f.builtin) for (const g of f.generics) native.add(g);
+    // a std builtin that is generic reads its type at run time (`json.parse.[T]` builds a `T`)
+    if (f.builtin && !f.name.startsWith("prelude.")) for (const g of f.generics) js.add(g);
     if (f.body) {
         walkBlock(f.body, (e) => {
             holds(e.ty);

@@ -1,6 +1,6 @@
 // The JS back end (spec §16): every program in examples/run/ (a file with a `.out` beside it) and
-// every examples/packages/*/ with a main.out is compiled and run, and what it prints must match.
-// Programs that need std packages not written yet (step 10) are skipped by name, with the reason.
+// every examples/packages/*/ with a main.out is compiled and run, and what it prints (stdout and
+// stderr, in the order written) must match.
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -12,16 +12,6 @@ import { promisify } from "node:util";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const cli = join(root, "src", "cli.ts");
-
-const NEEDS_STD: Record<string, string> = {
-    "exit.ms": "std.process",
-    "json_value_field.ms": "std.json",
-    "run_module.ms": "std.runtime",
-    "run_module_result.ms": "std.runtime",
-    "std_packages.ms": "std.json, std.env, …",
-    "ws_echo.ms": "std.net.ws",
-    "app": "std.json",
-};
 
 const entries: [string, string, string][] = [];
 const runDir = join(root, "examples", "run");
@@ -35,17 +25,19 @@ for (const n of readdirSync(pkgDir).sort()) {
 
 const run = promisify(execFile);
 
+/** What `ms run entry` prints, stdout and stderr interleaved as written (one pipe for both). */
+export async function merged(entry: string, cmd = "run"): Promise<string> {
+    const q = (x: string) => `'${x.replace(/'/g, "'\\''")}'`;
+    try {
+        const r = await run("/bin/sh", ["-c", `${q(process.execPath)} ${q(cli)} ${cmd} ${q(entry)} 2>&1`], { cwd: root, timeout: 30_000 });
+        return r.stdout;
+    } catch (e) {
+        return (e as { stdout?: string }).stdout ?? "";
+    }
+}
+
 for (const [name, entry, expected] of entries) {
-    const skip = NEEDS_STD[name] ? `needs ${NEEDS_STD[name]}` : false;
-    test(`run ${name}`, { skip }, async () => {
-        let out: string;
-        try {
-            const r = await run(process.execPath, [cli, "run", entry], { cwd: root, timeout: 30_000 });
-            out = r.stdout + r.stderr;
-        } catch (e) {
-            const x = e as { stdout?: string; stderr?: string };
-            out = (x.stdout ?? "") + (x.stderr ?? "");
-        }
-        assert.equal(out, readFileSync(expected, "utf8"));
+    test(`run ${name}`, async () => {
+        assert.equal(await merged(entry), readFileSync(expected, "utf8"));
     });
 }

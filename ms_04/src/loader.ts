@@ -59,8 +59,12 @@ export interface LintSettings {
 const noLint = (): LintSettings => ({ allow: [], warn: [], deny: [], strict: false });
 
 export interface LoadOptions {
-    /** include `*_test.ms` files in their packages (`ms test`, `ms check`) */
+    /** include `*_test.ms` files in their packages (`ms check`) */
     tests?: boolean;
+    /** include the `*_test.ms` files of this folder only (`ms test`, §17.7) */
+    testDir?: string;
+    /** files that exist only in memory, by absolute path (`ms test`'s generated harness) */
+    virtual?: Map<string, string>;
 }
 
 // ---- the prelude ---------------------------------------------------------------------------------
@@ -76,8 +80,11 @@ export function loadPrelude(): { res: Resolution; file: LoadedFile } {
     return preludeCache;
 }
 
+let virtualFiles: Map<string, string> | undefined;
+
 function parseFile(path: string): LoadedFile {
-    const r = parse(readFileSync(path));
+    const text = virtualFiles?.get(path);
+    const r = parse(text !== undefined ? new TextEncoder().encode(text) : readFileSync(path));
     for (const d of r.diagnostics) d.file = path;
     return { path, ast: r.file, src: r.lexed.src, diagnostics: r.diagnostics };
 }
@@ -165,11 +172,20 @@ class Loader {
     }
 
     load(entry: string): Program {
+        virtualFiles = this.opts.virtual;
+        try {
+            return this.loadEntry(entry);
+        } finally {
+            virtualFiles = undefined;
+        }
+    }
+
+    loadEntry(entry: string): Program {
         if (entry === join(STD_DIR, "prelude.ms")) {
             // the prelude is loaded once, as itself
             return { packages: [], prelude: this.prelude.res, diagnostics: [...this.prelude.file.diagnostics, ...this.prelude.res.diagnostics], lint: noLint() };
         }
-        const isDir = statSync(entry).isDirectory();
+        const isDir = !this.opts.virtual?.has(entry) && statSync(entry).isDirectory();
         this.project = findProject(isDir ? entry : dirname(entry));
         if (isDir) {
             const main = this.project && (this.project.root === entry || entry.startsWith(this.project.main))
@@ -190,7 +206,9 @@ class Loader {
                 this.loadPackage(entry, [file], isMain ? "main" : file.ast.package.join("."), dir, isMain);
             } else {
                 this.root = this.project?.main ?? dir;
-                this.loadFolder(dir, this.qualifiedName(dir));
+                // a package given as the entry is named by its declaration (`package failing`)
+                const q = this.qualifiedName(dir);
+                this.loadFolder(dir, q === "main" ? file.ast.package.join(".") : q);
             }
         }
         return {
@@ -211,11 +229,13 @@ class Loader {
     }
 
     msFiles(dir: string): string[] {
-        return readdirSync(dir)
-            .filter((n) => n.endsWith(".ms") && n !== "mod.ms" && (this.opts.tests || !n.endsWith("_test.ms")))
-            .sort()
+        const tests = (d: string) => this.opts.tests || this.opts.testDir === d;
+        const real = readdirSync(dir)
+            .filter((n) => n.endsWith(".ms") && n !== "mod.ms" && (tests(dir) || !n.endsWith("_test.ms")))
             .map((n) => join(dir, n))
             .filter((p) => statSync(p).isFile());
+        const extra = [...(this.opts.virtual?.keys() ?? [])].filter((p) => dirname(p) === dir && !real.includes(p));
+        return [...real, ...extra].sort();
     }
 
     qualifiedName(dir: string): string {

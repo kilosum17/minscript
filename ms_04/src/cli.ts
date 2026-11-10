@@ -11,6 +11,8 @@
 //   node src/cli.ts mech    <file.ms>    pass 8: move / share / view per use, copy-on-write checks, heap
 //   node src/cli.ts lint    <entry>...   the lints (§18.4); --allow / --warn / --deny L_CODE, --strict;
 //                                        exit 1 when a lint is denied
+//   node src/cli.ts test    [path]...    the `test_` functions of `*_test.ms` files (§17.7); --run name,
+//                                        --reporter spec|dots; exit 1 when a test fails
 //   node src/cli.ts js      <entry>      the program compiled to JavaScript
 //   node src/cli.ts run     <entry>      compile to JavaScript and run it (--stats: copies made;
 //                                        --no-mech: without pass 8, every handed-over read shares)
@@ -30,6 +32,7 @@ import { showSummary } from "./effects.ts";
 import { showMechanisms } from "./mechanism.ts";
 import { parse } from "./parser.ts";
 import { compile, runJs } from "./js/run.ts";
+import { runTests } from "./test_runner.ts";
 import { sexpr } from "./sexpr.ts";
 
 function msFiles(path: string): string[] {
@@ -63,9 +66,13 @@ function main(args: string[]): number | Promise<number> {
     const [cmd, ...rest] = args;
     switch (cmd) {
         case "js": case "run": {
-            const stats = rest.includes("--stats");
-            const noMech = rest.includes("--no-mech");
-            const entries = rest.filter((x) => x !== "--stats" && x !== "--no-mech");
+            // `ms run prog -- a b`: everything after `--` is the program's `env.args()`
+            const dash = rest.indexOf("--");
+            const own = dash >= 0 ? rest.slice(0, dash) : rest;
+            const programArgs = dash >= 0 ? rest.slice(dash + 1) : [];
+            const stats = own.includes("--stats");
+            const noMech = own.includes("--no-mech");
+            const entries = own.filter((x) => x !== "--stats" && x !== "--no-mech");
             if (entries.length !== 1) {
                 console.log(`usage: ms ${cmd} <entry> [--no-mech]${cmd === "run" ? " [--stats]" : ""}`);
                 return 2;
@@ -79,7 +86,7 @@ function main(args: string[]): number | Promise<number> {
                 console.log(c.js);
                 return 0;
             }
-            return runJs(c.js, { stats });
+            return runJs(c.js, { stats, args: programArgs }).then((r) => r.code);
         }
         case "lex": {
             for (const f of rest) process.stdout.write(dumpTokens(lex(readFileSync(f))));
@@ -160,6 +167,25 @@ function main(args: string[]): number | Promise<number> {
             }
             return errors > 0 ? 1 : 0;
         }
+        case "test": {
+            // ms test [path...] [--run name] [--reporter spec|dots]
+            const paths: string[] = [];
+            const topts: { filter?: string; reporter?: string } = {};
+            for (let i = 0; i < rest.length; i++) {
+                const a = rest[i]!;
+                if (a === "--run") topts.filter = rest[++i];
+                else if (a === "--reporter") topts.reporter = rest[++i];
+                else paths.push(a);
+            }
+            return (async () => {
+                let bad = 0;
+                for (const p of paths.length ? paths : ["."]) {
+                    const r = await runTests(p, topts);
+                    bad += r.failed + r.broken;
+                }
+                return bad > 0 ? 1 : 0;
+            })();
+        }
         case "lint": {
             // ms lint <entry>... [--allow L_X] [--warn L_X] [--deny L_X] [--strict]
             const settings = { allow: [] as string[], warn: [] as string[], deny: [] as string[], strict: false };
@@ -198,7 +224,7 @@ function main(args: string[]): number | Promise<number> {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms mech <file> | ms lint <entry>... | ms check <entry>... | ms js <entry> | ms run <entry>");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms mech <file> | ms lint <entry>... | ms test [path]... | ms check <entry>... | ms js <entry> | ms run <entry>");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }

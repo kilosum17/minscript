@@ -123,6 +123,20 @@ async fn main() {
         None => {}
     }
 
+    // a local lent to a method that iterates it (a snapshot sets the shared bit), then written
+    // through a `*this` method with a body: the write reaches the local
+    var lines = [1]
+    if lines.any(#{ it > 5 }) { log.println("never") }
+    lines.extend([2, 3])
+    log.println("written after a lend: ${lines}")
+
+    // a `var` bound by a pattern is part of another value: writing it copies
+    held := Some([5])
+    if let Some(var part) = held {
+        part.push(6)
+        log.println("pattern copy: ${part} ${held}")
+    }
+
     // an owned parameter of an async fn: the task gets its own value
     t := [6]
     log.println("async: ${await later(t)} ${t}")

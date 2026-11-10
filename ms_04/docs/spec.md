@@ -1593,7 +1593,7 @@ inter Iterable[T] { fn iter(this) -> Iterator[T] }
 
 ### 14.4 std packages [D]
 
-Each std package is a folder under `std/`, written in MinScript; functions only the runtime can provide have the body `_builtin()`. Every std package must load and check cleanly.
+Each std package is a folder under `std/`, written in MinScript; functions only the runtime can provide have the body `_builtin()`. Every std package must load and check cleanly, and std's behaviour tests are `*_test.ms` files beside it (`ms test std`). `package unsafe` is the one package whose name is a keyword.
 
 | Package | Contents |
 | --- | --- |
@@ -1742,6 +1742,10 @@ JS has no refcount, so the back end tracks one **shared bit** per buffer (`$s` o
 - **`shared`:** a plain variable or property (one JS thread per worker). `lock` blocks compile to a plain block.
 - **`once`:** a property initialised to `undefined`; a write checks for `undefined` and panics otherwise.
 - **String interpolation:** a template literal; `to_str()` is called only for non-primitive values.
+- **Printing:** a struct prints as `Point { x: 1, y: 2 }`; outside `package main` its name keeps the package, as code outside the package writes it (`build.Opts { … }`, `models.User { … }`). Variants print by their own name (`Circle(1.0)`).
+- **`*` receivers and parameters:** a `*T` parameter, and the receiver of a `*this` method with a body, is a cell `{ v }`. A non-`shared` argument is passed in a box made unique first and written back after the call, so a copy-on-write inside the callee reaches the caller; a `shared` place passes its own cell (§10.1). A `*this` builtin gets the receiver itself, made unique, and writes it in place. A write view passed to a function value's `*T` parameter is boxed too.
+- **Witness tables (§15.4)** are `{ d, def }`: a descriptor of the type (`{ n: "Point", a: [] }`, `{ p: "f64" }`) and its default. Generated classes record their field types, defaults and `shared` / `once` fields, which is all `json` needs to build a `T`. A generic std builtin (`json.parse[T]`) receives its type parameters' witnesses.
+- **std builtins** are implemented in `src/js/stdlib.ts`, keyed by their HIR name (`std.fs.read_text`). A program's servers and sockets are closed when `main` returns. `runtime.exit(code)` ends the program without being a panic, so `recover` doesn't catch it. An uncaught panic exits with code 101.
 
 ---
 
@@ -1909,7 +1913,8 @@ ms test --reporter dots
 
 - **Test files** are `*_test.ms`, in the folder of the package they test, and declare that package. They are compiled only while their package is being tested.
 - **Tests** are the top-level functions whose name starts with `test_`. They take no parameters and return nothing (`E_TEST_SIGNATURE`); they may be `async`. A test fails by panicking, usually through a `std.testing` assertion. The other tests still run.
-- **The runner is MinScript:** `ms test` adds a generated file to each package, with a `main` that passes every test to `std.testing.run_all`, which runs each inside `recover`, times it, prints the report and returns the number of failures. `ms test` exits with status 1 if any test failed or a package didn't compile.
+- **The runner is MinScript:** `ms test` adds a generated file to each package (in memory, `__ms_test_main.ms`), with a `ms_test_main` that passes every test to `std.testing.run_all`, which runs each inside `recover`, times it, prints the report and returns the number of failures. The test files of the package under test are loaded; other packages' aren't. `ms test` exits with status 1 if any test failed or a package didn't compile.
+- A package given to the toolchain as the entry (`ms test examples/testing/failing`, `ms hir pkg.ms`) is named by its `package` clause.
 
 ### 17.8 Formatting: `ms fmt` [D]
 
@@ -2290,7 +2295,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`). **Done** (2026-11-10) | `src/js/emit.ts`, `src/js/runtime.ts`, `src/js/run.ts` | every program of `examples/run/` and `examples/packages/` prints its `.out` (`test/run.test.ts`), except those that need std packages written in step 10, which are skipped by name; every program of `examples/` and `samples/` compiles to JS that parses. The std tests run on Node once step 10 writes them |
 | 8 | **Mechanism selection** (§15.2). **Done** (2026-11-10) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call (`test/mechanism/copy_on_write.ms`: 2 copies instead of 4); every `test/mechanism/` program prints the same with and without pass 8 |
 | 9 | **Lints** (§18.4). **Done** (2026-11-10) | `src/lint.ts` | each lint has a firing and a quiet test (`test/lint/`); levels from `mod.ms` and the command line are tested; every lint comment in `examples/` and `samples/` fires and nothing else does |
-| 10 | **std** in v0.4 MinScript | `std/**` | std tests pass |
+| 10 | **std** in v0.4 MinScript. **Done** (2026-11-10) | `std/**`, `src/js/stdlib.ts`, `src/js/exec.ts`, `src/test_runner.ts` | every std package of §14.4 loads and checks cleanly; std's tests pass under `ms test` (`test/std.test.ts`), as do the prelude's, the samples' and the basic project's; every `examples/run/` and `examples/packages/` program prints its `.out`; both samples run. Evaluating `mod.ms` (§17.5, `examples/projects/*`'s `config.json` / `run.out`) is not done yet |
 | 11 | **Self-host:** port the stage1 compiler to v0.4 (identity AST nodes, `Symbol` identifiers, `once` fields) | self-hosted sources | it compiles itself |
 | 12 | **Benchmark** against the TS compiler on the same input | — | within 1.5× of the TS compiler (proposed) |
 

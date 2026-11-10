@@ -244,23 +244,36 @@ class Lowerer {
 
     typeDef(item: A.TypeDecl | A.UnionDecl | A.InterDecl, sym: Sym | undefined): void {
         const name = sym ? this.typeNames.get(sym) ?? item.name : item.name;
+        const generics = ((item as { generics?: object[] }).generics ?? []).map((g) => this.decls.get(g)).filter((g): g is Sym => !!g);
         const marks = (impls: A.Type[], n: string) => impls.some((i) => i.kind === "TName" && this.refs.get(i)?.pkg === "prelude" && this.refs.get(i)?.name === n);
         if (item.kind === "TypeDecl") {
             if (item.alias) return;
-            const fields = (item.members ?? []).filter((m): m is A.Field => m.kind === "Field").map((f) => ({ name: f.name, mode: f.mode, ty: this.fieldTy(f), span: { start: f.span.start, end: f.span.end } }));
-            this.out.types.push({ kind: "struct", name, sym: sym ?? null, fields, identity: marks(item.impls, "Identity"), unique: marks(item.impls, "Unique"), file: this.file, span: { start: item.span.start, end: item.span.end } });
+            const fields = (item.members ?? []).filter((m): m is A.Field => m.kind === "Field").map((f) => ({ name: f.name, mode: f.mode, ty: this.fieldTy(f), span: { start: f.span.start, end: f.span.end }, default: this.fieldDefault(f) }));
+            this.out.types.push({ kind: "struct", name, sym: sym ?? null, fields, identity: marks(item.impls, "Identity"), unique: marks(item.impls, "Unique"), generics, file: this.file, span: { start: item.span.start, end: item.span.end } });
         } else if (item.kind === "UnionDecl") {
             const variants = item.members.filter((m): m is A.Variant => m.kind === "Variant").map((v) => ({
                 name: v.name, fields: v.fields ? v.fields.map((f) => f.name) : (v.tuple ?? []).map((_, i) => String(i)), positional: !v.fields,
                 tys: v.fields ? v.fields.map((f) => this.fieldTy(f)) : (v.tuple ?? []).map((t) => this.declTy(t)),
             }));
-            this.out.types.push({ kind: "union", name, variants });
+            this.out.types.push({ kind: "union", name, sym: sym ?? null, generics, variants });
         } else {
             this.out.types.push({ kind: "inter", name, methods: (item.methods ?? []).map((m) => m.name) });
         }
     }
 
     /** A field's declared type, from its default's or a constructor's recorded type, else by name. */
+    /** A field's default, lowered once: `json.parse` fills missing fields with it (§14.4). */
+    fieldDefault(f: A.Field): H.Expr | null {
+        if (!f.default) return null;
+        const saved = this.locals;
+        this.locals = new Map();
+        try {
+            return this.expr(f.default);
+        } finally {
+            this.locals = saved;
+        }
+    }
+
     declTy(t: A.Type): Ty {
         return this.declTypes.has(t) ? T.ground(this.declTypes.get(t)!) : T.UNKNOWN;
     }

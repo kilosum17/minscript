@@ -52,6 +52,8 @@ type Parser {
 
     /// Skips to the next line after an error, so one mistake gives one diagnostic.
     fn sync(*this) {
+        // the failing token was the line break itself: the next line is already next
+        if this.pos > 0 && this.tokens[this.pos - 1].kind == Newline { return }
         for {
             match this.bump().kind {
                 Newline | Eof => break

@@ -33,11 +33,13 @@ export interface FieldDef {
     /** its declared type (generic parameters unsubstituted) */
     ty: Ty;
     span: Span;
+    /** its default value (`tags: Vec[str] = []`), evaluated when a literal or `json.parse` omits it */
+    default: Expr | null;
 }
 
 export type TypeDef =
-    | { kind: "struct"; name: string; sym: Sym | null; fields: FieldDef[]; identity: boolean; unique: boolean; file: string; span: Span }
-    | { kind: "union"; name: string; variants: { name: string; fields: string[]; positional: boolean; tys: Ty[] }[] }
+    | { kind: "struct"; name: string; sym: Sym | null; fields: FieldDef[]; identity: boolean; unique: boolean; generics: Sym[]; file: string; span: Span }
+    | { kind: "union"; name: string; sym: Sym | null; generics: Sym[]; variants: { name: string; fields: string[]; positional: boolean; tys: Ty[] }[] }
     | { kind: "inter"; name: string; methods: string[] };
 
 export interface Local {

@@ -60,5 +60,12 @@ main
   120:13  write m  checked
   121:35  m  view
   121:40  opt  view
-  128:39  t  share
-  128:45  t  view
+  129:8  lines  view
+  130:5  write lines  checked
+  131:42  lines  view
+  135:29  held  view
+  136:9  write part  checked
+  137:38  part  view
+  137:46  held  view
+  142:39  t  share
+  142:45  t  view

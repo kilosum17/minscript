@@ -56,7 +56,20 @@ export function reg(name: string, c: Any): void {
     classes.set(name, c);
 }
 
-function variant(union: string, name: string, ...fields: Any[]): Any {
+export function classOf(name: string): Any {
+    return classes.get(name);
+}
+
+/** An instance of a generated struct class, from its fields by name (extra keys are kept: hidden state). */
+export function make(name: string, fields: Record<string, Any>): Any {
+    const C = classes.get(name);
+    if (!C) return { ...fields };
+    const o = new C(...(C.prototype.$f as string[]).map((f) => fields[f]));
+    for (const k of Object.keys(fields)) if (!(C.prototype.$f as string[]).includes(k)) o[k] = fields[k];
+    return o;
+}
+
+export function variant(union: string, name: string, ...fields: Any[]): Any {
     const C = classes.get(`${union}.${name}`);
     return C ? new C(...fields) : { $u: union, $v: name };
 }
@@ -276,7 +289,30 @@ export function vset(a: Any, i: Any, v: Any): void {
 /** A key: primitives, symbols and identity values as themselves; other values by their structure. */
 function key(k: Any): Any {
     if (k === null || typeof k !== "object" || k.$id) return k;
-    return "\u0000" + show(k, null, true);
+    return "\u0000" + keyText(k);
+}
+
+/** A value's structure as text, for map keys: an identity value is its pointer (§12.1), never its fields. */
+function keyText(v: Any): string {
+    if (v === undefined || v === null) return "()";
+    if (typeof v === "string") return JSON.stringify(v);
+    if (typeof v === "bigint") return `${v}n`;
+    if (typeof v !== "object") return String(v);
+    if (v.$id) return `#${objId(v)}`;
+    if (v instanceof Cell) return keyText(v.v);
+    if (v instanceof WithShape) return keyText(v.v);
+    if (v instanceof SymbolC) return `sym:${v.text}`;
+    if (v instanceof Some) return `Some(${keyText(v.v)})`;
+    if (v === None) return "None";
+    if (v instanceof Ok) return `Ok(${keyText(v.v)})`;
+    if (v instanceof Err) return `Err(${keyText(v.e)})`;
+    if (v instanceof Array) return `[${v.map(keyText).join(",")}]`;
+    if (v instanceof MsMap) return `m{${[...v.m.keys()].map((k) => (typeof k === "string" ? k : String(k))).sort().map((k) => `${k}:${keyText(v.m.get(k)![1])}`).join(",")}}`;
+    if (v instanceof MsSet) return `s{${[...v.m.keys()].map(String).sort().join(",")}}`;
+    const proto = Object.getPrototypeOf(v);
+    const fields: string[] = proto?.$f ?? Object.keys(v).filter((k) => k !== "$s").sort();
+    const tag = proto?.$v !== undefined ? `${proto.$u}.${proto.$v}` : proto?.$t ?? "r";
+    return `${tag}(${fields.map((f) => keyText(v[f])).join(",")})`;
 }
 
 export class MsMap {
@@ -482,6 +518,21 @@ export function dyn(x: Any, name: string, ...args: Any[]): Any {
         case "clone": return s(v);
         case "partial_cmp": return some(variant("prelude.Ordering", ["Less", "Equal", "Greater"][cmp(v, args[0]) + 1]!));
     }
+    // operators of the primitive types, called through `Plus` / `Minus` / … on a generic `T`
+    if (typeof v === "number" || typeof v === "bigint" || typeof v === "string") {
+        const o = unshape(args[0]);
+        const n: Any = v;
+        switch (name) {
+            case "plus": return n + o;
+            case "minus": return n - o;
+            case "times": return n * o;
+            case "divide":
+                if (typeof v === "bigint" && o === 0n) panic("Overflow", "division by zero");
+                return typeof v === "number" && Number.isInteger(v) && Number.isInteger(o) ? (o === 0 ? panic("Overflow", "division by zero") : Math.trunc(n / o)) : n / o;
+            case "remainder": return n % o;
+            case "neg": return -n;
+        }
+    }
     const b = typeof v === "string" ? builtins[`prelude.str.${name}`] ?? userPrims.get(`prelude.str.${name}`)
         : typeof v === "number" ? builtins[`prelude.int.${name}`] ?? userPrims.get(`prelude.int.${name}`) : undefined;
     if (b) return b(v, ...args);
@@ -558,7 +609,7 @@ export async function aw(x: Any): Promise<Any> {
 }
 
 /** A cancel-safe wait. `start(resolve)` returns how to stop waiting and give back what it took. */
-function waitFor(start: (resolve: (v: Any) => void) => () => void): MsPromise {
+export function waitFor(start: (resolve: (v: Any) => void) => () => void): MsPromise {
     let stop: () => void = () => {};
     const p = new MsPromise(new Promise((resolve) => (stop = start(resolve))));
     p.giveBack = () => stop();
@@ -791,7 +842,7 @@ const LOG = (prefix: string, stream: "out" | "err") => (_log: Any, args: Any) =>
     (stream === "out" ? process.stdout : process.stderr).write(prefix + line + "\n");
 };
 
-const builtins: Record<string, Any> = {
+export const builtins: Record<string, Any> = {
     "prelude._builtin": () => panic("User", "a `_builtin()` body was called"),
     "prelude.panic": (msg: string) => panic("User", msg),
     "prelude._panic_kind": (kind: Any, msg: string) => panic(kind?.$v ?? "User", msg),
@@ -1104,6 +1155,90 @@ export function setOnce(o: Any, f: string, v: Any): void {
 }
 
 /** A top-level `let`: initialised once, on first use (§10.4). */
+// ---- type descriptors and witness tables (§15.4) ---------------------------------------------------
+// A descriptor: `{ p: "int" }`, `{ n: "Point", a: [...] }`, `{ t: [...] }`, `{ r: {...} }`; inside a
+// class's `$ft`, `{ g: i }` is the type's i-th generic parameter. `null`: not known.
+
+export type Desc = { p: string } | { n: string; a: Desc[] } | { t: Desc[] } | { r: Record<string, Desc> } | { g: number } | null;
+
+/** `{ g: i }` replaced by the i-th argument. */
+export function substDesc(d: Desc, args: Desc[]): Desc {
+    if (d === null) return null;
+    if ("g" in d) return args[d.g] ?? null;
+    if ("n" in d) return { n: d.n, a: d.a.map((x) => substDesc(x, args)) };
+    if ("t" in d) return { t: d.t.map((x) => substDesc(x, args)) };
+    if ("r" in d) return { r: Object.fromEntries(Object.entries(d.r).map(([k, x]) => [k, substDesc(x, args)])) };
+    return d;
+}
+
+/** A witness table: the type's descriptor, and its default. */
+export function wt(d: Desc): Any {
+    return { d, def: () => defaultOf(d) };
+}
+
+const statics = new Map<string, Record<string, Any>>();
+/** `Point.default`: a type's static method, for `T.default()` through a witness. */
+export function defStatic(type: string, name: string, f: Any): void {
+    const m = statics.get(type) ?? {};
+    m[name] = f;
+    statics.set(type, m);
+}
+
+/** `T.method(args)` for a generic parameter `T`, through the witness its caller passed. */
+export function wstatic(w: Any, method: string, args: Any[]): Any {
+    const d: Desc = w?.d ?? null;
+    if (d !== null && "n" in d) {
+        const f = statics.get(d.n)?.[method];
+        if (f) return f(...args);
+    }
+    if (method === "default") return defaultOf(d);
+    return panic("User", `no static \`${method}\` on ${describe(d)}`);
+}
+
+export function describe(d: Desc): string {
+    if (d === null) return "a type not known at run time";
+    if ("p" in d) return d.p;
+    if ("n" in d) return d.a.length ? `${d.n.replace(/^prelude\./, "")}[${d.a.map(describe).join(", ")}]` : d.n.replace(/^prelude\./, "");
+    if ("t" in d) return `t(${d.t.map(describe).join(", ")})`;
+    if ("r" in d) return `r{ ${Object.entries(d.r).map(([k, x]) => `${k}: ${describe(x)}`).join(", ")} }`;
+    return "a generic parameter";
+}
+
+const BIG_TYPES = new Set(["i64", "u64"]);
+
+/** The default of a type: zero, "", false, empty collections, None; a struct of its fields' defaults. */
+export function defaultOf(d: Desc): Any {
+    if (d === null) return panic("User", "the default of a type that isn't known at run time");
+    if ("p" in d) {
+        if (BIG_TYPES.has(d.p)) return 0n;
+        if (d.p === "str") return "";
+        if (d.p === "bool") return false;
+        if (d.p === "char") return "\0";
+        if (d.p === "void") return undefined;
+        return 0;
+    }
+    if ("t" in d) return tup(...d.t.map(defaultOf));
+    if ("r" in d) return rec(Object.fromEntries(Object.entries(d.r).map(([k, x]) => [k, defaultOf(x)])));
+    if (!("n" in d)) return null;
+    switch (d.n) {
+        case "prelude.Vec": case "prelude.Array": case "prelude.Slice": case "prelude.PVec": return vec();
+        case "prelude.Map": case "prelude.PMap": return map();
+        case "prelude.Set": return set();
+        case "prelude.Option": return None;
+    }
+    const own = statics.get(d.n)?.default;
+    if (own) return own();
+    const C = classes.get(d.n);
+    if (!C) return panic("User", `\`${describe(d)}\` has no default (it isn't a struct, and implements no \`default\`)`);
+    const proto = C.prototype;
+    const fields: Record<string, Any> = {};
+    for (const f of proto.$f as string[]) {
+        const v = proto.$def?.[f] ? proto.$def[f]() : (proto.$once ?? []).includes(f) ? undefined : defaultOf(substDesc(proto.$ft?.[f] ?? null, d.a));
+        fields[f] = (proto.$cells ?? []).includes(f) ? cell(v) : v;
+    }
+    return make(d.n, fields);
+}
+
 export function lazy(init: () => Any): () => Any {
     let done = false;
     let v: Any;
@@ -1116,15 +1251,25 @@ export function lazy(init: () => Any): () => Any {
     };
 }
 
-/** Runs a compiled program's `main`: prints an uncaught panic and sets the exit code. */
-export async function runMain(main: () => Any): Promise<number> {
+/** `runtime.exit(code)`: ends the program. Not an Error, so `recover` doesn't catch it. */
+export class ExitRequest {
+    code: number;
+    constructor(code: number) {
+        this.code = code;
+    }
+}
+export const exitRequest = (code: number) => new ExitRequest(code);
+
+/** Runs a compiled program's `main`: prints an uncaught panic; the exit code (101 after a panic). */
+export async function runMain(main: () => Any): Promise<{ code: number; value: Any }> {
     try {
-        const r = main();
-        if (r instanceof MsPromise) await r.p;
-        return 0;
+        let r = main();
+        if (r instanceof MsPromise) r = await r.p;
+        return { code: 0, value: r };
     } catch (e) {
+        if (e instanceof ExitRequest) return { code: e.code, value: undefined };
         const p = caught(e);
         process.stderr.write(`panic: ${p.message}\n${p.trace}\n`);
-        return 1;
+        return { code: 101, value: undefined };
     }
 }

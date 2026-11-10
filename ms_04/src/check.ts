@@ -2196,6 +2196,16 @@ class Checker {
             const ref = this.out.variants.get(callee);
             return this.fromFnType(t, ref ? { kind: "variant", ref } : { kind: "value" }, expected);
         }
+        // a function of another package (`io.println`): its declaration, so variadics and generics hold
+        if (callee.kind === "Member") {
+            const s = this.w.refs.get(callee);
+            if (s && (s.kind === "fn" || s.kind === "extern-fn") && s.decl) {
+                const fn = s.decl as A.FnDecl;
+                this.check(callee.target);
+                this.out.types.set(callee, T.UNKNOWN);
+                return this.callable(fn, null, { kind: "fn", decl: fn });
+            }
+        }
         const t = this.check(callee);
         return this.fromFnType(t, { kind: "value" }, expected);
     }

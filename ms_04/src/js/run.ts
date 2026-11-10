@@ -3,9 +3,10 @@
 
 import { basename } from "node:path";
 import type { Diagnostic } from "../diagnostic.ts";
-import { frontEnd } from "../pipeline.ts";
+import { frontEnd, type FrontEndOptions } from "../pipeline.ts";
 import { emitProgram } from "./emit.ts";
 import * as rt from "./runtime.ts";
+import { closeResources, setArgs } from "./stdlib.ts";
 
 export interface Compiled {
     js: string | null;
@@ -13,8 +14,8 @@ export interface Compiled {
     hirProblems: string[];
 }
 
-export function compile(entry: string, opts: { mechanisms?: boolean } = {}): Compiled {
-    const fe = frontEnd(entry);
+export function compile(entry: string, opts: { mechanisms?: boolean; load?: FrontEndOptions; entryFn?: string } = {}): Compiled {
+    const fe = frontEnd(entry, opts.load);
     const errors = fe.diagnostics.filter((d) => d.severity === "error");
     if (errors.length > 0) return { js: null, diagnostics: fe.diagnostics, hirProblems: fe.hirProblems };
     const sources = new Map<string, Uint8Array>();
@@ -25,19 +26,26 @@ export function compile(entry: string, opts: { mechanisms?: boolean } = {}): Com
         isStd: (file) => !sources.has(file) || stdDirs.has(file),
         displayName: (file) => basename(file),
         mechanisms: opts.mechanisms === false ? null : fe.mechanisms,
+        entry: opts.entryFn,
     });
     return { js, diagnostics: fe.diagnostics, hirProblems: fe.hirProblems };
 }
 
 /** Evaluates compiled JS and runs its `main`; resolves to the exit code. */
-export async function runJs(js: string, opts: { stats?: boolean } = {}): Promise<number> {
-    const mod = new Function("$rt", js)(rt) as { main: (() => unknown) | null };
-    if (!mod.main) {
-        process.stderr.write("error: the program has no `main`\n");
-        return 2;
+export async function runJs(js: string, opts: { stats?: boolean; args?: string[]; entry?: string } = {}): Promise<{ code: number; value: unknown }> {
+    const mod = new Function("$rt", js)(rt) as Record<string, (() => unknown) | null>;
+    const main = mod[opts.entry ?? "main"];
+    if (!main) {
+        process.stderr.write(`error: the program has no \`${opts.entry ?? "main"}\`\n`);
+        return { code: 2, value: undefined };
     }
+    setArgs(opts.args ?? []);
     rt.stats.copies = 0;
-    const code = await rt.runMain(mod.main);
-    if (opts.stats) process.stderr.write(`copies: ${rt.stats.copies}\n`);
-    return code;
+    try {
+        const r = await rt.runMain(main);
+        if (opts.stats) process.stderr.write(`copies: ${rt.stats.copies}\n`);
+        return r;
+    } finally {
+        closeResources();
+    }
 }

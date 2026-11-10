@@ -1,0 +1,10 @@
+== good
+42.0
+22.0
+== bad
+bad:4: unexpected character `$`
+bad:3: expected `)`, found `
+`
+bad:4: expected an expression, found ``
+bad:2: error: unknown name `missing`
+bad:1: warning: `unused` is never used

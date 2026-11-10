@@ -28,6 +28,8 @@ export interface EmitOptions {
     displayName: (file: string) => string;
     /** pass 8: which reads move or lend instead of sharing, which writes skip the uniqueness check */
     mechanisms?: MechanismResult | null;
+    /** the HIR name of the function the module runs (default: the program's `main`) */
+    entry?: string;
 }
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_$]/g, (c) => (c === "." ? "$" : "_"));
@@ -110,10 +112,43 @@ class Emitter {
     readonly out: string[] = [];
     readonly lineMaps = new Map<string, LineMap>();
 
+    /** the runtime name of each struct and union, by its symbol (for type descriptors) */
+    readonly typeNames = new Map<Sym, string>();
+
     constructor(p: H.Program, opts: EmitOptions) {
         this.p = p;
         this.opts = opts;
         for (const f of p.funs) this.funs.set(f.name, f);
+        for (const t of p.types) if (t.kind !== "inter" && t.sym) this.typeNames.set(t.sym, t.name);
+    }
+
+    /**
+     * A type descriptor, as JS code (§15.4 witness tables, read by `json`): `{"p":"int"}`,
+     * `{"n":"Point","a":[…]}`, `{"t":[…]}`, `{"r":{…}}`. A generic parameter is `{"g":i}` inside a
+     * type declaration (`gens`), its witness's descriptor inside a generic function, else null.
+     */
+    desc(t: Ty, gens: Sym[] | null, witnesses: Map<Sym, string> | null): string {
+        const p = T.prune(t);
+        const prim = primName(p);
+        if (prim) return JSON.stringify({ p: prim });
+        switch (p.k) {
+            case "named": {
+                const name = p.sym.pkg === "prelude" ? `prelude.${p.sym.name}` : this.typeNames.get(p.sym) ?? p.sym.name;
+                return `{"n":${JSON.stringify(name)},"a":[${p.args.map((a) => this.desc(a, gens, witnesses)).join(",")}]}`;
+            }
+            case "tuple":
+                return `{"t":[${p.elems.map((e) => this.desc(e, gens, witnesses)).join(",")}]}`;
+            case "record":
+                return `{"r":{${p.fields.map((f) => `${JSON.stringify(f.name)}:${this.desc(f.ty, gens, witnesses)}`).join(",")}}}`;
+            case "param": {
+                const i = gens?.indexOf(p.sym) ?? -1;
+                if (i >= 0) return `{"g":${i}}`;
+                const w = witnesses?.get(p.sym);
+                return w ? `${w}.d` : "null";
+            }
+            default:
+                return "null";
+        }
     }
 
     run(): string {
@@ -122,7 +157,10 @@ class Emitter {
         for (const g of this.p.globals) this.global(g);
         for (const f of this.p.funs) this.fun(f);
         this.methods();
-        const main = this.p.funs.find((f) => f.name === "main" && !this.opts.isStd(f.file));
+        const entry = this.opts.entry;
+        const main = entry
+            ? this.funs.get(entry) ?? this.p.funs.find((f) => f.name.endsWith(`.${entry}`))
+            : this.p.funs.find((f) => f.name === "main" && !this.opts.isStd(f.file));
         this.out.push(`return { main: ${main ? fnName(main.name) : "null"} };`);
         return this.out.join("\n");
     }
@@ -139,7 +177,8 @@ class Emitter {
     }
 
     typeDef(t: H.TypeDef): void {
-        const short = t.name.split(".").pop()!;
+        // printed as written outside its package: `Point` in main, `build.Opts`, `models.User`
+        const short = t.name.replace(/^(std|app)\./, "");
         if (t.kind === "struct") {
             const fields = t.fields.map((f) => f.name);
             const shapes: Record<string, unknown> = {};
@@ -150,6 +189,12 @@ class Emitter {
             const c = className(t.name);
             this.out.push(`class ${c} { constructor(${fields.map(ident).join(", ")}) { ${fields.map((f) => `this.${f} = ${ident(f)};`).join(" ")} } }`);
             this.out.push(`Object.assign(${c}.prototype, { $t: ${JSON.stringify(short)}, $f: ${JSON.stringify(fields)}, $sh: ${JSON.stringify(shapes)}${t.identity ? ", $id: true" : ""} });`);
+            // what `json` needs: field types, defaults, and which fields are cells or once
+            const ft = t.fields.map((f) => `${JSON.stringify(f.name)}: ${this.desc(f.ty, t.generics, null)}`).join(", ");
+            const defs = t.fields.filter((f) => f.default).map((f) => `${JSON.stringify(f.name)}: ${this.thunk(f.default!)}`).join(", ");
+            const cells = t.fields.filter((f) => f.mode === "shared").map((f) => f.name);
+            const once = t.fields.filter((f) => f.mode === "once").map((f) => f.name);
+            this.out.push(`Object.assign(${c}.prototype, { $ft: { ${ft} }, $def: { ${defs} }, $cells: ${JSON.stringify(cells)}, $once: ${JSON.stringify(once)} });`);
             this.out.push(`$rt.reg(${JSON.stringify(t.name)}, ${c});`);
             return;
         }
@@ -160,9 +205,17 @@ class Emitter {
                 const keys = v.positional ? v.fields.map((_, i) => `$${i}`) : v.fields;
                 this.out.push(`class ${c} { constructor(${keys.map((_, i) => `a${i}`).join(", ")}) { ${keys.map((k, i) => `this.${k} = a${i};`).join(" ")} } }`);
                 this.out.push(`Object.assign(${c}.prototype, { $u: ${JSON.stringify(short)}, $v: ${JSON.stringify(v.name)}, $f: ${JSON.stringify(keys)}, $pos: ${v.positional}, $sh: ${JSON.stringify(this.variantShapes(t, v.name, keys))} });`);
+                this.out.push(`${c}.prototype.$ft = [${v.tys.map((ty) => this.desc(ty, t.generics, null)).join(", ")}];`);
                 this.out.push(`$rt.reg(${JSON.stringify(`${t.name}.${v.name}`)}, ${c});`);
             }
         }
+    }
+
+    /** `() => value` for a field default. */
+    thunk(e: H.Expr): string {
+        const fe = new FnEmitter(this, null, "");
+        const v = fe.value(e);
+        return `() => { ${[...fe.lines, `return ${v};`].join(" ")} }`;
     }
 
     variantShapes(t: H.TypeDef & { kind: "union" }, variant: string, keys: string[]): Record<string, unknown> {
@@ -204,13 +257,19 @@ class Emitter {
         const unions = new Map(this.p.types.filter((t): t is H.TypeDef & { kind: "union" } => t.kind === "union").map((t) => [t.name, t] as const));
         const inters = new Set(this.p.types.filter((t) => t.kind === "inter").map((t) => t.name));
         for (const f of this.p.funs) {
-            if (!f.self || !(f.body || f.builtin)) continue;
+            if (!(f.body || f.builtin)) continue;
             const owner = f.name.slice(0, f.name.lastIndexOf("."));
             const method = f.name.slice(f.name.lastIndexOf(".") + 1);
-            const install = (cls: string) => this.out.push(`${cls}.prototype[${JSON.stringify(method)}] = function (...a) { return ${fnName(f.name)}(this, ...a); };`);
+            if (!f.self) {
+                // statics of a type, for `T.default()` through a witness
+                if (structs.has(owner) || unions.has(owner)) this.out.push(`$rt.defStatic(${JSON.stringify(owner)}, ${JSON.stringify(method)}, ${fnName(f.name)});`);
+                continue;
+            }
+            const boxed = f.selfMode === "write" && !!f.body && !f.builtin;
+            const install = (cls: string) => this.out.push(`${cls}.prototype[${JSON.stringify(method)}] = function (...a) { return ${fnName(f.name)}(${boxed ? "$rt.cell(this)" : "this"}, ...a); };`);
             if (structs.has(owner)) install(className(owner));
             else if (unions.has(owner) && owner !== OPTION && owner !== RESULT) for (const v of unions.get(owner)!.variants) install(variantClass(owner, v.name));
-            else if (inters.has(owner) && f.body) this.out.push(`$rt.defaultMethod(${JSON.stringify(method)}, ${fnName(f.name)});`);
+            else if (inters.has(owner) && f.body) this.out.push(`$rt.defaultMethod(${JSON.stringify(method)}, ${boxed ? `(self, ...a) => ${fnName(f.name)}($rt.cell(self), ...a)` : fnName(f.name)});`);
             else if (owner === "prelude.str" || owner.startsWith("prelude.") && INT_NAMES.has(owner.slice(8))) this.out.push(`$rt.prim(${JSON.stringify(f.name)}, ${fnName(f.name)});`);
         }
     }
@@ -261,6 +320,9 @@ class FnEmitter {
         this.std = f === null || e.opts.isStd(file);
         if (f) {
             f.params.forEach((l, i) => f.modes[i] === "write" && this.cells.add(l.sym));
+            // a `*this` method with a body gets its receiver as a cell, like a `*T` parameter, so a
+            // copy-on-write inside it reaches the caller (builtins write in place)
+            if (f.self && f.selfMode === "write" && f.body && !f.builtin) this.cells.add(f.self.sym);
             for (const g of f.witnesses.js) this.witnesses.set(g, `$w_${ident(g.name)}_${Math.abs(g.id)}`);
         }
     }
@@ -513,7 +575,11 @@ class FnEmitter {
             case "callvalue": {
                 const fn = this.expr(e.fn);
                 const args = this.args(e.args, null);
-                return this.withWritebacks(`${fn}(${args.js.join(", ")})`, args.after);
+                // a `*T` parameter of the function type given a value (a write view: `f(v.at_mut(i))`):
+                // the callee takes a cell, and writes through it land in the viewed value
+                const ft = T.prune(e.fn.ty);
+                const js = args.js.map((a, i) => (ft.k === "fn" && ft.params[i]?.star && e.args[i]?.mode === "read" ? `$rt.cell(${a})` : a));
+                return this.withWritebacks(`${fn}(${js.join(", ")})`, args.after);
             }
             case "extern":
                 return `$rt.builtin(${JSON.stringify(`ext.${e.path}`)})(${(e.args ?? []).map((a) => this.value(a)).join(", ")})`;
@@ -853,8 +919,11 @@ class FnEmitter {
         const c = e.callee;
         if (c.k === "fn") {
             const callee = this.e.funs.get(c.name) ?? null;
-            const recv = e.recv ? [this.recv(e.recv)] : [];
+            const boxed = !!callee && callee.selfMode === "write" && !!callee.body && !callee.builtin && e.recv?.mode === "write";
+            const early: string[] = [];
+            const recv = e.recv ? [boxed ? this.writeArg(e.recv as H.Arg & { mode: "write" }, early) : this.recv(e.recv)] : [];
             const { js, after } = this.args(e.args, callee);
+            after.unshift(...early);
             const wit = (callee?.witnesses.js ?? []).map((g) => this.witnessFor(g, e.witnessArgs));
             return this.withWritebacks(`${fnName(c.name)}(${[...recv, ...js, ...wit].join(", ")})`, after);
         }
@@ -877,30 +946,16 @@ class FnEmitter {
             }
         }
         // a static of a generic parameter, through its witness (§15.4)
-        const w = this.witnesses.get(c.param) ?? "$rt.unknownWitness";
-        return `${w}.${c.method === "default" ? "def" : c.method}()`;
+        const w = this.witnesses.get(c.param) ?? "null";
+        const { js } = this.args(e.args, null);
+        return `$rt.wstatic(${w}, ${JSON.stringify(c.method)}, [${js.join(", ")}])`;
     }
 
     /** The witness table passed for a callee's generic parameter `g` (§15.4). */
     witnessFor(g: Sym, args: [Sym, Ty][]): string {
         const t = T.prune(args.find(([s]) => s === g)?.[1] ?? T.UNKNOWN);
-        if (t.k === "param") return this.witnesses.get(t.sym) ?? "$rt.unknownWitness";
-        return `{ def: () => ${this.defaultOf(t)} }`;
-    }
-
-    defaultOf(t: Ty): string {
-        const p = T.prune(t);
-        if (isBig(p)) return "0n";
-        if (isIntTy(p) || isFloatTy(p)) return "0";
-        if (primName(p) === "str") return '""';
-        if (primName(p) === "bool") return "false";
-        if (p.k === "named" && p.sym.pkg === "prelude") {
-            if (p.sym.name === "Vec") return "$rt.vec()";
-            if (p.sym.name === "Map") return "$rt.map()";
-            if (p.sym.name === "Set") return "$rt.set()";
-            if (p.sym.name === "Option") return "$rt.None";
-        }
-        return "undefined";
+        if (t.k === "param" && this.witnesses.has(t.sym)) return this.witnesses.get(t.sym)!;
+        return `$rt.wt(${this.e.desc(t, null, this.witnesses)})`;
     }
 
     closure(e: H.Expr & { k: "closure" }): string {
