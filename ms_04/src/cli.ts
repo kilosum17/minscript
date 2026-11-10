@@ -13,6 +13,8 @@
 //                                        exit 1 when a lint is denied
 //   node src/cli.ts test    [path]...    the `test_` functions of `*_test.ms` files (§17.7); --run name,
 //                                        --reporter spec|dots; exit 1 when a test fails
+//   node src/cli.ts config  [dir]        the evaluated mod.ms as JSON (§17.1)
+//   node src/cli.ts run     <script> [-- args]   a script of the nearest mod.ms (§17.3); `run` alone lists them
 //   node src/cli.ts js      <entry>      the program compiled to JavaScript
 //   node src/cli.ts run     <entry>      compile to JavaScript and run it (--stats: copies made;
 //                                        --no-mech: without pass 8, every handed-over read shares)
@@ -33,6 +35,8 @@ import { showMechanisms } from "./mechanism.ts";
 import { parse } from "./parser.ts";
 import { compile, runJs } from "./js/run.ts";
 import { runTests } from "./test_runner.ts";
+import { configJson, looksLikePath, openProject, projectOf, runScript } from "./project.ts";
+import { findProjectRoot } from "./loader.ts";
 import { sexpr } from "./sexpr.ts";
 
 function msFiles(path: string): string[] {
@@ -73,6 +77,24 @@ function main(args: string[]): number | Promise<number> {
             const stats = own.includes("--stats");
             const noMech = own.includes("--no-mech");
             const entries = own.filter((x) => x !== "--stats" && x !== "--no-mech");
+            // `ms run <name>`: a script of the nearest mod.ms (§17.3); `ms run`: list them
+            if (cmd === "run" && (entries.length === 0 || (entries.length === 1 && !looksLikePath(entries[0]!)))) {
+                const op = projectOf(process.cwd());
+                if (!op || !op.modFile) {
+                    if (entries.length === 0) console.log("usage: ms run <entry> | ms run <script> (no mod.ms here)");
+                    else console.error(`error: \`${entries[0]}\` is neither a file, a folder nor a script (no mod.ms here)`);
+                    return 2;
+                }
+                if (op.diagnostics.length > 0 || !op.config) {
+                    printDiagnostics(op.diagnostics);
+                    return 1;
+                }
+                if (entries.length === 0) {
+                    for (const [name, sc] of op.config.scripts) console.log(`${name.padEnd(12)} ${sc.kind === "Shell" ? sc.cmd : sc.kind === "Package" ? `pkg ${sc.path}` : "task"}`);
+                    return 0;
+                }
+                return runScript(op, entries[0]!, programArgs);
+            }
             if (entries.length !== 1) {
                 console.log(`usage: ms ${cmd} <entry> [--no-mech]${cmd === "run" ? " [--stats]" : ""}`);
                 return 2;
@@ -186,6 +208,20 @@ function main(args: string[]): number | Promise<number> {
                 return bad > 0 ? 1 : 0;
             })();
         }
+        case "config": {
+            // ms config [dir]: the evaluated mod.ms as JSON (§17.1)
+            const op = openProject(findProjectRoot(rest[0] ?? ".") ?? resolvePath(rest[0] ?? "."));
+            if (op.diagnostics.length > 0) {
+                printDiagnostics(op.diagnostics);
+                return 1;
+            }
+            if (!op.config) {
+                console.error(`error: no mod.ms at or above ${rest[0] ?? "."}`);
+                return 1;
+            }
+            console.log(configJson(op.config));
+            return 0;
+        }
         case "lint": {
             // ms lint <entry>... [--allow L_X] [--warn L_X] [--deny L_X] [--strict]
             const settings = { allow: [] as string[], warn: [] as string[], deny: [] as string[], strict: false };
@@ -224,7 +260,7 @@ function main(args: string[]): number | Promise<number> {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms mech <file> | ms lint <entry>... | ms test [path]... | ms check <entry>... | ms js <entry> | ms run <entry>");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms mech <file> | ms lint <entry>... | ms test [path]... | ms config [dir] | ms check <entry>... | ms js <entry> | ms run <entry>");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }

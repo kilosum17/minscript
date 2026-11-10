@@ -2,6 +2,7 @@
 package mod
 
 import "build.*"
+import "ms.lint"
 
 pub fn config() -> Config {
     var c = Config { name: "lint_levels", version: "0.1.0" }

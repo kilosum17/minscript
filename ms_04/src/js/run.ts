@@ -10,6 +10,8 @@ import { closeResources, setArgs } from "./stdlib.ts";
 
 export interface Compiled {
     js: string | null;
+    /** whether the entry function (`opts.entryFn`, else `main`) exists */
+    entryFound: boolean;
     diagnostics: Diagnostic[];
     hirProblems: string[];
 }
@@ -17,7 +19,9 @@ export interface Compiled {
 export function compile(entry: string, opts: { mechanisms?: boolean; load?: FrontEndOptions; entryFn?: string } = {}): Compiled {
     const fe = frontEnd(entry, opts.load);
     const errors = fe.diagnostics.filter((d) => d.severity === "error");
-    if (errors.length > 0) return { js: null, diagnostics: fe.diagnostics, hirProblems: fe.hirProblems };
+    if (errors.length > 0) return { js: null, entryFound: false, diagnostics: fe.diagnostics, hirProblems: fe.hirProblems };
+    const want = opts.entryFn ?? "main";
+    const entryFound = fe.hir.funs.some((f) => f.name === want || f.name.endsWith(`.${want}`));
     const sources = new Map<string, Uint8Array>();
     for (const p of fe.program.packages) for (const f of p.files) sources.set(f.path, f.src);
     const stdDirs = new Set(fe.program.packages.filter((p) => p.dir.includes("/std/")).flatMap((p) => p.files.map((f) => f.path)));
@@ -28,7 +32,7 @@ export function compile(entry: string, opts: { mechanisms?: boolean; load?: Fron
         mechanisms: opts.mechanisms === false ? null : fe.mechanisms,
         entry: opts.entryFn,
     });
-    return { js, diagnostics: fe.diagnostics, hirProblems: fe.hirProblems };
+    return { js, entryFound, diagnostics: fe.diagnostics, hirProblems: fe.hirProblems };
 }
 
 /** Evaluates compiled JS and runs its `main`; resolves to the exit code. */

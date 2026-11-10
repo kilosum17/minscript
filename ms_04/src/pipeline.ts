@@ -13,6 +13,7 @@ import { checkAccess } from "./access.ts";
 import { selectMechanisms, type MechanismResult } from "./mechanism.ts";
 import { lint, lintLevels } from "./lint.ts";
 import type { LintSettings } from "./loader.ts";
+import { projectOf } from "./project.ts";
 
 export interface FrontEnd {
     program: Program;
@@ -37,6 +38,13 @@ export interface FrontEndOptions extends LoadOptions {
 }
 
 export function frontEnd(entry: string, opts: FrontEndOptions = {}): FrontEnd {
+    // the project (§17): its evaluated mod.ms says where `main` is and which `path:` deps exist
+    let projectDiagnostics: Diagnostic[] = [];
+    if (opts.project === undefined && !entry.endsWith("mod.ms")) {
+        const op = projectOf(entry);
+        projectDiagnostics = op?.diagnostics ?? [];
+        opts = { ...opts, project: op?.project ?? null };
+    }
     const program = loadProgram(entry, opts);
     const prelude = loadPrelude();
     const checked = checkProgram(program, prelude.file);
@@ -47,7 +55,7 @@ export function frontEnd(entry: string, opts: FrontEndOptions = {}): FrontEnd {
     const hir = lowerProgram(packages);
     computeWitnesses(hir);
     const effects = computeEffects(hir, { cap: opts.effectsCap });
-    const frontDiagnostics = [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics];
+    const frontDiagnostics = [...projectDiagnostics, ...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics];
     // the access check needs well-typed code: after type errors its findings would be noise
     const ok = !frontDiagnostics.some((d) => d.severity === "error");
     const access = ok ? checkAccess(hir, effects.summaries) : [];

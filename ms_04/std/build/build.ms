@@ -26,8 +26,12 @@ pub type Config {
         c
     }
 
-    /// Stores a tool's settings under its section name.
+    /// Stores a tool's settings under its section name. A section belongs to one tool: writing one
+    /// that is already set is E_SECTION_CONFLICT (§17.4).
     pub fn set_section[T](*this, name: str, value: T) {
+        if this.sections.has(name) {
+            panic("E_SECTION_CONFLICT: two tools write the section `${name}`")
+        }
         this.sections[name] = json.to_value(value)
     }
 

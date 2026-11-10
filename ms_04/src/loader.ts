@@ -65,6 +65,11 @@ export interface LoadOptions {
     testDir?: string;
     /** files that exist only in memory, by absolute path (`ms test`'s generated harness) */
     virtual?: Map<string, string>;
+    /**
+     * The project, from its evaluated mod.ms (src/project.ts); null: none. When it is left out the
+     * loader reads mod.ms statically (`main:` and `path:` deps written as literals).
+     */
+    project?: Project | null;
 }
 
 // ---- the prelude ---------------------------------------------------------------------------------
@@ -91,11 +96,35 @@ function parseFile(path: string): LoadedFile {
 
 // ---- projects ------------------------------------------------------------------------------------
 
-interface Project {
+/** What the loader needs of a project (§17.6): its root, `main` folder, `path:` deps and lint levels. */
+export interface Project {
     root: string;
+    /** the folder holding `package main` */
     main: string;
     deps: Map<string, string>;
     lint: LintSettings;
+}
+
+/** The nearest folder at or above `start` (a file or a folder) with a mod.ms. */
+export function findProjectRoot(start: string): string | null {
+    let dir = resolvePath(start);
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) dir = dirname(dir);
+    for (;;) {
+        if (existsSync(join(dir, "mod.ms"))) return dir;
+        if (dirname(dir) === dir) return null;
+        dir = dirname(dir);
+    }
+}
+
+/** §17.6: `Config.main`, else `./src` if it exists, else the root. */
+export function defaultMainDir(root: string, main = ""): string {
+    if (main !== "") return resolvePath(root, main);
+    return existsSync(join(root, "src")) && statSync(join(root, "src")).isDirectory() ? join(root, "src") : root;
+}
+
+/** The `lint.setup(…)` levels of a mod.ms, read statically. */
+export function staticLint(mod: string): LintSettings {
+    return readProject(dirname(mod), mod).lint;
 }
 
 function findProject(start: string): Project | null {
@@ -186,7 +215,7 @@ class Loader {
             return { packages: [], prelude: this.prelude.res, diagnostics: [...this.prelude.file.diagnostics, ...this.prelude.res.diagnostics], lint: noLint() };
         }
         const isDir = !this.opts.virtual?.has(entry) && statSync(entry).isDirectory();
-        this.project = findProject(isDir ? entry : dirname(entry));
+        this.project = this.opts.project !== undefined ? this.opts.project : findProject(isDir ? entry : dirname(entry));
         if (isDir) {
             const main = this.project && (this.project.root === entry || entry.startsWith(this.project.main))
                 ? this.project.main

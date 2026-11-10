@@ -1612,7 +1612,7 @@ Each std package is a folder under `std/`, written in MinScript; functions only 
 | `std.net.ws` | WebSockets: `listen`, `connect`, `Server.accept`, `Connection.split(this) -> t(Reader, Writer)` (consumes the connection), `Reader.receive` (cancel-safe), `Writer.send`, `union Message { Text(str)  Binary(Vec[u8])  Close }` |
 | `std.testing` | assertions (`assert_eq`, `assert_ne`, `assert_true`, `assert_ok`, `assert_err`, `assert_some`, `fail`) and the runner `run_all` (§17.7); it imports nothing |
 | `build` | the mod.ms API (§17): `Config`, `Tool`, `Script` (`sh`, `pkg`, `task`), `Args`, `run`, `target` (`Target`, `Os`), `env`, `evaluate(config)` |
-| `ms.fmt`, `ms.test` | first-party tools' `Options` and `setup(o) -> Tool` (§17.4) |
+| `ms.fmt`, `ms.test`, `ms.lint` | first-party tools' `Options` and `setup(o) -> Tool` (§17.4); `ms.lint` writes the `lint` section (§18.4) |
 
 **JSON mapping:** a struct is an object (a missing field takes its default, an optional field may be missing or `null`, any other missing field is an error); `Option` is the value or `null`; `Vec` is an array; `Map[str, V]` is an object; a union variant is `"Name"` without a payload and `{ "Name": [payload…] }` with one; a literal union is its literal; `i64` / `u64` are numbers.
 
@@ -1876,8 +1876,10 @@ let opts = cfg.section.[Options]("fmt") ?? Options {}   // all defaults
 
 ### 17.5 Evaluation rules [D]
 
-- `config()` runs in a **sandboxed, deterministic interpreter** (the JS back end): no network, no file writes, no processes. It may read `target`, `env` and files under the project root.
-- The result is cached by a hash of `mod.ms`, `mod.lock`, `target` and the env vars that were read.
+- `config()` runs in a **sandboxed, deterministic interpreter** (the JS back end): no network, no file writes, no processes. It may read `target`, `env` and files under the project root. `config()` is synchronous (`E_CONFIG_FAILED` otherwise).
+- *Implemented so far:* `mod.ms` is compiled with the packages it imports and `config()` runs on the JS back end; `run(…)` during the evaluation is `E_SCRIPT_IN_EVAL`, and a panic is `E_CONFIG_FAILED` (or the `E_…` code its message starts with, as `E_SECTION_CONFLICT`). The rest of the sandbox (blocking network, file writes and processes) isn't enforced yet.
+- The result is cached by a hash of `mod.ms`, `mod.lock`, `target` and the env vars that were read. (The toolchain caches it in memory per process, keyed by `mod.ms` and the whole environment.)
+- Every command that loads a program (`ms run`, `ms check`, `ms test`, `ms lint`) evaluates the nearest `mod.ms` first: its `main` and `path:` dependencies decide what is loaded, so a dependency added under `if env.get(…)` is seen by all of them. `ms config` prints the result; a failed evaluation is reported as a diagnostic in `mod.ms`.
 - **Bootstrapping:** packages imported by `mod.ms` itself carry their version in the import string (`"acme.lint@^1.2"`), so the toolchain can fetch them without evaluating the file first. `ms.*` tools are versioned with the toolchain.
 
 ### 17.6 Entry point [D]
@@ -2066,13 +2068,14 @@ Each mistake produces **exactly one** diagnostic. Common mistakes are recognised
 | `E_AWAIT_IN_LOCK` | access | `await` inside `lock` |
 | `E_WRITE_TO_CAPTURED_COPY` | access | an escaping closure or task writes a captured non-shared `var`: fix-it `shared var` |
 | `E_USE_OF_POISONED` | access | a value read after a caught panic, before re-assignment |
-| `E_SCRIPT_IN_EVAL` | evaluation | a `task` script run while `mod.ms` is evaluated |
+| `E_SCRIPT_IN_EVAL` | evaluation | `run(…)` called while `mod.ms` is evaluated |
 | `E_SECTION_CONFLICT` | evaluation | two tools write the same section |
 | `E_BAD_DEP_SPEC` | evaluation | a dependency value that is neither a semver range nor a known prefix |
+| `E_CONFIG_FAILED` | evaluation | `mod.ms` has no `pub fn config() -> Config` in `package mod`, its `config()` is `async`, or it panics |
 
 ### 18.4 Lints [D]
 
-Lints are pass 9 (§15): they run on code without errors, after mechanism selection, and never stop compilation unless denied. Each lint is `allow` (off), `warn` (the default) or `deny` (an error). Levels are set in `mod.ms`, `lint.setup(_{ allow: […], warn: […], deny: […], strict: true })` (`strict` denies every lint that warns), and then on the command line: `ms lint <entry> --deny L_IMPLICIT_COPY`. `ms check` shows lints with the other diagnostics. The prelude and std are never linted. Until `mod.ms` is evaluated (§17), the toolchain reads the `lint.setup` call statically: string lists and a bool literal.
+Lints are pass 9 (§15): they run on code without errors, after mechanism selection, and never stop compilation unless denied. Each lint is `allow` (off), `warn` (the default) or `deny` (an error). Levels are set in `mod.ms` with the first-party tool `ms.lint`, `c.tools([lint.setup(_{ allow: […], warn: […], deny: […], strict: true })])`, which writes the `lint` section (`strict` denies every lint that warns), and then on the command line: `ms lint <entry> --deny L_IMPLICIT_COPY`. `ms check` shows lints with the other diagnostics. The prelude and std are never linted. When `mod.ms` fails to evaluate, the toolchain falls back to reading its `lint.setup` call statically.
 
 | Code | Default | Fires when |
 | --- | --- | --- |
@@ -2295,7 +2298,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`). **Done** (2026-11-10) | `src/js/emit.ts`, `src/js/runtime.ts`, `src/js/run.ts` | every program of `examples/run/` and `examples/packages/` prints its `.out` (`test/run.test.ts`), except those that need std packages written in step 10, which are skipped by name; every program of `examples/` and `samples/` compiles to JS that parses. The std tests run on Node once step 10 writes them |
 | 8 | **Mechanism selection** (§15.2). **Done** (2026-11-10) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call (`test/mechanism/copy_on_write.ms`: 2 copies instead of 4); every `test/mechanism/` program prints the same with and without pass 8 |
 | 9 | **Lints** (§18.4). **Done** (2026-11-10) | `src/lint.ts` | each lint has a firing and a quiet test (`test/lint/`); levels from `mod.ms` and the command line are tested; every lint comment in `examples/` and `samples/` fires and nothing else does |
-| 10 | **std** in v0.4 MinScript. **Done** (2026-11-10) | `std/**`, `src/js/stdlib.ts`, `src/js/exec.ts`, `src/test_runner.ts` | every std package of §14.4 loads and checks cleanly; std's tests pass under `ms test` (`test/std.test.ts`), as do the prelude's, the samples' and the basic project's; every `examples/run/` and `examples/packages/` program prints its `.out`; both samples run. Evaluating `mod.ms` (§17.5, `examples/projects/*`'s `config.json` / `run.out`) is not done yet |
+| 10 | **std** in v0.4 MinScript. **Done** (2026-11-10) | `std/**`, `src/js/stdlib.ts`, `src/js/exec.ts`, `src/test_runner.ts` | every std package of §14.4 loads and checks cleanly; std's tests pass under `ms test` (`test/std.test.ts`), as do the prelude's, the samples' and the basic project's; every `examples/run/` and `examples/packages/` program prints its `.out`; both samples run. Evaluating `mod.ms` (§17.5) and scripts (§17.3), added after: `examples/projects/*` evaluate to their `config.json` and print their `run.out` (`test/projects.test.ts`), and the evaluation errors have tests (`test/projects/`) |
 | 11 | **Self-host:** port the stage1 compiler to v0.4 (identity AST nodes, `Symbol` identifiers, `once` fields) | self-hosted sources | it compiles itself |
 | 12 | **Benchmark** against the TS compiler on the same input | — | within 1.5× of the TS compiler (proposed) |
 

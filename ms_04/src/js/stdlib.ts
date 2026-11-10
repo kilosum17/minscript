@@ -25,6 +25,10 @@ export function setArgs(args: string[]): void {
 }
 
 let evaluatingConfig = false;
+/** While mod.ms's `config()` runs, `build.run` is E_SCRIPT_IN_EVAL (§17.3). */
+export function setEvaluating(on: boolean): void {
+    evaluatingConfig = on;
+}
 
 const line = (args: Any) => [...args].map((a: Any) => show(a)).join(" ");
 const okVoid = () => ok(undefined);
@@ -124,7 +128,7 @@ function jsonValue(v: Any): Any {
 }
 
 /** A value as plain JSON data (what `stringify` writes). */
-function toJson(v: Any): Any {
+export function toJson(v: Any): Any {
     if (v === undefined || v === null) return null;
     if (typeof v === "bigint") return Number(v);
     if (typeof v !== "object") return v;
