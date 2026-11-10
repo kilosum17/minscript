@@ -6,7 +6,8 @@
 // - test/resolve/*.ms, each resolved as a package of its own with the prelude: a file with `//~`
 //   annotations must produce exactly those diagnostics; one without must resolve cleanly and match
 //   its `.refs` snapshot;
-// - test/check/*.ms, resolved and type-checked the same way: annotations, or a `.types` snapshot.
+// - test/check/*.ms, resolved and type-checked the same way: annotations, or a `.types` snapshot;
+// - test/hir/*.ms, lowered with the whole front end: valid HIR and a `.hir` snapshot.
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (`npm run test:update`): review the diff.
 
 import assert from "node:assert/strict";
@@ -21,6 +22,8 @@ import { loadPrelude } from "../src/loader.ts";
 import { parse } from "../src/parser.ts";
 import { checkPackage } from "../src/check.ts";
 import { dumpTypes } from "../src/check_dump.ts";
+import { dumpFun } from "../src/hir_dump.ts";
+import { frontEnd } from "../src/pipeline.ts";
 import { resolvePackage } from "../src/resolve.ts";
 import { dumpResolution } from "../src/resolve_dump.ts";
 import { sexpr } from "../src/sexpr.ts";
@@ -138,5 +141,15 @@ for (const f of msFiles(join(root, "test/check"))) {
             assert.equal(show(all, f, r.lexed.src), "");
             snapshot(f.replace(/\.ms$/, ".types"), dumpTypes(res, checked, f, r.lexed.src));
         }
+    });
+}
+
+for (const f of msFiles(join(root, "test/hir"))) {
+    test(`hir/${relative(join(root, "test/hir"), f)}`, () => {
+        const fe = frontEnd(f);
+        const src = readFileSync(f);
+        assert.equal(show(fe.diagnostics, f, src), "");
+        assert.deepEqual(fe.hirProblems, []);
+        snapshot(f.replace(/\.ms$/, ".hir"), fe.hir.funs.filter((x) => x.file === f).map(dumpFun).join("\n\n") + "\n");
     });
 }

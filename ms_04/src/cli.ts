@@ -3,6 +3,7 @@
 //   node src/cli.ts parse   <file.ms>    AST (S-expressions); the file on its own
 //   node src/cli.ts resolve <file.ms>    what each name binds to; the file's whole program is loaded
 //   node src/cli.ts types   <file.ms>    the type of each binding and parameter (whole program checked)
+//   node src/cli.ts hir     <file.ms>    the file's functions lowered to HIR, with access paths and witnesses
 //   node src/cli.ts check   <entry>...   parse + load + resolve + type-check each program (a file, a folder or a
 //                                        project); diagnostics only, exit 1 on errors
 
@@ -15,6 +16,8 @@ import { checkProgram } from "./check.ts";
 import { loadPrelude, loadProgram } from "./loader.ts";
 import { dumpResolution } from "./resolve_dump.ts";
 import { dumpTypes } from "./check_dump.ts";
+import { dumpFun } from "./hir_dump.ts";
+import { frontEnd } from "./pipeline.ts";
 import { parse } from "./parser.ts";
 import { sexpr } from "./sexpr.ts";
 
@@ -89,6 +92,17 @@ function main(args: string[]): number {
             }
             return errors > 0 ? 1 : 0;
         }
+        case "hir": {
+            let errors = 0;
+            for (const f of rest) {
+                const fe = frontEnd(f, { tests: true });
+                const full = resolvePath(f);
+                for (const fun of fe.hir.funs) if (fun.file === full) process.stdout.write(dumpFun(fun) + "\n\n");
+                for (const p of fe.hirProblems) console.log(`internal: ${p}`);
+                errors += printDiagnostics(fe.diagnostics) + fe.hirProblems.length;
+            }
+            return errors > 0 ? 1 : 0;
+        }
         case "check": {
             let errors = 0;
             const seen = new Set<string>();
@@ -106,7 +120,7 @@ function main(args: string[]): number {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms check <entry>...");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms check <entry>...");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }

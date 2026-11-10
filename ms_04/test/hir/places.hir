@@ -1,0 +1,53 @@
+fn birthday(u: *User) -> void
+  (do (+= u.age 1))
+
+fn tag(u: *User, t: str) -> void
+  (do (call prelude.Vec.push [T=str] *u.tags t))
+
+fn paths(users: *Vec[User], i: int) -> int
+  (do
+    (+= users[0].age 1)
+    (call prelude.Vec.push [T=str] *users[*].tags "x")
+    (call birthday *users[*])
+    (let n: int (call prelude.str.len users[*].name))
+    n)
+
+fn sugar(o: int?, r: Result[int, str]) -> Result[int, str]
+  (do
+    (let a: int (match o (=> (ok $v8: int) $v8) (=> (fail _) 0)))
+    (let
+      b: int
+      (match r (=> (ok $v9: int) $v9) (=> (fail $err10: str) (return (prelude.Result.Err $err10)))))
+    (if (truthy-option o) (do (call prelude.Log.println prelude.log (vec "set"))))
+    (let (ok c: int) o (else (do (return (prelude.Result.Err "none")))))
+    (prelude.Result.Ok (+ (+ a b) c)))
+
+fn contains(xs: Vec[T], x: T) -> bool
+  generics [T]  witnesses js [T] native [T]
+  (do (for-vec y: T (in xs) (do (if (== y x) (do (return true))))) false)
+
+fn first_or(xs: Vec[T], d: T) -> T
+  generics [T]  witnesses js [] native [T]
+  (do (match (call prelude.Vec.first [T=T] xs) (=> (ok $v11: T) $v11) (=> (fail _) d)))
+
+fn names(xs: Vec[T]) -> Vec[str]
+  generics [T]  witnesses js [T] native [T]
+  (do (call prelude.Vec.map [T=T, U=str] xs (fn(it, $p12) (do (call dyn .to_str it)))))
+
+fn count(m: Map[K, int], k: K) -> int
+  generics [K]  witnesses js [K] native [K]
+  (do (match (call prelude.Map.get [K=K, V=int] m k) (=> (ok $v13: int) $v13) (=> (fail _) 0)))
+
+fn uses(xs: Vec[str]) -> bool
+  (do (call contains [T=str] xs "a"))
+
+fn closures(xs: Vec[int]) -> int
+  (do
+    (let var total: int 0)
+    (call prelude.Vec.for_each [T=int] xs (fn(it, $p14) [*total] (do (+= total it))))
+    (let limit: int 3)
+    (+
+      (call prelude.Vec.len
+        [T=int]
+        (call prelude.Vec.filter [T=int] xs (fn(it, $p15) [limit] (do (> it limit)))))
+      total))

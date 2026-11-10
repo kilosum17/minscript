@@ -47,6 +47,8 @@ export interface CallInfo {
     async: boolean;
     /** the callee's own generics, as instantiated */
     typeArgs: Ty[];
+    /** every generic in scope of the callee (the type's or impl's, then its own), as instantiated */
+    env: [Sym, Ty][];
 }
 
 export interface CheckResult {
@@ -59,6 +61,13 @@ export interface CheckResult {
     members: Map<A.Member, MemberTarget>;
     /** the variant each inferred name, constructor pattern or variant literal refers to */
     variants: Map<object, VariantRef>;
+    /**
+     * Methods an expression calls without writing a call: an operator (`a + b` → `plus`, also in
+     * `+=`), an index (`x[i]` → `index`), a `for` loop's iteration (`next` / `iter`), a unary `-`.
+     */
+    ops: Map<object, CallTarget>;
+    /** the declared result of each function and method (for `async fn`: the value, not the Promise) */
+    rets: Map<A.FnDecl, Ty>;
     diagnostics: Diagnostic[];
 }
 
@@ -116,6 +125,8 @@ class World {
     readonly fileOf = new Map<object, string>();
     readonly testFiles = new Set<string>();
     readonly openFiles = new Set<string>();
+    /** each method's receiver symbol */
+    readonly thisOf = new Map<object, Sym>();
 
     add(files: ResolveFile[], res: Resolution, std: boolean): void {
         for (const f of res.openFiles) this.openFiles.add(f);
@@ -123,6 +134,7 @@ class World {
         for (const [k, v] of res.decls) this.decls.set(k, v);
         for (const d of res.deferred) this.deferred.add(d);
         for (const s of res.symbols) {
+            if (s.kind === "this" && s.decl) this.thisOf.set(s.decl, s);
             if (s.kind !== "implicit" || !s.decl) continue;
             const m = this.implicit.get(s.decl) ?? new Map<string, Sym>();
             m.set(s.name, s);
@@ -273,7 +285,7 @@ class Checker {
         this.res = res;
         this.std = std;
         this.out = {
-            pkg: res.pkg, types: new Map(), symTypes: w.symTypes, calls: new Map(), members: new Map(), variants: new Map(), diagnostics: [],
+            pkg: res.pkg, types: new Map(), symTypes: w.symTypes, calls: new Map(), members: new Map(), variants: new Map(), ops: new Map(), rets: new Map(), diagnostics: [],
         };
     }
 
@@ -1123,7 +1135,7 @@ class Checker {
                 const info = sym ? this.w.infos.get(sym) : undefined;
                 const self: Ty = info ? this.selfType(info) : T.UNKNOWN;
                 this.selfStack.push(self);
-                for (const m of item.methods ?? []) if (m.body) this.fnBody(m, self);
+                for (const m of item.methods ?? []) this.fnBody(m, self);
                 this.selfStack.pop();
                 return;
             }
@@ -1145,6 +1157,7 @@ class Checker {
                 return;
             }
             case "ExternDecl":
+                for (const f of item.fns) this.fnBody(f, null);
                 return;
         }
     }
@@ -1181,9 +1194,19 @@ class Checker {
     }
 
     fnBody(fn: A.FnDecl, self: Ty | null): void {
-        if (!fn.body) return;
         if (self) this.selfStack.push(self);
         const s = this.sig(fn, self);
+        this.out.rets.set(fn, s.ret);
+        const thisSym = this.w.thisOf.get(fn);
+        if (thisSym && self) this.w.symTypes.set(thisSym, self);
+        if (!fn.body) {
+            fn.params.forEach((p, i) => {
+                const sym = this.w.decls.get(p);
+                if (sym) this.w.symTypes.set(sym, s.params[i]!.ty);
+            });
+            if (self) this.selfStack.pop();
+            return;
+        }
         for (const p of fn.params) this.ty(p.type, true);
         if (fn.ret) this.ty(fn.ret, true);
         const isMain = fn.name === "main" && this.res.pkg === "main" && self === null;
@@ -1425,6 +1448,7 @@ class Checker {
                 }
                 return T.NEVER;
             case "Break": {
+                if (this.ctx.loops.length === 0) this.error("E_BREAK_OUTSIDE_LOOP", "`break` is only allowed inside a loop", e);
                 const loop = this.loopFor(e.label);
                 if (loop) {
                     loop.broke = true;
@@ -1436,6 +1460,7 @@ class Checker {
                 return T.NEVER;
             }
             case "Continue":
+                if (this.ctx.loops.length === 0) this.error("E_BREAK_OUTSIDE_LOOP", "`continue` is only allowed inside a loop", e);
                 return T.NEVER;
             case "Error":
                 return T.UNKNOWN;
@@ -1801,6 +1826,7 @@ class Checker {
             if (pl.k === "named" || pl.k === "param") {
                 const m = this.method(pl, OPERATOR_METHODS[op]!, e);
                 if (m && m !== "unknown") {
+                    this.out.ops.set(e, m.target);
                     const p0 = m.params[0];
                     if (p0 && !this.assignable(pr, p0.ty)) this.mismatch(pr, p0.ty, e.right);
                     return m.ret;
@@ -1874,6 +1900,8 @@ class Checker {
         const op = e.op.slice(0, -1);
         const fake: A.Binary = { kind: "Binary", span: e.span, op, left: e.target, right: e.value };
         const r = this.binaryWithLeft(fake, target);
+        const op2 = this.out.ops.get(fake);
+        if (op2) this.out.ops.set(e, op2);
         if (!T.isOpen(r) && !this.assignable(r, target)) this.mismatch(r, target, e);
         return T.VOID;
     }
@@ -1990,6 +2018,7 @@ class Checker {
         if (t.k === "named") {
             const m = this.method(t, "index", e);
             if (m && m !== "unknown") {
+                this.out.ops.set(e, m.target);
                 if (m.params[0]) this.expect(e.index, m.params[0].ty);
                 return m.ret;
             }
@@ -2053,7 +2082,7 @@ class Checker {
         if (c === "unknown") {
             // nothing is known about the parameters: arguments are checked against `unknown`
             for (const a of e.args) this.check(a.value, T.UNKNOWN);
-            this.out.calls.set(e, { target: { kind: "unknown" }, params: [], async: false, typeArgs: [] });
+            this.out.calls.set(e, { target: { kind: "unknown" }, params: [], async: false, typeArgs: [], env: [] });
             return T.UNKNOWN;
         }
         if ("notCallable" in c) {
@@ -2069,7 +2098,9 @@ class Checker {
         if (c.generic) {
             for (const o of c.own) if (T.freeVars(c.ret).has(o.v)) this.inferSites.push({ v: o.v, at: e, code: "E_CANNOT_INFER_GENERIC", what: `\`${o.sym.name}\` in this call` });
         }
-        this.out.calls.set(e, { target: c.target, params: c.params.map((p) => ({ ty: p.ty, star: p.star })), async: c.async, typeArgs: c.own.map((o) => o.v) });
+        this.out.calls.set(e, {
+            target: c.target, params: c.params.map((p) => ({ ty: p.ty, star: p.star })), async: c.async, typeArgs: c.own.map((o) => o.v), env: [...c.env],
+        });
         return ret;
     }
 
@@ -2146,7 +2177,9 @@ class Checker {
             }
             const t = this.ident(callee, expected, true);
             this.out.types.set(callee, t);
-            return this.fromFnType(t, s?.kind === "variant" ? { kind: "variant", ref: this.out.variants.get(callee)! } : { kind: "value" }, expected);
+            // a variant constructor, declared (`Some`) or inferred from the expected type (`Priced`)
+            const ref = this.out.variants.get(callee);
+            return this.fromFnType(t, ref ? { kind: "variant", ref } : { kind: "value" }, expected);
         }
         const t = this.check(callee);
         return this.fromFnType(t, { kind: "value" }, expected);
@@ -2298,7 +2331,7 @@ class Checker {
         if (e.form === "cond") this.truthy(this.check(e.expr!), e.expr!);
         if (e.form === "let") this.pattern(e.pattern!, this.check(e.expr!));
         if (e.form === "in") {
-            const [item, second] = this.iteration(this.check(e.expr!), e.expr!, e.isAwait);
+            const [item, second] = this.iteration(this.check(e.expr!), e.expr!, e.isAwait, e);
             this.pattern(e.pattern!, item);
             if (e.pattern2) this.pattern(e.pattern2, second);
         }
@@ -2314,7 +2347,7 @@ class Checker {
     }
 
     /** The item (and index / value) types of `for x in e` (§13.5). */
-    iteration(t: Ty, at: { span: A.Span }, isAwait: boolean): [Ty, Ty] {
+    iteration(t: Ty, at: { span: A.Span }, isAwait: boolean, loop?: A.For): [Ty, Ty] {
         const p = T.prune(t);
         if (T.isOpen(p)) return [T.UNKNOWN, T.UNKNOWN];
         for (const name of ["Vec", "Array", "Slice", "Set", "PVec"]) if (this.isNamed(p, name)) return [nargs(p)[0]!, T.INT];
@@ -2323,6 +2356,7 @@ class Checker {
         if (p.k === "named" || p.k === "param") {
             const next = this.method(p, "next", at);
             if (next && next !== "unknown") {
+                if (loop) this.out.ops.set(loop, next.target);
                 const r = T.prune(next.ret);
                 return [this.isNamed(r, "Option") ? nargs(r)[0]! : T.UNKNOWN, T.INT];
             }
@@ -2330,6 +2364,7 @@ class Checker {
             if (!isAwait) {
                 const iter = this.method(p, "iter", at);
                 if (iter && iter !== "unknown") {
+                    if (loop) this.out.ops.set(loop, iter.target);
                     const it = T.prune(iter.ret);
                     return it.k === "named" && it.args[0] ? [it.args[0], T.INT] : [T.UNKNOWN, T.UNKNOWN];
                 }

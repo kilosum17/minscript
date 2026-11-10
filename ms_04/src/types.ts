@@ -166,3 +166,18 @@ export function zonk(t: Ty): Ty {
         default: return t;
     }
 }
+
+/** Like `zonk`, and any variable still unbound becomes `unknown`: for passes after the checker. */
+export function ground(t: Ty): Ty {
+    t = prune(t);
+    switch (t.k) {
+        case "var": return t.lit === "int" ? INT : t.lit === "float" ? F64 : UNKNOWN;
+        case "named": return t.args.length === 0 ? t : { k: "named", sym: t.sym, args: t.args.map(ground) };
+        case "tuple": return { k: "tuple", elems: t.elems.map(ground) };
+        case "record": return { k: "record", fields: t.fields.map((f) => ({ ...f, ty: ground(f.ty) })) };
+        case "fn": return { k: "fn", params: t.params.map((p) => ({ star: p.star, ty: ground(p.ty) })), ret: ground(t.ret), async: t.async };
+        case "union": return { k: "union", members: t.members.map(ground) };
+        case "meta": return { k: "meta", ty: ground(t.ty) };
+        default: return t;
+    }
+}

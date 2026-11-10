@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { LineMap, type Diagnostic } from "../src/diagnostic.ts";
 import { checkProgram } from "../src/check.ts";
 import { loadPrelude, loadProgram } from "../src/loader.ts";
+import { frontEnd } from "../src/pipeline.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -89,5 +90,15 @@ for (const dir of ["examples", "samples"]) {
             }
         }
         assert.equal(problems.join("\n"), "");
+    });
+}
+
+for (const dir of ["examples", "samples"]) {
+    test(`${dir}/ programs lower to valid HIR`, () => {
+        const files = walk(join(root, dir));
+        const entries = [...new Set(files.filter((f) => f.endsWith("/mod.ms")).map(dirname)), ...files.filter((f) => f.endsWith("/main.ms")).map(dirname), ...files];
+        const problems: string[] = [];
+        for (const e of entries) problems.push(...frontEnd(e, { tests: true }).hirProblems.map((p) => `${relative(root, e)}: ${p}`));
+        assert.deepEqual(problems, []);
     });
 }

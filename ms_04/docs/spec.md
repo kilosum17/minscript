@@ -33,7 +33,7 @@ Every analysis must be one of:
 - local to one function body (linear in its size), or
 - a bottom-up pass over the call graph in strongly-connected-component order, consuming fixed-size summaries.
 
-No analysis may solve constraints across the whole program, infer lifetime parameters on types, or iterate more than its summaries can grow: a fixpoint is allowed only over the finite summary lattice (paths have at most 4 segments, §9.5), so the number of rounds is bounded by summary size, not by program size. A feature that cannot meet this budget is out of the language.
+Generic code is compiled once per definition, never once per type argument (§15.4). No analysis may solve constraints across the whole program, infer lifetime parameters on types, or iterate more than its summaries can grow: a fixpoint is allowed only over the finite summary lattice (paths have at most 4 segments, §9.5), so the number of rounds is bounded by summary size, not by program size. A feature that cannot meet this budget is out of the language.
 
 ### 0.3 Pipeline
 
@@ -1470,7 +1470,7 @@ a.text()            // "count": a str view of the text
 ### 13.2 Interfaces: static and dynamic dispatch [D]
 
 ```minscript
-fn show_static[T: Stringer](x: T) { … }     // monomorphized or dictionary-passed
+fn show_static[T: Stringer](x: T) { … }     // one body; T's witness table is passed in (§15.4)
 fn show_dyn(x: Stringer) { … }              // dynamic: data + vtable
 
 let shapes: Vec[Shape] = [Circle { r: 1.0 }, Square { s: 2.0 }]   // owned interface values
@@ -1630,6 +1630,14 @@ The ownership work is one bottom-up pass that writes a summary per function, fol
 
 Passes don't modify the AST: the resolver and the checker return side tables keyed by AST node, and lowering builds a new tree. Lowering reads the checker's recorded decisions; it never re-derives type rules.
 
+**The HIR [D]** (pass 5) is the small typed core every later pass and back end works on:
+
+- **Places.** Every read, write and `*` argument names a place: a root (a local, a parameter, `this`, a global, or a computed value) and a path of fields, tuple indices and elements. Its access path is what summaries use: `this.stock.items[*]`, `users[0].age`, truncated to 4 segments (§9.5).
+- **Resolved calls.** A call names its callee (`app.catalog.Inventory.at_mut`), gives each argument its mode (`read`, or `write` for a `*T` parameter or a `*this` receiver, passed as a place), and lists the type arguments the callee's witnesses need. A method of an interface called on a type parameter or an interface value is a dynamic call; a static of a type parameter (`T.default()`) goes through its witness; operators, indexing and iteration on named types are ordinary method calls.
+- **Sugar removed.** `?`, `or`, `??`, `?.` and `if let` are `match`es with explicit `return`s, and `ok` / `fail` patterns match an Option or a Result alike. Truthiness is an explicit test. Inferred variants are qualified. Struct literals list every field, defaults filled in. Variadic arguments are packed into a Vec. A subject-less `match` is an `if` chain. `for x in e` stays a `foreach` (it reads `e[*]`); the other loops are `loop`.
+- **Closures** list their captures, each marked as read or written by the body.
+- **Witness parameters.** Each generic function records the type parameters it needs at run time, for JS and for native back ends (§15.4).
+
 ### 15.1 Pass 6: effect summaries [D]
 
 - Functions are processed in reverse topological order of the call graph, one SCC at a time. Callees are always summarised before callers.
@@ -1650,12 +1658,27 @@ Passes don't modify the AST: the resolver and the checker return side tables key
 - A package's **compiled interface** holds its types and its `pub` function summaries. Callers in other packages read only that: an analysis never needs a dependency's function bodies.
 - **Early cutoff:** when a package is rebuilt and its interface is unchanged, dependents are not re-checked. Editing a function body therefore re-checks only that package unless its public summary changed.
 - Each package's interface and generated JS are cached in `.ms-cache/`, keyed by a hash of its sources and its dependencies' interfaces. std and the prelude are checked once per toolchain version.
-- Generic functions are type-checked once, at the definition (§9.2). On JS, generics are erased; a function that needs its type parameters at run time receives them as hidden arguments.
+- Generic functions are type-checked once, at the definition (§9.2), and compiled once (§15.4). A package's interface never contains generic bodies, so editing one recompiles only its own package.
 
 **Back-end memory model:**
 
 - *Native and WASM:* non-atomic refcounts by default; atomic only for values that escape to another task (pass 8 knows). Reuse of a freed buffer of the same size (Perceus-style) is an optimisation for later.
 - *JS:* the GC owns memory. Uniqueness for copy-on-write is tracked with a "shared" bit (§16.2). `Drop` runs only for `Unique` types.
+
+### 15.4 Generics: one body, witness tables [D]
+
+MinScript does not monomorphize. Like Go's dictionaries and Swift's witness tables, each generic function and each method of a generic type is compiled **once**, and a call passes what the body needs to know about its type arguments at run time. Compile time is the priority: a generic body is lowered, optimised and emitted once per program, whatever number of types it is used with, and there is no code bloat.
+
+- **Witness tables.** For each type parameter the body needs at run time, the call passes a hidden argument: a pointer to a static, per-type table. It holds:
+  - the **value witnesses**: size, alignment, and how to copy (share), move and drop a value of that type. They let the body hold, store and pass a `T` it knows nothing else about;
+  - the **generated methods** the body uses: `eq`, `hash`, `to_str`, `default`;
+  - for each bound (`[T: Stringer & Hash]`), the **interface's method table**: the same table a dynamic interface value carries (§13.2).
+- **Only what is needed.** A pass after type checking records which type parameters each generic function needs at run time: those whose values it hashes, compares, prints, defaults, copies or drops, calls bound methods on, or passes to another generic function that needs them. The others get no hidden argument. On JS most generic code needs none: values are references and the GC owns them (§16).
+- **Representation of a `T`.** Inside a generic body a `T` is handled through its table. On native back ends a value whose size isn't known statically lives in a buffer of the caller's frame (or the heap when kept) and is passed by pointer. Most v0.4 values are already one pointer (a refcounted buffer, §9.1), so the extra indirection is small.
+- **Tables are built once per type**, statically when the type is known at compile time, or lazily at run time for a type built from other type parameters (`Vec[T]` inside a generic body), then cached.
+- **Costs accepted:** a method call on a `T` is an indirect call, as through an interface value; a generic body is not inlined into its callers; small values such as an `int` move through memory inside generic code. Non-generic code pays nothing.
+- **Prelude pipelines are the exception that matters.** `map`, `filter`, `for_each`, `any`, `find` and `fold` called with a closure literal are expanded at the call site into a loop over the concrete element type (§16.3), so the commonest generic code runs at full speed without monomorphization.
+- **Specialization is not part of v0.4.** An opt-in specialization of hot generic functions, within one package, is an open question (§22) to revisit with profiles.
 
 ---
 
@@ -1995,6 +2018,7 @@ Each mistake produces **exactly one** diagnostic. Common mistakes are recognised
 | `E_NOT_TRUTHY` | checker | a condition of a type other than bool / Option / Result |
 | `E_USE_NULLISH` | checker | `\|\|` used as a value fallback: fix-it `??` |
 | `E_LET_ELSE_MUST_DIVERGE` | checker | the `else` block of `let … else` can finish normally |
+| `E_BREAK_OUTSIDE_LOOP` | checker | `break` or `continue` outside a loop (a closure body starts outside any loop), e.g. `x := f() or break` at a function's top level |
 | `E_NOT_INDEXABLE` | checker | `x[i]` on a type that can't be indexed |
 | `E_NOT_ITERABLE` | checker | `for … in` over a value that can't be iterated |
 | `E_NON_EXHAUSTIVE_MATCH` | checker | a `match` that doesn't cover every case |
@@ -2239,7 +2263,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 1 | **Lexer + parser** (§1–§8, §19). **Done** (2026-11-09) | `src/lexer.ts`, `src/parser.ts`, `src/ast.ts`, `src/sexpr.ts` | `examples/` and `samples/` parse with zero diagnostics; every §18.1 / §18.2 code has an `errors/` test; the §20 corpus has snapshots |
 | 2 | **Resolver and loader:** `Identity`, `Unique`, `Symbol`, `sym`, `Weak` in the prelude. **Done** (2026-11-10) | `src/resolve.ts`, `src/loader.ts`, `std/prelude.ms` | the prelude resolves cleanly; every program in `examples/` and `samples/` loads and resolves with exactly its annotated diagnostics; every resolver and loader code of §18.3 has a test |
 | 3 | **Type checker:** view types as ordinary types; identity `==` / `hash`; `once` reads as `T?`; automatic boxing of recursive value types. **Done** (2026-11-10) | `src/types.ts`, `src/check.ts`, `src/check_dump.ts` | the prelude type-checks cleanly; every program in `examples/` and `samples/` type-checks with exactly its annotated diagnostics; every checker code of §18.3 has a `test/check/` case |
-| 4 | **HIR with places:** every read and write names its path (`u.tags[*]`), truncated to 4 segments | `src/hir.ts`, `src/lower.ts` | `ms dump-hir` prints paths |
+| 4 | **HIR with places:** every read and write names its path (`u.tags[*]`), truncated to 4 segments; which type parameters each generic function needs at run time (§15.4). **Done** (2026-11-10) | `src/hir.ts`, `src/lower.ts`, `src/witness.ts`, `src/hir_check.ts`, `src/hir_dump.ts` | `ms hir` prints paths and witness parameters; the prelude and every program of `examples/` and `samples/` lower to HIR that passes the validator |
 | 5 | **Effect summaries** (§15.1), including `consumes` and `#[effects]` | `src/effects.ts` | `ms dump-effects` matches golden files for Appendix A; the stage1 parser's SCC converges without `L_SUMMARY_WIDENED` |
 | 6 | **Access check:** the access errors of §18.3 | `src/access.ts` | one passing and one failing test per error |
 | 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`) | `src/js/*` | std tests pass on Node |
@@ -2277,6 +2301,7 @@ Each has a proposed default, which applies until it is decided.
 | 18 | **Implicit `Some`:** may a `T` be used where `T?` is expected? | no: write `Some(5)` |
 | 19 | **Error conversion with `?`:** convert through an interface when error types differ? | no: `.map_err(#{…})` |
 | 20 | **`Option.or` / `Result.or`** take "a value or `#{…}`"; should there be `or(v)` and `or_else(#{…})`? | loose for now |
+| 21 | **Specialization of generic code** (§15.4): an opt-in specialization of hot generic functions for concrete types, limited to one package so separate compilation holds (`--release` only, or an attribute). | none: every generic body is compiled once |
 
 **Deferred features:** `any` and downcasting; associated types and `where` clauses; const generic params beyond `Array[T, N]`; default params and named args; range indexing (`v[1..3]`); expression-bodied functions; macros, custom operators and trailing closures; Unicode identifiers; width subtyping for records; positional struct construction; extension methods on foreign types; send arms in `select`; `select biased`; queue groups on topics; workspaces; dependency sources beyond `path:` and `git:`.
 

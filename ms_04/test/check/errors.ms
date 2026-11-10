@@ -202,3 +202,9 @@ fn attributed(v: int) {}
 
 #[inline]                                     //~ E_UNKNOWN_ATTRIBUTE
 fn inlined() {}
+
+fn break_outside(o: int?) {
+    x := o or break                           //~ E_BREAK_OUTSIDE_LOOP
+    for { y := o or continue; break }
+    [1].for_each(#{ continue })               //~ E_BREAK_OUTSIDE_LOOP
+}
