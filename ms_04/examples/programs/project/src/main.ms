@@ -23,7 +23,7 @@ async fn handle(req: http.Request) {
         route(req)
     }
     let reply = res ?? http.Response { status: 500, body: "500 internal error" }
-    // `respond_with` consumes `req`, so `handle` consumes it too (spec §2.1)
+    // `respond_with` consumes `req`, so `handle` consumes it too (spec §9.2)
     await req.respond_with(reply) or e => log.warn("respond failed: ${e}")
 }
 

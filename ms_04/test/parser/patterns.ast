@@ -1,0 +1,71 @@
+(File
+  package=["corpus"]
+  items=[
+    (Fn
+      name="patterns"
+      params=[(name="x" type=(TName path=["Shape"]))]
+      body=(Block
+        stmts=[
+          (ExprStmt
+            expr=(Match
+              subject=(Ident name="x")
+              arms=[
+                (pattern=(PCtor path=["Circle"] fields=[(name="r")]) body=(Ident name="r"))
+                (
+                  pattern=(POr
+                    alts=[
+                      (PCtor
+                        path=["Rect"]
+                        fields=[(name="w" pattern=(PLit value=(Int value=0))) (name="h")]
+                      )
+                      (PCtor
+                        path=["Rect"]
+                        fields=[(name="w") (name="h" pattern=(PLit value=(Int value=0)))]
+                      )
+                    ]
+                  )
+                  body=(Int value=0)
+                )
+                (
+                  pattern=(PCtor path=["Payment" "Card"] fields=[(name="number")] rest=true)
+                  body=(Int value=1)
+                )
+                (
+                  pattern=(POr
+                    alts=[(PCtor path=["Some"] args=[(PLit value=(Int value=0))]) (PCtor path=["None"])]
+                  )
+                  body=(Int value=2)
+                )
+                (
+                  pattern=(PCtor
+                    path=["Ok"]
+                    args=[(PTuple elems=[(PBind name="a") (PBind name="b")] rest=true)]
+                  )
+                  body=(Ident name="a")
+                )
+                (pattern=(PRecord fields=[(name="name")] rest=true) body=(Int value=3))
+                (pattern=(PLit value=(Unary op="-" operand=(Int value=1))) body=(Int value=4))
+                (
+                  pattern=(PRange start=(Char value="a") end=(Char value="z") inclusive=true)
+                  body=(Int value=5)
+                )
+                (pattern=(PLit value=(Str value="hi")) body=(Int value=6))
+                (pattern=(PLit value=(Nil)) body=(Int value=7))
+                (
+                  pattern=(PCtor path=["Mpesa"] args=[(PBind name="phone")])
+                  guard=(Binary op="==" left=(Ident name="phone") right=(Str value="07"))
+                  body=(Int value=8)
+                )
+                (
+                  pattern=(PCtor path=["Some"] args=[(PBind name="v" isVar=true)])
+                  body=(Ident name="v")
+                )
+                (pattern=(PWild) body=(Int value=9))
+              ]
+            )
+          )
+        ]
+      )
+    )
+  ]
+)

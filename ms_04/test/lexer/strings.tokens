@@ -1,0 +1,18 @@
+1:1 String "plain"
+1:9 String "esc\t\"😀" [ws]
+1:28 TemplateHead "a" [ws match=6]
+1:32 Ident "x"
+1:33 TemplateMiddle "b" [match=6]
+1:37 Ident "y"
+1:38 TemplateTail "c"
+1:42 RawString "C:\\path" [ws]
+2:1 TemplateHead "indented\n  more " [nl match=10 multiline]
+4:14 Ident "x"
+4:15 TemplateTail "" [multiline]
+6:1 Char "a" [nl]
+6:5 Char "\n" [ws]
+6:10 Byte 120 [ws]
+6:15 Byte 255 [ws]
+6:23 Ident "b" [ws]
+6:25 Char "x" [ws]
+7:1 EOF [nl]

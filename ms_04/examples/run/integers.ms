@@ -1,6 +1,6 @@
-// Integers on the JS back end (spec §9.5): overflow always panics; `as` wraps (from floats it
+// Integers on the JS back end (spec §13.1): overflow always panics; `as` wraps (from floats it
 // saturates); shifts wrap and panic past the width; `wrapping_*` / `saturating_*` / `checked_*`.
-// v0.4: the i64 lines fire L_BIGINT_ON_JS (spec §12.2), which is the point of this test.
+// v0.4: the i64 lines fire L_BIGINT_ON_JS (spec §18.4), which is the point of this test.
 package main
 
 fn attempt(name: str, f: () -> int) {
@@ -24,7 +24,7 @@ fn main() {
     attempt("u32 0 - 1", #{ (zero - 1) as int })
     var counter = 2147483640
     // v0.2 needed `#[&mut counter]`; captures are inferred, and `attempt` does not keep `f`, so the
-    // closure writes `counter` in place (spec §8.3)
+    // closure writes `counter` in place (spec §9.9)
     attempt("+= past the max", #{
         for {
             counter += 3

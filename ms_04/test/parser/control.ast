@@ -1,0 +1,349 @@
+(File
+  package=["corpus"]
+  items=[
+    (Fn
+      name="control"
+      body=(Block
+        stmts=[
+          (ExprStmt expr=(If cond=(Ident name="res") then=(Block)))
+          (ExprStmt
+            expr=(If
+              cond=(Binary
+                op="&&"
+                left=(Unary op="!" operand=(Ident name="opt"))
+                right=(Ident name="flag")
+              )
+              then=(Block)
+            )
+          )
+          (ExprStmt
+            expr=(If
+              pattern=(PCtor path=["Some"] args=[(PBind name="u" isVar=true)])
+              cond=(Call callee=(Ident name="find") args=[(value=(Int value=1))])
+              then=(Block
+                stmts=[
+                  (ExprStmt
+                    expr=(Assign
+                      op="+="
+                      target=(Member target=(Ident name="u") name="age")
+                      value=(Int value=1)
+                    )
+                  )
+                ]
+              )
+              else=(If cond=(Ident name="x") then=(Block) else=(Block))
+            )
+          )
+          (ShortDecl
+            name="grade"
+            value=(If
+              cond=(Binary op=">=" left=(Ident name="score") right=(Int value=90))
+              then=(Block stmts=[(ExprStmt expr=(Str value="A"))])
+              else=(Block stmts=[(ExprStmt expr=(Str value="B"))])
+            )
+          )
+          (ShortDecl
+            name="label"
+            value=(Match
+              subject=(Ident name="n")
+              arms=[
+                (pattern=(PLit value=(Int value=0)) body=(Str value="zero"))
+                (
+                  pattern=(PRange start=(Int value=1) end=(Int value=5) inclusive=true)
+                  body=(Str value="small")
+                )
+                (
+                  pattern=(PBind name="x")
+                  guard=(Binary op=">" left=(Ident name="x") right=(Int value=100))
+                  body=(Str value="huge")
+                )
+                (pattern=(PWild) body=(Str value="other"))
+              ]
+            )
+          )
+          (ShortDecl
+            name="adult"
+            value=(Match
+              arms=[
+                (
+                  cond=(Binary op=">=" left=(Ident name="age") right=(Int value=18))
+                  body=(Bool value=true)
+                )
+                (pattern=(PWild) body=(Bool))
+              ]
+            )
+          )
+          (ShortDecl
+            name="kind"
+            value=(Match
+              subject=(Ident name="c")
+              arms=[
+                (
+                  pattern=(PRange start=(Byte value=97) end=(Byte value=122) inclusive=true)
+                  body=(Int value=1)
+                )
+                (
+                  pattern=(PRange start=(Byte value=48) end=(Byte value=57) inclusive=true)
+                  body=(Int value=2)
+                )
+                (pattern=(PWild) body=(Int value=0))
+              ]
+            )
+          )
+          (ExprStmt expr=(For form="infinite" body=(Block stmts=[(ExprStmt expr=(Break))])))
+          (ExprStmt
+            expr=(For
+              form="cond"
+              expr=(Binary op="<" left=(Ident name="i") right=(Int value=3))
+              body=(Block
+                stmts=[(ExprStmt expr=(Assign op="+=" target=(Ident name="i") value=(Int value=1)))]
+              )
+            )
+          )
+          (ExprStmt
+            expr=(For form="in" pattern=(PBind name="x") expr=(Ident name="xs") body=(Block))
+          )
+          (ExprStmt
+            expr=(For
+              form="in"
+              pattern=(PBind name="k")
+              pattern2=(PBind name="v")
+              expr=(Ident name="m")
+              body=(Block)
+            )
+          )
+          (ExprStmt
+            expr=(For
+              form="let"
+              pattern=(PCtor path=["Some"] args=[(PBind name="x")])
+              expr=(Call callee=(Member target=(Ident name="it") name="next"))
+              body=(Block)
+            )
+          )
+          (ExprStmt
+            expr=(For
+              form="in"
+              pattern=(PBind name="line" isVar=true)
+              expr=(Ident name="lines")
+              body=(Block
+                stmts=[
+                  (ExprStmt
+                    expr=(Call
+                      callee=(Member target=(Ident name="line") name="push")
+                      args=[(value=(Int value=1))]
+                    )
+                  )
+                ]
+              )
+            )
+          )
+          (ExprStmt
+            expr=(For
+              form="in"
+              isAwait=true
+              pattern=(PBind name="m")
+              expr=(Ident name="sub")
+              body=(Block)
+            )
+          )
+          (ExprStmt
+            expr=(For
+              form="in"
+              isAwait=true
+              pattern=(PBind name="o" isVar=true)
+              expr=(Ident name="jobs")
+              body=(Block)
+            )
+          )
+          (ExprStmt
+            expr=(For form="cond" expr=(Await operand=(Call callee=(Ident name="ready"))) body=(Block))
+          )
+          (ExprStmt
+            expr=(For
+              label="outer"
+              form="in"
+              pattern=(PBind name="x")
+              expr=(Ident name="xs")
+              body=(Block
+                stmts=[
+                  (ExprStmt
+                    expr=(For
+                      form="in"
+                      pattern=(PBind name="y")
+                      expr=(Ident name="ys")
+                      body=(Block
+                        stmts=[
+                          (ExprStmt
+                            expr=(If
+                              cond=(Ident name="y")
+                              then=(Block stmts=[(ExprStmt expr=(Break label="outer"))])
+                              else=(Block stmts=[(ExprStmt expr=(Continue label="outer"))])
+                            )
+                          )
+                        ]
+                      )
+                    )
+                  )
+                ]
+              )
+            )
+          )
+          (ShortDecl
+            name="v"
+            value=(For form="infinite" body=(Block stmts=[(ExprStmt expr=(Break value=(Int value=5)))]))
+          )
+          (ExprStmt
+            expr=(Select
+              arms=[
+                (
+                  pattern=(PCtor path=["Some"] args=[(PBind name="j")])
+                  expr=(Call callee=(Member target=(Ident name="q") name="next"))
+                  body=(Call callee=(Ident name="run") args=[(value=(Ident name="j"))])
+                )
+                (
+                  expr=(Call
+                    callee=(Member target=(Ident name="time") name="after")
+                    args=[(value=(Int value=10))]
+                  )
+                  body=(Call callee=(Ident name="idle"))
+                )
+              ]
+              else=(Call callee=(Ident name="skip"))
+            )
+          )
+          (ExprStmt
+            expr=(Select
+              arms=[
+                (
+                  pattern=(PCtor path=["Some"] args=[(PBind name="r")])
+                  expr=(Call callee=(Member target=(Ident name="results") name="next"))
+                  body=(Call
+                    callee=(Member target=(Ident name="outcomes") name="push")
+                    args=[(value=(Ident name="r"))]
+                  )
+                )
+                (
+                  expr=(Call
+                    callee=(Member target=(Ident name="time") name="after")
+                    args=[(value=(Int value=2000))]
+                  )
+                  body=(Block
+                    stmts=[
+                      (ExprStmt
+                        expr=(Call
+                          callee=(Member target=(Ident name="log") name="warn")
+                          args=[(value=(Str value="late"))]
+                        )
+                      )
+                    ]
+                  )
+                )
+              ]
+            )
+          )
+          (ShortDecl
+            name="r"
+            value=(Recover body=(Block stmts=[(ExprStmt expr=(Call callee=(Ident name="risky")))]))
+          )
+          (ShortDecl
+            name="fd"
+            value=(Unsafe
+              body=(Block
+                stmts=[
+                  (ExprStmt
+                    expr=(Call callee=(Ident name="open") args=[(value=(Ident name="path"))])
+                  )
+                ]
+              )
+            )
+          )
+          (ExprStmt
+            expr=(Lock
+              places=[(Ident name="a")]
+              body=(Block
+                stmts=[(ExprStmt expr=(Assign op="+=" target=(Ident name="a") value=(Int value=1)))]
+              )
+            )
+          )
+          (ExprStmt
+            expr=(Lock
+              places=[(Ident name="from") (Ident name="to")]
+              body=(Block
+                stmts=[
+                  (ExprStmt
+                    expr=(Assign
+                      op="-="
+                      target=(Member target=(Ident name="from") name="balance")
+                      value=(Ident name="n")
+                    )
+                    semi=true
+                  )
+                  (ExprStmt
+                    expr=(Assign
+                      op="+="
+                      target=(Member target=(Ident name="to") name="balance")
+                      value=(Ident name="n")
+                    )
+                  )
+                ]
+              )
+            )
+          )
+          (ShortDecl
+            name="n"
+            value=(Lock
+              places=[(Ident name="tokens")]
+              body=(Block
+                stmts=[
+                  (ExprStmt
+                    expr=(Call
+                      callee=(Member target=(Ident name="tokens") name="push")
+                      args=[(value=(Ident name="x"))]
+                    )
+                    semi=true
+                  )
+                  (ExprStmt expr=(Call callee=(Member target=(Ident name="tokens") name="len")))
+                ]
+              )
+            )
+          )
+          (LetStmt
+            pattern=(PTuple elems=[(PBind name="w") (PBind name="h")])
+            value=(Call callee=(Ident name="dims"))
+          )
+          (LetStmt
+            pattern=(PCtor path=["Ok"] args=[(PBind name="v")])
+            value=(Ident name="r")
+            else=(Block stmts=[(ExprStmt expr=(Return))])
+          )
+          (LetStmt
+            pattern=(PCtor path=["User"] fields=[(name="id") (name="name")] rest=true)
+            value=(Ident name="user")
+          )
+          (LetStmt
+            pattern=(PBind name="event")
+            type=(TName path=["Event"])
+            value=(Match
+              subject=(Ident name="status")
+              arms=[
+                (
+                  pattern=(PCtor path=["Paid"] fields=[(name="total")] rest=true)
+                  body=(Struct type=(Ident name="Sold") items=[(Field name="total")])
+                )
+                (pattern=(PWild) body=(Ident name="Empty"))
+              ]
+            )
+          )
+          (ShortDecl
+            name="x"
+            value=(Or expr=(Call callee=(Ident name="find") args=[(value=(Int value=1))]) rhs=(Return))
+          )
+          (ShortDecl
+            name="y"
+            value=(Or expr=(Call callee=(Member target=(Ident name="lines") name="next")) rhs=(Break))
+          )
+        ]
+      )
+    )
+  ]
+)

@@ -1,7 +1,7 @@
 package syntax
 
 /// Keywords by Symbol. A top-level `let` may have any initializer; it runs once, on first use,
-/// thread-safely (spec §6.4). Lookups hash a pointer, never characters (§11.3).
+/// thread-safely (spec §10.4). Lookups hash a pointer, never characters (§12.3).
 let KEYWORDS = m{ sym("let"): Let, sym("fn"): Fn, sym("print"): Print } as Map[Symbol, TokenKind]
 
 pub type LexError {

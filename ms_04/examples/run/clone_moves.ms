@@ -1,6 +1,6 @@
 package main
 
-// v0.4: no `.clone()` (spec §2, §11.4). Assigning to a `var` is a move at the source's last use and
+// v0.4: no `.clone()` (spec §9.1, §9.1). Assigning to a `var` is a move at the source's last use and
 // a share otherwise; the first write to a shared buffer copies it (copy-on-write). The output is
 // the same as v0.2's explicit clones.
 type Doc { lines: Vec[str] }

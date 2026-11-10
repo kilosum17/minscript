@@ -1,6 +1,6 @@
 package catalog
 
-/// Money in cents. A small record of primitives, so copying it is a bit copy (spec §2).
+/// Money in cents. A small record of primitives, so copying it is a bit copy (spec §9.1).
 pub type Money: Stringer {
     pub cents: int
 
@@ -34,15 +34,15 @@ pub type Inventory {
     pub fn has(this, sku: Sku) -> bool { this.items.has(sku) }
 
     /// Keeps [item]: the item is stored, so the caller's value moves in, or is shared if the
-    /// caller still uses it (§2). Either way no deep copy happens here.
+    /// caller still uses it (§9.1). Either way no deep copy happens here.
     pub fn add(*this, item: Item) { this.items[item.sku] = item }
 
-    /// A write view into the map (§5.2): the caller changes the stored item in place. It can't be
+    /// A write view into the map (§9.7): the caller changes the stored item in place. It can't be
     /// stored, and while it is live nothing else may touch `this.items` (E_ACCESS_DURING_WRITE_VIEW).
     /// Panics with MissingKey for an unknown SKU.
     pub fn at_mut(*this, sku: Sku) -> *Item { this.items[sku] }
 
-    /// Views of the stored items, not copies (collection getters return views, §11.4).
+    /// Views of the stored items, not copies (collection getters return views, §9.6).
     pub fn low_stock(this, below: int) -> Vec[Item] {
         this.items.values().filter(#{ it.qty < below })
     }
@@ -54,7 +54,7 @@ pub type Inventory {
 
 /// Parses `sku,name,price_cents,qty,tags` lines. Every field starts as a view into `text`;
 /// `detach()` gives the kept ones their own small buffers, so a large catalog file can be freed
-/// once it is loaded (spec §5.4). Without it, each item would keep the whole file alive.
+/// once it is loaded (spec §7.3). Without it, each item would keep the whole file alive.
 pub fn load_csv(text: str) -> Result[Inventory, str] {
     var inv = Inventory {}
     for line, i in text.lines().skip(1) {
@@ -63,7 +63,7 @@ pub fn load_csv(text: str) -> Result[Inventory, str] {
         if cols.len() != 5 { return Err("line ${i + 2}: expected 5 fields, got ${cols.len()}") }
         cents := cols[2].to_int() or Err("line ${i + 2}: bad price `${cols[2]}`")
         qty := cols[3].to_int() or Err("line ${i + 2}: bad quantity `${cols[3]}`")
-        // `var acc` is a mutable closure parameter (§8.4): a local copy, unique here, so `push`
+        // `var acc` is a mutable closure parameter (§5.1): a local copy, unique here, so `push`
         // writes in place and the fold allocates one Vec
         tags := cols[4].split(" ").fold([] as Vec[str], #{ var acc, t =>
             if !t.is_empty() && !acc.contains(t) { acc.push(t.detach()) }

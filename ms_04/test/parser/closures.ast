@@ -1,0 +1,131 @@
+(File
+  package=["corpus"]
+  items=[
+    (Fn
+      name="closures"
+      body=(Block
+        stmts=[
+          (ShortDecl
+            name="a"
+            value=(Call
+              callee=(Member target=(Ident name="xs") name="map")
+              args=[
+                (
+                  value=(Closure
+                    body=[(ExprStmt expr=(Binary op="*" left=(Ident name="it") right=(Int value=2)))]
+                  )
+                )
+              ]
+            )
+          )
+          (ShortDecl
+            name="b"
+            value=(Closure
+              body=[(ExprStmt expr=(Binary op="+" left=(Ident name="it1") right=(Ident name="it2")))]
+            )
+          )
+          (ShortDecl
+            name="c"
+            value=(Closure
+              params=[(name="x") (name="y")]
+              body=[(ExprStmt expr=(Binary op="+" left=(Ident name="x") right=(Ident name="y")))]
+            )
+          )
+          (ShortDecl
+            name="d"
+            value=(Closure
+              params=[(name="x" type=(TName path=["i32"]))]
+              ret=(TName path=["i32"])
+              body=[(ExprStmt expr=(Binary op="*" left=(Ident name="x") right=(Int value=2)))]
+            )
+          )
+          (ShortDecl
+            name="e"
+            value=(Closure
+              params=[(name="acc" isVar=true) (name="x")]
+              body=[
+                (ExprStmt
+                  expr=(Assign op="+=" target=(Ident name="acc") value=(Ident name="x"))
+                  semi=true
+                )
+                (ExprStmt expr=(Ident name="acc"))
+              ]
+            )
+          )
+          (ShortDecl
+            name="f"
+            value=(Call
+              callee=(Member target=(Ident name="store") name="adjust")
+              args=[
+                (value=(Str value="MILK"))
+                (
+                  value=(Closure
+                    body=[
+                      (ExprStmt
+                        expr=(Assign
+                          op="+="
+                          target=(Member target=(Ident name="it") name="qty")
+                          value=(Int value=24)
+                        )
+                      )
+                    ]
+                  )
+                )
+              ]
+            )
+          )
+          (ShortDecl
+            name="g"
+            value=(Closure
+              body=[
+                (ExprStmt
+                  expr=(Or
+                    expr=(Call callee=(Ident name="f"))
+                    name="e"
+                    rhs=(Call callee=(Ident name="log") args=[(value=(Ident name="e"))])
+                  )
+                )
+              ]
+            )
+          )
+          (ShortDecl
+            name="h"
+            value=(Closure
+              params=[(name="n")]
+              body=[
+                (ShortDecl
+                  name="sq"
+                  value=(Binary op="*" left=(Ident name="n") right=(Ident name="n"))
+                )
+                (ExprStmt expr=(Binary op="+" left=(Ident name="sq") right=(Int value=5)))
+              ]
+            )
+          )
+          (ShortDecl
+            name="i"
+            value=(Closure
+              params=[(name="item" star=true type=(TName path=["Item"]))]
+              body=[
+                (ExprStmt
+                  expr=(Assign
+                    op="="
+                    target=(Member target=(Ident name="item") name="qty")
+                    value=(Int value=0)
+                  )
+                )
+              ]
+            )
+          )
+          (ShortDecl
+            name="j"
+            value=(Closure params=[(name="_")] body=[(ExprStmt expr=(Int value=0))])
+          )
+          (ShortDecl
+            name="k"
+            value=(Closure body=[(ExprStmt expr=(Call callee=(Ident name="compute")))])
+          )
+        ]
+      )
+    )
+  ]
+)

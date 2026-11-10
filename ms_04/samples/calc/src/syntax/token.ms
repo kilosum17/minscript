@@ -1,6 +1,6 @@
 package syntax
 
-/// Byte offsets into one source text. A small value type: copying it is a bit copy (spec §2).
+/// Byte offsets into one source text. A small value type: copying it is a bit copy (spec §9.1).
 pub type Span {
     pub start: int
     pub end: int
@@ -22,11 +22,12 @@ pub union TokenKind {
     Eof
 }
 
-/// A token is an identity value (spec §11.1): built once, never changed, compared and hashed by
-/// pointer. Two tokens with the same text are still two tokens; their `name`s are the same Symbol.
-pub type Token: Identity {
+/// A token is a small value type (spec §12.1, "Choosing a representation"): no allocation per
+/// token. It compares and hashes by its fields, and the span is unique within one source, so two
+/// tokens with the same text are still two different keys; their `name`s are the same Symbol.
+pub type Token {
     pub kind: TokenKind
-    pub text: str                  // a view into the source: storing it shares the buffer (§5.1)
+    pub text: str                  // a view into the source: storing it shares the buffer (§9.6)
     pub span: Span
-    pub name: Symbol? = None       // interned by the lexer for Name tokens (§11.3)
+    pub name: Symbol? = None       // interned by the lexer for Name tokens (§12.3)
 }

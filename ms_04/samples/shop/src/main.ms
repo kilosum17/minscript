@@ -39,7 +39,7 @@ let ORDERS = """
 type OrderIn = r{ id: int, customer: int, channel: Channel, pay: str, lines: Vec[Line] }
 
 /// "mpesa:07…", "card:4242:12/27" or "cash". The parts are views into `spec`; stored in the
-/// Payment they become shares of its buffer (§5.1).
+/// Payment they become shares of its buffer (§9.6).
 fn payment(spec: str) -> Payment {
     parts := spec.split(":")
     match parts[0] {

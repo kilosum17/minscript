@@ -1,5 +1,7 @@
 # MinScript Language Specification — v0.4 (draft)
 
+> **Superseded by [`spec.md`](spec.md)**, the self-contained v0.4 reference. This note keeps the reasoning behind the v0.4 changes; its section numbers are not the reference ones.
+
 Nov 9, 2026 · @kilo
 
 ## 0. Summary

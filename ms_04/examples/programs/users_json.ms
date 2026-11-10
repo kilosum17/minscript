@@ -61,7 +61,7 @@ fn total_area(shapes: Vec[Shape]) -> f64 {            // dynamic dispatch
 }
 
 // v0.2 needed `T: Clone`. Every non-Unique type can be copied now, and `T` is non-Unique by
-// default, so `first_or.[Sub[int]]` is E_UNIQUE_TYPE_ARG (spec §2.1).
+// default, so `first_or.[Sub[int]]` is E_UNIQUE_TYPE_ARG (spec §9.2).
 fn first_or[T](items: Vec[T], fallback: T) -> T {
     items.get(0) ?? fallback                     // a view of items[0], or the fallback
 }
@@ -116,7 +116,7 @@ fn main() {
     println("port ${port}, first id ${first_or([3, 1, 2], 0)}")
 
     shared var stats = m{ "requests": 0 }
-    stats["requests"] += 1                          // one statement = one write lock (§6.1)
+    stats["requests"] += 1                          // one statement = one write lock (§10.1)
     println("requests: ${stats["requests"]}")
 
     let caught = recover {

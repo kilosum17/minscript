@@ -1,0 +1,133 @@
+(File
+  package=["corpus"]
+  items=[
+    (Fn
+      name="literals"
+      body=(Block
+        stmts=[
+          (ShortDecl
+            name="a"
+            value=(Vec elems=[(value=(Int value=1)) (value=(Int value=2)) (value=(Int value=3))])
+          )
+          (ShortDecl
+            name="b"
+            value=(Array elems=[(value=(Int value=1)) (value=(Int value=2)) (value=(Int value=3))])
+          )
+          (ShortDecl name="c" value=(Tuple elems=[(value=(Int value=1)) (value=(Str value="a"))]))
+          (ShortDecl name="d" value=(Tuple))
+          (ShortDecl
+            name="e"
+            value=(Record
+              items=[
+                (Field name="name" value=(Str value="Ted"))
+                (Field name="age" value=(Int value=26))
+                (Spread value=(Ident name="base"))
+              ]
+            )
+          )
+          (ShortDecl
+            name="f"
+            value=(Map
+              entries=[
+                (Entry key=(Str value="one") value=(Int value=1))
+                (Entry key=(Call callee=(Ident name="key")) value=(Int value=2))
+              ]
+            )
+          )
+          (ShortDecl
+            name="g"
+            value=(Set elems=[(value=(Int value=1)) (value=(Int value=2)) (value=(Int value=3))])
+          )
+          (ShortDecl
+            name="h"
+            value=(Inferred items=[(Field name="host") (Field name="port" value=(Int value=8080))])
+          )
+          (ShortDecl
+            name="i"
+            value=(Struct
+              type=(Ident name="User")
+              items=[(Field name="id" value=(Int value=1)) (Field name="name")]
+            )
+          )
+          (ShortDecl
+            name="j"
+            value=(Record
+              items=[
+                (Field name="content-type" quoted=true value=(Str value="json"))
+                (Field name="type" value=(Str value="user"))
+              ]
+            )
+          )
+          (ShortDecl
+            name="k"
+            value=(Struct
+              type=(GenericApply
+                target=(Ident name="Pair")
+                args=[(TName path=["int"]) (TName path=["str"])]
+              )
+              items=[(Field name="first" value=(Int value=1)) (Field name="second" value=(Str value="a"))]
+            )
+          )
+          (ShortDecl
+            name="l"
+            value=(Struct
+              type=(Member target=(Ident name="models") name="User")
+              items=[(Field name="id" value=(Int value=2))]
+            )
+          )
+          (ShortDecl
+            name="n"
+            value=(As
+              expr=(Vec)
+              type=(TName
+                path=["Vec"]
+                args=[(TName path=["Map"] args=[(TName path=["str"]) (TName path=["int"])])]
+              )
+            )
+          )
+          (ShortDecl
+            name="o"
+            value=(As
+              expr=(Map)
+              type=(TName path=["Map"] args=[(TName path=["str"]) (TName path=["User"])])
+            )
+          )
+          (ShortDecl name="p" value=(As expr=(Nil) type=(TOptional inner=(TName path=["User"]))))
+          (ShortDecl name="q" value=(Char value="c"))
+          (ShortDecl name="r1" value=(Byte value=120))
+          (ShortDecl name="r2" value=(Byte value=10))
+          (ShortDecl name="r3" value=(Byte value=255))
+          (ShortDecl name="s1" value=(Str value="raw\\n" raw=true))
+          (ShortDecl
+            name="s2"
+            value=(Template
+              parts=["a" "b" "c"]
+              exprs=[(Ident name="x") (Binary op="+" left=(Ident name="y") right=(Int value=1))]
+            )
+          )
+          (ShortDecl
+            name="s3"
+            value=(Template parts=["multi\n  line " ""] exprs=[(Ident name="name")] multiline=true)
+          )
+          (ShortDecl
+            name="u"
+            value=(Binary
+              op="+"
+              left=(Binary
+                op="+"
+                left=(Binary op="+" left=(Int value=255) right=(Int value=10))
+                right=(Int value=15)
+              )
+              right=(Int value=1000)
+            )
+          )
+          (ShortDecl name="v" value=(Float value=0.0025))
+          (ShortDecl
+            name="w"
+            value=(Binary op="&&" left=(Bool value=true) right=(Unary op="!" operand=(Bool)))
+          )
+        ]
+      )
+    )
+  ]
+)

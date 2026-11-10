@@ -1,0 +1,170 @@
+(File
+  package=["corpus"]
+  items=[
+    (Fn
+      name="operators"
+      body=(Block
+        stmts=[
+          (ShortDecl
+            name="a"
+            value=(Member target=(Member target=(Ident name="t") name="0") name="1")
+          )
+          (ShortDecl name="b" value=(Range start=(Int value=1) end=(Int value=10)))
+          (ShortDecl name="c" value=(Range inclusive=true start=(Int value=1) end=(Int value=10)))
+          (ShortDecl name="d" value=(Range end=(Int value=5)))
+          (ShortDecl name="e" value=(Call callee=(Member target=(Int value=1) name="to_str")))
+          (ShortDecl name="f" value=(Array elems=[(value=(Int value=0))]))
+          (ShortDecl
+            name="g"
+            value=(Index target=(Member target=(Ident name="x") name="a") index=(Int value=0))
+          )
+          (ShortDecl
+            name="h"
+            value=(Call
+              callee=(GenericApply
+                target=(Member target=(Ident name="json") name="parse")
+                args=[(TName path=["User"])]
+              )
+              args=[(value=(Ident name="s"))]
+            )
+          )
+          (ShortDecl
+            name="i"
+            value=(Call
+              callee=(Member
+                target=(GenericApply target=(Ident name="Vec") args=[(TName path=["u8"])])
+                name="new"
+              )
+            )
+          )
+          (ShortDecl name="j" value=(Binary op="<" left=(Ident name="a") right=(Ident name="b")))
+          (ShortDecl name="k" value=(Binary op=">>" left=(Ident name="a") right=(Ident name="b")))
+          (ShortDecl
+            name="l"
+            value=(Call callee=(Member target=(Ident name="x") name="or") args=[(value=(Int value=1))])
+          )
+          (ShortDecl name="m" value=(Or expr=(Ident name="x") rhs=(Int value=1)))
+          (ShortDecl
+            name="n"
+            value=(Or
+              expr=(Ident name="x")
+              name="e"
+              rhs=(Call callee=(Ident name="Err") args=[(value=(Ident name="e"))])
+            )
+          )
+          (ShortDecl
+            name="o"
+            value=(Binary
+              op="??"
+              left=(Ident name="a")
+              right=(Binary op="??" left=(Ident name="b") right=(Ident name="c"))
+            )
+          )
+          (ShortDecl
+            name="p"
+            value=(Binary
+              op="??"
+              left=(Member target=(Ident name="a") name="b" optional=true)
+              right=(Str value="x")
+            )
+          )
+          (ExprStmt expr=(Assign op="??=" target=(Ident name="x") value=(Int value=5)))
+          (ShortDecl
+            name="q"
+            value=(As expr=(Ident name="x") type=(TOptional inner=(TName path=["i32"])))
+          )
+          (ShortDecl
+            name="r"
+            value=(Binary
+              op="/"
+              left=(As expr=(Ident name="a") type=(TName path=["f64"]))
+              right=(As expr=(Ident name="b") type=(TName path=["f64"]))
+            )
+          )
+          (ShortDecl
+            name="s"
+            value=(Binary
+              op="&"
+              left=(As expr=(Ident name="flags") type=(TName path=["u8"]))
+              right=(Ident name="MASK")
+            )
+          )
+          (ShortDecl name="u" value=(Try expr=(Await operand=(Call callee=(Ident name="f")))))
+          (ShortDecl
+            name="v"
+            value=(Member target=(Await operand=(Call callee=(Ident name="f"))) name="name" optional=true)
+          )
+          (ShortDecl
+            name="w"
+            value=(Call
+              callee=(Member
+                target=(Paren expr=(Await operand=(Call callee=(Ident name="f"))))
+                name="trim"
+              )
+            )
+          )
+          (ShortDecl name="y" value=(Member target=(Ident name="user") name="name" optional=true))
+          (ShortDecl
+            name="z"
+            value=(Member target=(Paren expr=(Try expr=(Ident name="user"))) name="name")
+          )
+          (ShortDecl
+            name="aa"
+            value=(As expr=(Unary op="-" operand=(Ident name="x")) type=(TName path=["f64"]))
+          )
+          (ShortDecl
+            name="bb"
+            value=(Binary
+              op="-"
+              left=(Binary
+                op="+"
+                left=(Ident name="a")
+                right=(Binary op="*" left=(Ident name="b") right=(Ident name="c"))
+              )
+              right=(Binary op="%" left=(Ident name="d") right=(Ident name="e"))
+            )
+          )
+          (ShortDecl
+            name="cc"
+            value=(Binary
+              op="||"
+              left=(Binary
+                op="&&"
+                left=(Binary op="==" left=(Ident name="a") right=(Ident name="b"))
+                right=(Binary op="!=" left=(Ident name="c") right=(Ident name="d"))
+              )
+              right=(Unary op="!" operand=(Ident name="e"))
+            )
+          )
+          (ShortDecl
+            name="dd"
+            value=(Binary
+              op="|"
+              left=(Binary op="<<" left=(Ident name="x") right=(Int value=2))
+              right=(Binary
+                op="^"
+                left=(Binary op="&" left=(Ident name="y") right=(Int value=3))
+                right=(Ident name="z")
+              )
+            )
+          )
+          (ExprStmt
+            expr=(Assign
+              op="="
+              target=(Index target=(Ident name="m") index=(Ident name="k"))
+              value=(Ident name="v")
+            )
+          )
+          (ExprStmt expr=(Assign op="+=" target=(Ident name="total") value=(Int value=1)))
+          (ExprStmt
+            expr=(Assign
+              op="="
+              target=(Index target=(Member target=(Ident name="user") name="tags") index=(Int value=0))
+              value=(Str value="x")
+            )
+          )
+        ]
+      )
+    )
+  ]
+)

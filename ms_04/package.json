@@ -1,0 +1,23 @@
+{
+  "name": "minscript-04",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "MinScript v0.4: spec-first compiler (front end so far)",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "node --test src/*.test.ts test/*.test.ts",
+    "test:update": "UPDATE_SNAPSHOTS=1 node --test src/*.test.ts test/*.test.ts",
+    "typecheck": "tsc",
+    "lex": "node src/cli.ts lex",
+    "parse": "node src/cli.ts parse",
+    "resolve": "node src/cli.ts resolve",
+    "check": "node src/cli.ts check"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,54 @@
+(File
+  package=["corpus"]
+  items=[
+    (Fn
+      name="types"
+      params=[
+        (
+          name="a"
+          type=(TName
+            path=["Vec"]
+            args=[
+              (TName
+                path=["Map"]
+                args=[
+                  (TName path=["str"])
+                  (TName path=["Vec"] args=[(TOptional inner=(TName path=["User"]))])
+                ]
+              )
+            ]
+          )
+        )
+        (
+          name="b"
+          type=(TName
+            path=["Promise"]
+            args=[(TName path=["Result"] args=[(TName path=["User"]) (TName path=["str"])])]
+          )
+        )
+        (name="c" type=(TName path=["Array"] args=[(TName path=["i32"]) (TLit value=4)]))
+        (name="d" type=(TTuple elems=[(TName path=["int"]) (TName path=["str"])]))
+        (
+          name="e"
+          type=(TRecord
+            fields=[(name="x" type=(TName path=["f64"])) (name="y" type=(TName path=["f64"]))]
+          )
+        )
+        (
+          name="f"
+          type=(TFn
+            params=[
+              (type=(TName path=["int"]))
+              (star=true type=(TName path=["Vec"] args=[(TName path=["u8"])]))
+            ]
+            ret=(TName path=["bool"])
+          )
+        )
+        (name="g" type=(TInter parts=[(TName path=["Reader"]) (TName path=["Writer"])]))
+        (name="h" type=(TName path=["Self"]))
+        (name="i" type=(TOptional inner=(TName path=["json" "Value"])))
+      ]
+      body=(Block)
+    )
+  ]
+)

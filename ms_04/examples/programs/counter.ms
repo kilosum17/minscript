@@ -32,7 +32,7 @@ pub type Counter: Stringer {
         log.println("Current Counter Value: ${this.value}")
     }
 
-    fn to_str(this) -> str {                   // an interface method: always exported (§8.2)
+    fn to_str(this) -> str {                   // an interface method: always exported (§8.5)
         "Counter(${this.value})"
     }
 }

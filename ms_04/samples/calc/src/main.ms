@@ -74,7 +74,7 @@ async fn main() {
         sources.push(r{ name: "bad", text: BAD })
     } else {
         // `it` is a view of `paths`, an immutable binding: the stored promises may share it, so
-        // they need no same-statement await (spec §7)
+        // they need no same-statement await (spec §11.2)
         sources = await Promise.all(paths.map(#{ load(it) }))
     }
 

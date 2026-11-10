@@ -1,0 +1,46 @@
+1:1 a[ [match=2]
+1:3 Int 0
+1:4 ]
+1:6 Ident "a" [ws]
+1:8 [ [ws match=6]
+1:9 Int 0
+1:10 ]
+1:12 t( [ws match=9]
+1:14 Int 1
+1:15 )
+1:17 Ident "t" [ws]
+1:19 ( [ws match=13]
+1:20 Int 1
+1:21 )
+1:23 r{ [ws match=15]
+1:26 } [ws]
+1:28 m{ [ws match=17]
+1:31 } [ws]
+1:33 s{ [ws match=19]
+1:36 } [ws]
+1:38 _{ [ws match=21]
+1:41 } [ws]
+1:43 #{ [ws match=23]
+1:46 } [ws]
+1:48 Ident "x" [ws]
+1:49 .[ [match=27]
+1:51 Ident "T"
+1:52 ]
+1:54 fn [ws]
+1:57 Ident "t" [ws]
+1:58 [ [match=32]
+1:59 Ident "T"
+1:60 ]
+1:62 Ident "x" [ws]
+1:63 .
+1:64 Ident "t"
+1:65 ( [match=38]
+1:66 Int 1
+1:67 )
+1:69 Ident "x" [ws]
+1:70 .
+1:71 Ident "fn"
+1:74 lock [ws]
+1:79 Ident "shared" [ws]
+1:86 Ident "once" [ws]
+2:1 EOF [nl]

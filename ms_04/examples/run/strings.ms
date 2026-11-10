@@ -1,4 +1,4 @@
-// Strings on the JS back end: lengths and offsets are UTF-8 bytes (spec §10.3), like on every back end.
+// Strings on the JS back end: lengths and offsets are UTF-8 bytes (spec §14.3), like on every back end.
 package main
 
 fn main() {

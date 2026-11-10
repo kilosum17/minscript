@@ -1,9 +1,9 @@
 // Value semantics on the JS back end: Copy records and tuples are copies (never shared); tuples
 // print as tuples; floats keep `.0` inside collections; panics know where they happened.
-// v0.4: every value has these semantics now (spec §2), not only `Copy` ones.
+// v0.4: every value has these semantics now (spec §9.1), not only `Copy` ones.
 package main
 
-// v0.2 `mut p: T` is removed: a parameter may be redeclared as a local `var` copy (spec §3).
+// v0.2 `mut p: T` is removed: a parameter may be redeclared as a local `var` copy (spec §9.4).
 fn bump(p: r{ x: int, y: int }) -> int {
     var p = p
     p.x += 100

@@ -8,18 +8,18 @@ pub type Diag {
     pub warning: bool = false
 }
 
-/// Results that stay beside the tree: a side table keyed by node identity (§11.1).
+/// Results that stay beside the tree: a side table keyed by node identity (§12.1).
 pub type Resolved {
     pub uses: Map[Decl, int] = m{}
     pub diags: Vec[Diag] = []
 }
 
-/// A scope is a persistent map (§11.5): `with` returns a new version in O(log n) and older
+/// A scope is a persistent map (§12.5): `with` returns a new version in O(log n) and older
 /// versions stay valid, so a function body can extend the globals without copying them.
 type Scope = PMap[Symbol, Decl]
 
 /// Binds every name in `stmts`. Each `Ident.decl` is a once field: running this twice over the
-/// same tree panics with PanicKind.AlreadySet (§12.3), which is what a pass ordering bug should do.
+/// same tree panics with PanicKind.AlreadySet (§18.5), which is what a pass ordering bug should do.
 pub fn resolve(stmts: Vec[Stmt]) -> Resolved {
     var out = Resolved {}
     var globals = PMap.new.[Symbol, Decl]() as Scope

@@ -1,8 +1,8 @@
 package syntax
 
-// AST nodes are identity types (spec §11.1): one heap object each, immutable after construction,
+// AST nodes are identity types (spec §12.1): one heap object each, immutable after construction,
 // hashed by pointer, and recursive without `Box` (an identity value is already a pointer).
-// Passes never mutate a node; they fill `once` fields (§11.2) or keep side tables keyed by node.
+// Passes never mutate a node; they fill `once` fields (§12.2) or keep side tables keyed by node.
 
 pub union Expr {
     Num(NumLit)

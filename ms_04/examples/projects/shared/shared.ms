@@ -1,5 +1,5 @@
 // A `path:` dependency of examples/projects/basic: imported as `shared`, which stays a valid name
-// because `shared` is a contextual keyword (spec §8.5).
+// because `shared` is a contextual keyword (spec §1.4).
 package shared
 
 pub fn money(cents: int) -> str {

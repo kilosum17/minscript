@@ -2,12 +2,12 @@ package main
 
 import "std.time"
 
-// Inter-task communication on the JS back end (spec §9.6, §9.10); output must match tasks.out.
-// v0.4: `Sub`, `Watcher` and `Resolver` are `Unique` (spec §2.1); Topic / Queue / Signal are std
-// types built on `shared` cells, so passing one aliases its state (spec §6.1).
+// Inter-task communication on the JS back end (spec §11.1, §11.3); output must match tasks.out.
+// v0.4: `Sub`, `Watcher` and `Resolver` are `Unique` (spec §9.2); Topic / Queue / Signal are std
+// types built on `shared` cells, so passing one aliases its state (spec §10.1).
 
 // v0.2 wrote `mut sub: Sub[int]`. `for await` calls `sub.next(*this)` on a Unique parameter, so the
-// summary says `consumes [sub]`: the caller moves it in and the body owns it (spec §2.1).
+// summary says `consumes [sub]`: the caller moves it in and the body owns it (spec §9.2).
 async fn worker(id: int, sub: Sub[int], results: Queue[str]) {
     for await job in sub {
         await results.publish("w${id}:${job * job}") or return
@@ -17,7 +17,7 @@ async fn worker(id: int, sub: Sub[int], results: Queue[str]) {
 async fn count_down(online: Signal[int]) {
     for i in 0..3 {
         await time.after(5)
-        online.update(#{ n => n -= 1 })            // `update(this, f: (*T) -> R)` (spec §3)
+        online.update(#{ n => n -= 1 })            // `update(this, f: (*T) -> R)` (spec §9.4)
     }
 }
 

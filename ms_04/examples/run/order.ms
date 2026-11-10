@@ -2,7 +2,7 @@ package main
 
 // Evaluation order on the JS back end: arguments run left to right even when a later one is a
 // block / if / match (which compile to statements). Output must match order.out.
-// v0.4: the v0.2 `Ref[Vec[str]]` trace is a plain `var` passed as `*Vec[str]` (spec §3).
+// v0.4: the v0.2 `Ref[Vec[str]]` trace is a plain `var` passed as `*Vec[str]` (spec §9.4).
 
 fn note(trace: *Vec[str], s: str) -> int {
     trace.push(s)
@@ -15,7 +15,7 @@ fn main() {
     var trace = [] as Vec[str]
     flag := true
     // Every argument writes `trace` through a nested call. They run one after another, so this is
-    // not E_OVERLAPPING_ACCESS, which is about the place arguments of one call (spec §3).
+    // not E_OVERLAPPING_ACCESS, which is about the place arguments of one call (spec §9.4).
     r := three(
         note(trace, "a"),
         if flag { note(trace, "bb") } else { 0 },

@@ -28,20 +28,20 @@ pub union Status {
 
 pub union Tier { Bronze  Silver  Gold }
 
-/// One object per real customer (spec §11.1). Every order for Wanjiru holds the same object, maps
+/// One object per real customer (spec §12.1). Every order for Wanjiru holds the same object, maps
 /// key by its pointer, and passing it around is a refcount increment, never a copy.
 pub type Customer: Identity {
     pub id: int
     pub name: str
-    pub referred_by: Weak[Customer]? = None        // must not keep the referrer alive (§5.3)
-    pub once tier: Tier                             // decided once, at the end of the day (§11.2)
+    pub referred_by: Weak[Customer]? = None        // must not keep the referrer alive (§12.4)
+    pub once tier: Tier                             // decided once, at the end of the day (§12.2)
 }
 
 // `once` needs an identity type: on `Order` (a value type) it would be E_ONCE_OUTSIDE_IDENTITY,
 // because two copies of an order could disagree about whether it was set.
 
 /// An order is an ordinary value. Workers own one at a time, and its fields are separate paths,
-/// so two tasks can fill different fields of the same order at once (§7).
+/// so two tasks can fill different fields of the same order at once (§11.2).
 pub type Order {
     pub id: int
     pub customer: Customer

@@ -1,0 +1,312 @@
+(File
+  package=["corpus"]
+  imports=[
+    (Import path="std.io.*")
+    (Import path="std.io.{print, println}")
+    (Import path="app.models" alias="models")
+    (Import isPub=true path="./log")
+  ]
+  items=[
+    (LetDecl isPub=true name="LIMIT" value=(Int value=10))
+    (LetDecl
+      name="KEYWORDS"
+      value=(As
+        expr=(Map
+          entries=[
+            (Entry
+              key=(Call callee=(Ident name="sym") args=[(value=(Str value="let"))])
+              value=(Ident name="Let")
+            )
+          ]
+        )
+        type=(TName path=["Map"] args=[(TName path=["Symbol"]) (TName path=["TokenKind"])])
+      )
+    )
+    (VarDecl name="counter" value=(Int value=0))
+    (VarDecl isPub=true shared=true name="hits" value=(Int value=0))
+    (TypeDecl
+      isPub=true
+      name="User"
+      impls=[(TName path=["Stringer"])]
+      members=[
+        (Field isPub=true name="id" type=(TName path=["u64"]))
+        (Field name="name" type=(TName path=["str"]))
+        (Field name="email" type=(TOptional inner=(TName path=["str"])))
+        (Field name="tags" type=(TName path=["Vec"] args=[(TName path=["str"])]) default=(Vec))
+        (Fn
+          isPub=true
+          name="new"
+          params=[(name="id" type=(TName path=["u64"])) (name="name" type=(TName path=["str"]))]
+          ret=(TName path=["User"])
+          body=(Block
+            stmts=[
+              (ExprStmt
+                expr=(Struct type=(Ident name="User") items=[(Field name="id") (Field name="name")])
+              )
+            ]
+          )
+        )
+        (Fn
+          isPub=true
+          name="rename"
+          receiver="*this"
+          params=[(name="name" type=(TName path=["str"]))]
+          body=(Block
+            stmts=[
+              (ExprStmt
+                expr=(Assign op="=" target=(Member target=(This) name="name") value=(Ident name="name"))
+              )
+            ]
+          )
+        )
+        (Fn
+          name="to_str"
+          receiver="this"
+          ret=(TName path=["str"])
+          body=(Block
+            stmts=[
+              (ExprStmt
+                expr=(Template parts=["User(" ")"] exprs=[(Member target=(This) name="id")])
+              )
+            ]
+          )
+        )
+      ]
+    )
+    (TypeDecl
+      name="Node"
+      impls=[(TName path=["Identity"])]
+      members=[
+        (Field name="name" type=(TName path=["Symbol"]))
+        (Field mode="once" name="ty" type=(TName path=["Type"]))
+        (Field mode="shared" name="hits" type=(TName path=["int"]) default=(Int value=0))
+      ]
+    )
+    (TypeDecl
+      name="Store"
+      members=[
+        (Field mode="shared" name="stock" type=(TName path=["Inventory"]))
+        (Field
+          isPub=true
+          mode="shared"
+          name="takings"
+          type=(TName path=["Money"])
+          default=(Call callee=(Member target=(Ident name="Money") name="zero"))
+        )
+        (Field isPub=true mode="once" name="tier" type=(TName path=["Tier"]))
+        (Field name="shared" type=(TName path=["int"]) default=(Int value=0))
+      ]
+    )
+    (UnionDecl
+      isPub=true
+      name="Payment"
+      members=[
+        (Variant name="Cash")
+        (Variant name="Mpesa" tuple=[(TName path=["str"])])
+        (Variant
+          name="Card"
+          fields=[
+            (Field name="number" type=(TName path=["str"]))
+            (Field name="exp" type=(TName path=["str"]))
+          ]
+        )
+        (Fn
+          isPub=true
+          name="is_cash"
+          receiver="this"
+          ret=(TName path=["bool"])
+          body=(Block
+            stmts=[
+              (ExprStmt
+                expr=(Match
+                  subject=(This)
+                  arms=[
+                    (pattern=(PCtor path=["Cash"]) body=(Bool value=true))
+                    (pattern=(PWild) body=(Bool))
+                  ]
+                )
+              )
+            ]
+          )
+        )
+      ]
+    )
+    (UnionDecl
+      name="P"
+      members=[
+        (Variant name="Cash")
+        (Variant name="Card" fields=[(Field name="n" type=(TName path=["str"]))])
+        (Fn
+          name="is_cash"
+          receiver="this"
+          ret=(TName path=["bool"])
+          body=(Block stmts=[(ExprStmt expr=(Bool value=true))])
+        )
+      ]
+    )
+    (InterDecl
+      isPub=true
+      name="Stringer"
+      methods=[(Fn name="to_str" receiver="this" ret=(TName path=["str"]))]
+    )
+    (InterDecl name="R" alias=(TInter parts=[(TName path=["A"]) (TName path=["B"])]))
+    (InterDecl
+      name="PartialOrd"
+      generics=[(name="T")]
+      supers=[(TName path=["PartialEq"] args=[(TName path=["T"])])]
+      methods=[
+        (Fn
+          name="partial_cmp"
+          receiver="this"
+          params=[(name="o" type=(TName path=["T"]))]
+          ret=(TOptional inner=(TName path=["Ordering"]))
+        )
+      ]
+    )
+    (InterDecl
+      name="Refunder"
+      methods=[
+        (Fn
+          isAsync=true
+          name="refund"
+          receiver="*this"
+          params=[(name="receipt" type=(TName path=["str"]))]
+          ret=(TName path=["Result"] args=[(TName path=["void"]) (TName path=["str"])])
+        )
+        (Fn
+          name="can_refund"
+          receiver="this"
+          params=[(name="receipt" type=(TName path=["str"]))]
+          ret=(TName path=["bool"])
+          body=(Block
+            stmts=[
+              (ExprStmt
+                expr=(Call
+                  callee=(Member target=(Ident name="receipt") name="starts_with")
+                  args=[(value=(Str value="RCPT-"))]
+                )
+              )
+            ]
+          )
+        )
+      ]
+    )
+    (TypeDecl name="Users" alias=(TName path=["Vec"] args=[(TName path=["User"])]))
+    (TypeDecl
+      name="Role"
+      alias=(TUnion alts=[(TLit value="Admin") (TLit value="Operator") (TLit value="Guest")])
+    )
+    (TypeDecl
+      name="Point"
+      alias=(TRecord fields=[(name="x" type=(TName path=["f64"])) (name="y" type=(TName path=["f64"]))])
+    )
+    (TypeDecl name="Config" alias=(TTypeOf path=["default_config"]))
+    (TypeDecl
+      name="Tool"
+      alias=(TFn params=[(type=(TName path=["Config"]))] ret=(TName path=["Config"]))
+    )
+    (ImplDecl
+      target=(TName path=["User"])
+      methods=[
+        (Fn
+          name="extra"
+          receiver="this"
+          ret=(TName path=["int"])
+          body=(Block stmts=[(ExprStmt expr=(Int value=1))])
+        )
+      ]
+    )
+    (ImplDecl
+      generics=[(name="T")]
+      target=(TName path=["Pair"] args=[(TName path=["T"]) (TName path=["T"])])
+      methods=[(Fn name="swap" receiver="*this" body=(Block))]
+    )
+    (ImplDecl
+      inters=[(TName path=["Plus"]) (TName path=["Minus"])]
+      target=(TName path=["Money"])
+      methods=[
+        (Fn
+          name="plus"
+          receiver="this"
+          params=[(name="o" type=(TName path=["Money"]))]
+          ret=(TName path=["Money"])
+          body=(Block stmts=[(ExprStmt expr=(Ident name="o"))])
+        )
+      ]
+    )
+    (ExternDecl
+      abi="C"
+      fns=[
+        (Fn
+          isPub=true
+          name="malloc"
+          params=[(name="size" type=(TName path=["usize"]))]
+          ret=(TName path=["unsafe" "Ptr"] args=[(TName path=["u8"])])
+        )
+      ]
+    )
+    (Fn
+      attrs=[
+        (Attribute
+          name="effects"
+          args=[(name="keeps" paths=["v"]) (name="returns_view" paths=["this.items"])]
+        )
+      ]
+      isPub=true
+      name="push"
+      receiver="*this"
+      params=[(name="v" type=(TName path=["T"]))]
+      body=(Block stmts=[(ExprStmt expr=(Call callee=(Ident name="_builtin")))])
+    )
+    (Fn
+      name="f"
+      params=[(name="u" star=true type=(TName path=["User"])) (name="n" type=(TName path=["str"]))]
+      retStar=true
+      ret=(TName path=["Item"])
+      body=(Block
+        stmts=[
+          (ExprStmt
+            expr=(Index target=(Member target=(Ident name="u") name="items") index=(Int value=0))
+          )
+        ]
+      )
+    )
+    (Fn name="g" receiver="*this" body=(Block))
+    (Fn
+      name="h"
+      params=[
+        (
+          name="f"
+          type=(TFn params=[(star=true type=(TName path=["Item"]))] ret=(TName path=["int"]))
+        )
+        (name="g" type=(TFn ret=(TName path=["void"])))
+      ]
+      body=(Block)
+    )
+    (Fn
+      isPub=true
+      isAsync=true
+      name="load"
+      generics=[(name="T" bounds=[(TName path=["Unique"])])]
+      params=[
+        (name="path" type=(TName path=["str"]))
+        (name="rest" variadic=true type=(TName path=["str"]))
+      ]
+      ret=(TName path=["Result"] args=[(TName path=["T"]) (TName path=["str"])])
+      body=(Block)
+    )
+    (Fn name="yield" body=(Block))
+    (Fn
+      name="largest"
+      generics=[
+        (
+          name="T"
+          bounds=[(TName path=["PartialOrd"] args=[(TName path=["T"])]) (TName path=["Copy"])]
+        )
+      ]
+      params=[(name="items" type=(TName path=["Vec"] args=[(TName path=["T"])]))]
+      ret=(TName path=["T"])
+      body=(Block stmts=[(ExprStmt expr=(Index target=(Ident name="items") index=(Int value=0)))])
+    )
+  ]
+)

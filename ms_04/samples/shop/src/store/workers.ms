@@ -6,7 +6,7 @@ import "app.orders.*"
 /// What a worker reports for each order.
 pub type Outcome = r{ order: int, worker: int, status: Status, flags: Vec[str] }
 
-// ---- two checks on one order, in parallel (spec §7) --------------------------------------------
+// ---- two checks on one order, in parallel (spec §11.2) --------------------------------------------
 
 /// Summary: reads [o.lines] writes [o.total, o.status]. `store` is read-only; its shared stock
 /// takes care of itself.
@@ -34,8 +34,8 @@ async fn screen(o: *Order) {
 
 /// One worker task.
 /// - `jobs` is `Unique` and `for await` advances it, so the summary says `consumes [jobs]`: the
-///   caller must move its subscription in (spec §2.1). No `mut`, no extra syntax.
-/// - `store` is a copy of the caller's Store; its shared fields alias the real ones (§6.1).
+///   caller must move its subscription in (spec §9.2). No `mut`, no extra syntax.
+/// - `store` is a copy of the caller's Store; its shared fields alias the real ones (§10.1).
 /// - `done` is a std handle, so the same rule applies.
 pub async fn worker(id: int, jobs: Sub[Order], store: Store, done: Queue[Outcome]) {
     var gateway = FakeGateway.new(id)
@@ -77,7 +77,7 @@ pub async fn worker(id: int, jobs: Sub[Order], store: Store, done: Queue[Outcome
 }
 
 /// Hands each element of `items` to `f`, moving it out. `[T: Unique]` lets `T` be a `Sub`, a
-/// socket or a `Resolver`: the body is checked with move rules for `T` (spec §2.1), so using `x`
+/// socket or a `Resolver`: the body is checked with move rules for `T` (spec §9.2), so using `x`
 /// twice would be E_USE_AFTER_MOVE. Without the bound, `each_owned(subs, …)` would be
 /// E_UNIQUE_TYPE_ARG.
 pub fn each_owned[T: Unique](items: *Vec[T], f: (T) -> void) {
@@ -99,7 +99,7 @@ pub async fn report(feed: Sub[Event]) {
 }
 
 /// Calls `on` for every change of a signal. `on` escapes into this task (`keeps [on]`), so a
-/// closure passed here that writes a captured `var` must make it `shared` (§6.3).
+/// closure passed here that writes a captured `var` must make it `shared` (§10.3).
 pub async fn watch(w: Watcher[int], on: (int) -> void) {
     for await n in w { on(n) }
 }

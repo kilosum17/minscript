@@ -1,6 +1,6 @@
-// Cancelling tasks (spec §9.6): a cancelled task stops at its next `await` with a `Cancelled` panic,
+// Cancelling tasks (spec §11.1): a cancelled task stops at its next `await` with a `Cancelled` panic,
 // which `recover` can catch; a task that loses a `select` is cancelled.
-// v0.4: the v0.2 `Ref[int]` counter is a `shared var` passed to a `*int` parameter (spec §6.1).
+// v0.4: the v0.2 `Ref[int]` counter is a `shared var` passed to a `*int` parameter (spec §10.1).
 package main
 
 import "std.time"
@@ -25,7 +25,7 @@ async fn guarded() -> str {
 
 async fn main() {
     shared var count = 0
-    // A detached task may take a `shared` cell through `*T`: it keeps an alias (spec §6.1, §7).
+    // A detached task may take a `shared` cell through `*T`: it keeps an alias (spec §10.1, §11.2).
     t := ticker(count)
     await time.sleep(20)
     t.cancel()

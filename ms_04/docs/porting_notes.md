@@ -4,7 +4,7 @@ Source: `minscript/test/{programs,run,packages,projects,prelude,testing}` (47 `.
 `ms_04/examples/` with their `.out` / `config.json` goldens.
 
 **Status (2026-11-09): all 14 gaps are resolved.** Each proposal below was adopted into
-`spec_04_ai.md` as written, and the examples now cite the spec section instead of a `GAP` marker.
+`spec_04_ai.md` as written (section numbers in this file refer to that design note, not to `spec.md`), and the examples now cite the spec section instead of a `GAP` marker.
 Where each one landed: G1 §8.5 · G2 §6.1, §7 · G3, G4 §6.1 · G5, G12 §2.1 (+ `consumes` in §4,
 `E_UNIQUE_TYPE_ARG` in §12.1) · G6 §4 · G7 §3, §8.2, §8.3 · G8, G9 §6.1 (+ `L_NESTED_LOCK`) ·
 G10 §5.1 · G11, G13 §3 · G14 §7. With G1 adopted, the `shared` package and `shared()` function keep

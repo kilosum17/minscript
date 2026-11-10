@@ -1,5 +1,5 @@
 // The prelude's methods written in MinScript (std/prelude.ms), tested from outside: `ms test examples/prelude`.
-// v0.4 port: no `.clone()`, inferred captures, getters return views (spec §11.4).
+// v0.4 port: no `.clone()`, inferred captures, getters return views (spec §9.6).
 package prelude_test
 
 import "std.testing.*"
@@ -103,8 +103,8 @@ fn test_vec_pipelines() {
 }
 
 fn test_results_are_independent() {
-    // `filter` returns a new Vec whose elements share the originals' buffers (views, §11.4);
-    // writing one copies it first, so the original never changes (copy-on-write, §2)
+    // `filter` returns a new Vec whose elements share the originals' buffers (views, §9.6);
+    // writing one copies it first, so the original never changes (copy-on-write, §9.1)
     let users = [User { name: "ann", tags: ["a"] }, User { name: "bo", tags: [] }]
     var picked = users.filter(#{ u => u.tags.len() > 0 })
     picked[0].tags.push("b")
@@ -163,7 +163,7 @@ fn test_string_to_int() {
     assert_eq("2.5".to_float().unwrap(), 2.5)
 }
 
-// ---- type witnesses (spec §14.1): generic code that needs its `T` at run time ------------------------
+// ---- type witnesses (spec §15.3): generic code that needs its `T` at run time ------------------------
 
 type Settings { level: int = 1, name: str = "default", tags: Vec[str], extra: int? }
 

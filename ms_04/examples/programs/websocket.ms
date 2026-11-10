@@ -1,9 +1,9 @@
 // Chat hub: every client that connects joins a shared room (a Topic), and each message it
 // sends is broadcast to all other clients. A Signal tracks how many are online.
-// Extends docs/history/samples/ws.rs; uses spec §4.9 (select), §9.10 (Topic / Signal),
-// §7.6 (variants inferred from the expected type). v0.4: handles no longer "clone implicitly";
-// Topic / Signal are std types over `shared` cells (spec v0.4 §6.4), and sockets, `Sub`, `Watcher`
-// and `Resolver` are `Unique` (§2.1).
+// Extends docs/history/samples/ws.rs; uses spec §4.9 (select), §11.3 (Topic / Signal),
+// §7.7 (variants inferred from the expected type). v0.4: handles no longer "clone implicitly";
+// Topic / Signal are std types over `shared` cells (spec §11.3), and sockets, `Sub`, `Watcher`
+// and `Resolver` are `Unique` (§9.2).
 //
 // `LIMITATION` marks what is still missing.
 //
@@ -12,12 +12,12 @@
 //   ws.listen(host: str, port: u16) async -> Result[Server, ws.Error]   // resolves once bound
 //   ws.connect(url: str) async -> Result[Connection, ws.Error]
 //   Server.accept(*this) async -> Result[Connection, ws.Error]
-//   Connection.split(this) -> t(Reader, Writer)    // #[effects(consumes: [this])] (spec §2.1, §4)
+//   Connection.split(this) -> t(Reader, Writer)    // #[effects(consumes: [this])] (spec §9.2, §9.5)
 //   Reader.receive(*this) async -> Result[Message, ws.Error]          // cancel-safe (std.net rule)
 //   Writer.send(this, msg: Message) async -> Result[void, ws.Error]
 //
-// LIMITATION: `split()` into owned halves is still needed. v0.4's disjoint-path concurrency (§7)
-// splits fields, but a socket is an extern value, which is one opaque path (§4 conservative cases).
+// LIMITATION: `split()` into owned halves is still needed. v0.4's disjoint-path concurrency (§11.2)
+// splits fields, but a socket is an extern value, which is one opaque path (§9.5 conservative cases).
 package main
 
 import "std.net.ws"
@@ -31,11 +31,11 @@ async fn handle_client(conn: ws.Connection, room: Topic[Chat], online: Signal[in
     let t(var reader, writer) = conn.split()
     var sub = room.subscribe()                       // unsubscribed automatically when dropped
     // `subscribe(this)` and `publish(this)` write the Topic's shared state through a read-only
-    // receiver, which `shared` fields allow (spec §6.1).
+    // receiver, which `shared` fields allow (spec §10.1).
 
-    online.update(#{ n => n += 1 })                  // `n` is `*int`: `(*T) -> R` (spec §3)
+    online.update(#{ n => n += 1 })                  // `n` is `*int`: `(*T) -> R` (spec §9.4)
 
-    // `Text` resolves through the expected type: the `msg` field is a ws.Message (spec §7.6)
+    // `Text` resolves through the expected type: the `msg` field is a ws.Message (spec §7.7)
     room.publish(r{ from: id, msg: Text("client ${id} joined") })
 
     // One task per client: wait for whichever comes first, a frame from the socket or an event
@@ -78,7 +78,7 @@ async fn run_hub(port: u16, ready: Resolver[Result[void, str]]) {
     online := Signal(0)
 
     // Passing a Topic or Signal copies the value, and the copy aliases the same shared state.
-    // Copies alias `shared` fields (spec §6.1).
+    // Copies alias `shared` fields (spec §10.1).
     report(online).ignore()
 
     var server = await ws.listen("127.0.0.1", port) or e => {

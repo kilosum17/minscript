@@ -10,12 +10,11 @@ type Parser {
     pos: int = 0
     errors: Vec[ParseError] = []
 
-    /// A view of the current token (returns_view [this.tokens[*]]). A token is an identity value,
-    /// so the view is just its pointer.
+    /// A view of the current token (returns_view [this.tokens[*]]): a pointer into the Vec, no copy.
     fn peek(this) -> Token { this.tokens[this.pos] }
 
     /// Writes [this.pos] only. The returned view is of `this.tokens`, a disjoint path, so callers
-    /// may hold it while they call other `*this` methods that write `errors` (§4 paths).
+    /// may hold it while they call other `*this` methods that write `errors` (§9.5 paths).
     fn bump(*this) -> Token {
         tok := this.peek()
         if this.pos < this.tokens.len() - 1 { this.pos += 1 }
@@ -159,7 +158,7 @@ fn prec(op: Punct) -> int {
     }
 }
 
-/// Takes the tokens by value: this is their last use in the caller, so they move in (§2).
+/// Takes the tokens by value: this is their last use in the caller, so they move in (§9.1).
 pub fn parse(tokens: Vec[Token]) -> t(Vec[Stmt], Vec[ParseError]) {
     var p = Parser { tokens }
     var stmts = [] as Vec[Stmt]

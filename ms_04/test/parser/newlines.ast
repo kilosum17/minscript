@@ -1,0 +1,68 @@
+(File
+  package=["corpus"]
+  items=[
+    (Fn
+      name="newlines"
+      body=(Block
+        stmts=[
+          (ExprStmt expr=(Ident name="foo"))
+          (ExprStmt expr=(Paren expr=(Ident name="bar")))
+          (ExprStmt
+            expr=(Member
+              target=(Member target=(Ident name="user") name="profile")
+              name="name"
+              optional=true
+            )
+          )
+          (ShortDecl
+            name="total"
+            value=(Binary op="+" left=(Ident name="a") right=(Ident name="b"))
+          )
+          (ShortDecl
+            name="ok"
+            value=(Binary
+              op="||"
+              left=(Binary op="&&" left=(Ident name="a") right=(Ident name="b"))
+              right=(Ident name="c")
+            )
+          )
+          (ShortDecl name="x" value=(Binary op="??" left=(Ident name="y") right=(Ident name="z")))
+          (ShortDecl name="v" value=(Or expr=(Ident name="w") rhs=(Int value=0)))
+          (ExprStmt
+            expr=(Assign
+              op="="
+              target=(Ident name="items")
+              value=(Vec elems=[(value=(Int value=1)) (value=(Int value=2))])
+            )
+          )
+          (ExprStmt
+            expr=(Call
+              callee=(Ident name="call")
+              args=[(value=(Ident name="a")) (value=(Ident name="b"))]
+            )
+          )
+          (ShortDecl
+            name="r"
+            value=(Record
+              items=[(Field name="a" value=(Int value=1)) (Field name="b" value=(Int value=2))]
+            )
+          )
+          (ShortDecl
+            name="s"
+            value=(If
+              cond=(Ident name="a")
+              then=(Block stmts=[(ExprStmt expr=(Int value=1))])
+              else=(Block stmts=[(ExprStmt expr=(Int value=2))])
+            )
+          )
+          (ExprStmt expr=(Return))
+        ]
+      )
+    )
+    (Fn
+      name="values"
+      ret=(TName path=["int"])
+      body=(Block stmts=[(ExprStmt expr=(Int value=5) semi=true)])
+    )
+  ]
+)

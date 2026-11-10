@@ -34,7 +34,7 @@ async fn process_file(path: str, password: str, mode: Mode) -> Result[void, str]
 
 async fn prompt(label: str) -> str {
     io.print(label)
-    (await io.read_line()).trim()                          // a view: keeps the line's buffer (§5.1)
+    (await io.read_line()).trim()                          // a view: keeps the line's buffer (§9.6)
 }
 
 async fn main() {
@@ -69,7 +69,7 @@ async fn main() {
         }
 
         // Each process_file call schedules a task immediately. Its arguments are views of `let`
-        // bindings nobody writes, so they become shares and no same-statement await is needed (§7).
+        // bindings nobody writes, so they become shares and no same-statement await is needed (§11.2).
         let promises = files
             .filter(#{ f =>
             match mode {
