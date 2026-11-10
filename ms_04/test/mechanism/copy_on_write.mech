@@ -1,0 +1,8 @@
+load_config
+with_tag  owned [base]
+  13:13  base  move
+  14:5  write c.tags  checked
+  15:5  c  move
+main
+  20:19  a  share
+  22:19  b  move

@@ -8,8 +8,10 @@
 //   node src/cli.ts check   <entry>...   the whole front end on each program (parse, resolve, check,
 //                                        effects, access) (a file, a folder or a
 //                                        project); diagnostics only, exit 1 on errors
+//   node src/cli.ts mech    <file.ms>    pass 8: move / share / view per use, copy-on-write checks, heap
 //   node src/cli.ts js      <entry>      the program compiled to JavaScript
-//   node src/cli.ts run     <entry>      compile to JavaScript and run it
+//   node src/cli.ts run     <entry>      compile to JavaScript and run it (--stats: copies made;
+//                                        --no-mech: without pass 8, every handed-over read shares)
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve as resolvePath } from "node:path";
@@ -23,6 +25,7 @@ import { dumpTypes } from "./check_dump.ts";
 import { dumpFun } from "./hir_dump.ts";
 import { frontEnd } from "./pipeline.ts";
 import { showSummary } from "./effects.ts";
+import { showMechanisms } from "./mechanism.ts";
 import { parse } from "./parser.ts";
 import { compile, runJs } from "./js/run.ts";
 import { sexpr } from "./sexpr.ts";
@@ -58,11 +61,14 @@ function main(args: string[]): number | Promise<number> {
     const [cmd, ...rest] = args;
     switch (cmd) {
         case "js": case "run": {
-            if (rest.length !== 1) {
-                console.log(`usage: ms ${cmd} <entry>`);
+            const stats = rest.includes("--stats");
+            const noMech = rest.includes("--no-mech");
+            const entries = rest.filter((x) => x !== "--stats" && x !== "--no-mech");
+            if (entries.length !== 1) {
+                console.log(`usage: ms ${cmd} <entry> [--no-mech]${cmd === "run" ? " [--stats]" : ""}`);
                 return 2;
             }
-            const c = compile(rest[0]!);
+            const c = compile(entries[0]!, { mechanisms: !noMech });
             const errors = c.diagnostics.filter((d) => d.severity === "error");
             printDiagnostics(cmd === "run" ? errors : c.diagnostics);
             for (const p of c.hirProblems) console.error(`HIR: ${p}`);
@@ -71,7 +77,7 @@ function main(args: string[]): number | Promise<number> {
                 console.log(c.js);
                 return 0;
             }
-            return runJs(c.js);
+            return runJs(c.js, { stats });
         }
         case "lex": {
             for (const f of rest) process.stdout.write(dumpTokens(lex(readFileSync(f))));
@@ -137,6 +143,21 @@ function main(args: string[]): number | Promise<number> {
             }
             return errors > 0 ? 1 : 0;
         }
+        case "mech": {
+            let errors = 0;
+            for (const f of rest) {
+                const fe = frontEnd(f, { tests: true });
+                const full = resolvePath(f);
+                const lines = new LineMap(readFileSync(full));
+                if (fe.mechanisms) {
+                    for (const fun of fe.hir.funs.filter((x) => x.file === full)) {
+                        for (const l of showMechanisms(fun, fe.mechanisms, (o) => { const lc = lines.lineCol(o); return `${lc.line}:${lc.col}`; })) console.log(l);
+                    }
+                }
+                errors += printDiagnostics(fe.diagnostics);
+            }
+            return errors > 0 ? 1 : 0;
+        }
         case "check": {
             let errors = 0;
             const seen = new Set<string>();
@@ -154,7 +175,7 @@ function main(args: string[]): number | Promise<number> {
             return errors > 0 ? 1 : 0;
         }
         default:
-            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms check <entry>... | ms js <entry> | ms run <entry>");
+            console.log("usage: ms lex <file> | ms parse <file> | ms resolve <file> | ms types <file> | ms hir <file> | ms effects <file> | ms mech <file> | ms check <entry>... | ms js <entry> | ms run <entry>");
             return cmd === undefined || cmd === "help" ? 0 : 2;
     }
 }

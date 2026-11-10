@@ -19,7 +19,8 @@
     "effects": "node src/cli.ts effects",
     "check": "node src/cli.ts check",
     "js": "node src/cli.ts js",
-    "run": "node src/cli.ts run"
+    "run": "node src/cli.ts run",
+    "mech": "node src/cli.ts mech"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

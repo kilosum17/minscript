@@ -1663,9 +1663,14 @@ Passes don't modify the AST: the resolver and the checker return side tables key
 
 ### 15.2 Pass 8: mechanism selection [D]
 
-- *Move vs share.* A use is a move if it is the last use of that binding on every path (a backward liveness scan); otherwise it is a share.
-- *Copy-on-write placement.* A write to a value that might be shared compiles to `if !unique(x) { x = copy(x) }`. Uniqueness proven by pass 8 (for example a fresh `var` never shared) removes the check.
-- *Heap promotion.* A local whose buffer is reached by a `keeps` or a stored view is allocated on the heap; everything else stays on the stack or in caller-provided return storage.
+One function body at a time, after the access check, with the callees' summaries. `ms mech file.ms` prints the result.
+
+- *Uses.* Each read of a whole local or parameter is a **copy** (a Copy type), a **view** (it is only lent: an operand, a receiver, a match subject, an argument to a borrowed parameter), or, where the value is handed over (bound, stored in a field or a collection, returned, passed to an owned parameter), a **move** or a **share**.
+- *Move vs share.* A handed-over use is a move if it is the last use of that binding on every path (a backward liveness scan; loops to a fixpoint); otherwise it is a share. A binding never moves when it is captured by a closure, is a `shared` cell or a write view, or is live after an enclosing `recover` (a panic can leave the block at any point). A read with a path (`u.tags`) that is handed over is a share.
+- *Owned and borrowed parameters.* A parameter whose value the body moves (`var c = base` at its last use) is **owned**: callers hand it over, moving or sharing it, and never lend it. Every other parameter is **borrowed** and callers pass a view. A callee's ownership depends on its own callees', so it is computed to a fixpoint over the call graph, callees first; it only grows, so it terminates (the samples settle in one round, plus one that confirms). Parameters stay borrowed when not every caller is known statically: a function used as a value, an interface method, a closure parameter, a receiver. An `async fn` owns all its parameters, since its task outlives the call. A builtin owns what its `#[effects]` keeps or consumes.
+- *Copy-on-write placement.* A write to a value that might be shared compiles to `if !unique(x) { x = copy(x) }`. Uniqueness proven by pass 8 removes the check at the root: a local whose every value is a fresh literal, never shared, and never lent to a call whose result may be a view of it. Checks below the root stay.
+- *Heap promotion.* A local whose buffer is reached by a `keeps` (passed to a parameter the callee keeps, or captured by a closure that escapes) is allocated on the heap; everything else stays on the stack or in caller-provided return storage.
+- *Meaning is unchanged.* Mechanism selection only removes shares and checks: a program prints the same with it as without (`ms run --no-mech`), which the test suite checks.
 
 ### 15.3 Packages, interfaces and caching [D]
 
@@ -1726,6 +1731,7 @@ JS has no refcount, so the back end tracks one **shared bit** per buffer (`$s` o
 - A **share** sets `$s = true` on the value. A **move** does not.
 - A **write** to a value with `$s` set first copies it (shallow; the copy has `$s = false`), then writes the copy.
 - The bit is never cleared on the original, so JS may copy where native would not. That is correct, only slower; mechanism selection keeps shares rare.
+- A move or a view sets nothing (§15.2). A builtin that returns a view of an element (`get`, `first`, an iterator's `next`) shares that element, and `iter()` shares its collection, so a later write to the collection copies instead of changing what the view sees.
 
 ### 16.3 Control and runtime [D]
 
@@ -2282,7 +2288,7 @@ Build in this order so each step can be tested on its own. The JS back end can r
 | 5 | **Effect summaries** (§15.1), including `consumes`, `invokes` and `#[effects]`. **Done** (2026-11-10) | `src/effects.ts` | `ms effects` matches the golden file for Appendix A (`test/effects/`); a 60-function recursive ring converges without `L_SUMMARY_WIDENED`, and every program of `examples/` and `samples/` does too. The stage1 parser is v0.2 code: measure its SCC when it is ported (step 11) |
 | 6 | **Access check** (pass 7, §15.1): the access errors of §18.3. **Done** (2026-11-10) | `src/access.ts` | one passing and one failing test per error (`test/access/`); every program of `examples/` and `samples/` passes, and the shop sample's commented-out mistakes give the errors their comments name |
 | 7 | **JS back end** (§16) and runtime (shared bit, `Symbol` table, hash map, `Panic`, `once`). **Done** (2026-11-10) | `src/js/emit.ts`, `src/js/runtime.ts`, `src/js/run.ts` | every program of `examples/run/` and `examples/packages/` prints its `.out` (`test/run.test.ts`), except those that need std packages written in step 10, which are skipped by name; every program of `examples/` and `samples/` compiles to JS that parses. The std tests run on Node once step 10 writes them |
-| 8 | **Mechanism selection** (§15.2) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call |
+| 8 | **Mechanism selection** (§15.2). **Done** (2026-11-10) | `src/mechanism.ts` | Appendix A.2 shows a move on the second call (`test/mechanism/copy_on_write.ms`: 2 copies instead of 4); every `test/mechanism/` program prints the same with and without pass 8 |
 | 9 | **Lints** (§18.4) | `src/lint.ts` | each lint has a firing and a quiet test |
 | 10 | **std** in v0.4 MinScript | `std/**` | std tests pass |
 | 11 | **Self-host:** port the stage1 compiler to v0.4 (identity AST nodes, `Symbol` identifiers, `once` fields) | self-hosted sources | it compiles itself |

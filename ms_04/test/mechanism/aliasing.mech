@@ -1,0 +1,64 @@
+grow  owned [v]
+  12:13  v  move
+  13:5  write w  checked
+  14:5  w  view
+append  owned [acc]
+  18:15  acc  move
+  19:5  write out  checked
+  20:5  out  move
+shrink
+  25:13  v  share
+  26:5  write w  checked
+  27:5  w  view
+later  owned [v]
+  31:13  v  move
+  32:5  write w  checked
+  33:5  w  move
+main
+  39:34  acc  move
+  40:37  acc  view
+  45:17  base  share
+  46:9  write c  checked
+  47:39  c  view
+  49:31  base  view
+  53:8  acc  view
+  54:30  x  view
+  56:17  x  move
+  57:9  write y  checked
+  58:43  y  view
+  63:8  acc  view
+  64:17  z  share
+  65:9  write y  checked
+  67:43  z  view
+  72:17  r0  share
+  73:9  write y  checked
+  77:29  r  view
+  77:43  r0  view
+  81:13  cap  view
+  82:13  cap  share
+  83:5  write w  checked
+  84:30  f  view
+  84:37  w  view
+  88:38  a  share
+  88:44  a  view
+  93:32  g  view
+  93:34  b  share
+  93:40  b  view
+  97:27  xs  share
+  97:34  xs  view
+  98:5  write p.items  unique
+  99:39  xs  view
+  103:13  fresh  view
+  104:5  write fresh[0].n  checked
+  105:33  o  view
+  109:18  nums  view
+  110:5  write nums  checked
+  112:14  walker  view
+  113:38  nums  view
+  117:11  opt  view
+  119:21  v  move
+  120:13  write m  checked
+  121:35  m  view
+  121:40  opt  view
+  128:39  t  share
+  128:45  t  view

@@ -14,6 +14,7 @@
 
 import { LineMap } from "../diagnostic.ts";
 import type * as H from "../hir.ts";
+import type { MechanismResult } from "../mechanism.ts";
 import type { Sym } from "../resolve.ts";
 import * as T from "../types.ts";
 import type { Ty } from "../types.ts";
@@ -25,6 +26,8 @@ export interface EmitOptions {
     isStd: (file: string) => boolean;
     /** how a file is named in panics */
     displayName: (file: string) => string;
+    /** pass 8: which reads move or lend instead of sharing, which writes skip the uniqueness check */
+    mechanisms?: MechanismResult | null;
 }
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_$]/g, (c) => (c === "." ? "$" : "_"));
@@ -452,7 +455,8 @@ class FnEmitter {
     /** A value that will be bound, stored, passed or returned: a read of a place is shared. */
     value(e: H.Expr, to?: Ty): string {
         const v = this.expr(e);
-        const shared = e.k === "read" && !isCopyTy(e.ty) ? `$rt.s(${v})` : v;
+        const tag = e.k === "read" ? this.e.opts.mechanisms?.tags.get(e) : undefined;
+        const shared = e.k === "read" && !isCopyTy(e.ty) && tag !== "move" && tag !== "view" ? `$rt.s(${v})` : v;
         return to ? this.coerce(shared, e, to) : shared;
     }
 
@@ -666,7 +670,8 @@ class FnEmitter {
         }
         let lv = this.rootExpr(p.root);
         const view = p.root.k === "local" && this.writeViews.has(p.root.local);
-        if (p.root.k !== "value" && !view) this.emit(`${lv} = $rt.u(${lv});`);
+        const proven = p.root.k === "local" && !!this.e.opts.mechanisms?.unique.has(p.root.local);
+        if (p.root.k !== "value" && !view && !proven) this.emit(`${lv} = $rt.u(${lv});`);
         else if (p.root.k === "value") {
             const t = this.temp();
             this.emit(`const ${t} = ${lv};`);
@@ -709,6 +714,7 @@ class FnEmitter {
     /** The place made unique all the way down, stored back, and its value (write views, `*this`). */
     uniquePlace(p: H.Place): string {
         if (p.root.k === "local" && this.writeViews.has(p.root.local) && p.segs.length === 0) return this.rootExpr(p.root);
+        if (p.root.k === "local" && p.segs.length === 0 && this.e.opts.mechanisms?.unique.has(p.root.local)) return this.rootExpr(p.root);
         const w = this.prepare(p);
         const t = this.temp();
         this.emit(`const ${t} = $rt.u(${w.readNow()});`);

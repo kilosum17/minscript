@@ -1,4 +1,5 @@
-// The front end as one call: load, resolve, type-check, lower to HIR, compute witnesses, validate.
+// The front end as one call: load, resolve, type-check, lower to HIR, compute witnesses, validate,
+// effect summaries, the access check and mechanism selection.
 
 import { checkProgram, type CheckResult } from "./check.ts";
 import type { Diagnostic } from "./diagnostic.ts";
@@ -9,6 +10,7 @@ import { lowerProgram, type LowerPackage } from "./lower.ts";
 import { computeWitnesses } from "./witness.ts";
 import { computeEffects, type EffectsResult } from "./effects.ts";
 import { checkAccess } from "./access.ts";
+import { selectMechanisms, type MechanismResult } from "./mechanism.ts";
 
 export interface FrontEnd {
     program: Program;
@@ -17,6 +19,8 @@ export interface FrontEnd {
     /** HIR invariants lowering broke: compiler bugs */
     hirProblems: string[];
     effects: EffectsResult;
+    /** pass 8; null when there are errors */
+    mechanisms: MechanismResult | null;
     diagnostics: Diagnostic[];
 }
 
@@ -33,9 +37,11 @@ export function frontEnd(entry: string, opts: LoadOptions = {}): FrontEnd {
     const effects = computeEffects(hir);
     const frontDiagnostics = [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics];
     // the access check needs well-typed code: after type errors its findings would be noise
-    const access = frontDiagnostics.some((d) => d.severity === "error") ? [] : checkAccess(hir, effects.summaries);
+    const ok = !frontDiagnostics.some((d) => d.severity === "error");
+    const access = ok ? checkAccess(hir, effects.summaries) : [];
+    const mechanisms = ok && !access.some((d) => d.severity === "error") ? selectMechanisms(hir, effects.summaries) : null;
     return {
-        program, checked, hir, hirProblems: checkHir(hir), effects,
+        program, checked, hir, hirProblems: checkHir(hir), effects, mechanisms,
         diagnostics: [...frontDiagnostics, ...effects.diagnostics, ...access],
     };
 }

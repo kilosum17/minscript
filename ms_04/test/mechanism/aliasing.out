@@ -1,0 +1,15 @@
+loop accumulate: [0, 1, 2]
+per iteration: [1, 0]
+per iteration: [1, 1]
+base kept: [1]
+moved in a branch: [1, 2, 3]
+used after the branch: [5]
+recover: true [9]
+captured: 1 2
+owned param: 2 [1]
+as a value: 1 [2, 2]
+struct: [1, 2, 3, 4] [1, 2, 3]
+view result: 0 5
+iterator: 2 3
+match: [8, 8] Some([8])
+async: [6, 7] [6]

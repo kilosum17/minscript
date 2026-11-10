@@ -201,7 +201,11 @@ export function u(x: Any): Any {
     return copy(x);
 }
 
+/** Run-time counters, for `ms run --stats` and the mechanism tests. */
+export const stats = { copies: 0 };
+
 function copy(x: Any): Any {
+    stats.copies++;
     let c: Any;
     if (x instanceof Vec || x instanceof Tup) {
         c = x instanceof Vec ? new Vec() : new Tup();
@@ -807,7 +811,7 @@ const builtins: Record<string, Any> = {
 
     "prelude.Vec.with_capacity": () => new Vec(),
     "prelude.Vec.len": (v: Vec) => v.length,
-    "prelude.Vec.get": (v: Vec, i: Any) => (Number(i) >= 0 && Number(i) < v.length ? some(v[Number(i)]) : None),
+    "prelude.Vec.get": (v: Vec, i: Any) => (Number(i) >= 0 && Number(i) < v.length ? some(s(v[Number(i)])) : None),
     "prelude.Vec.push": (v: Vec, x: Any) => void v.push(x),
     "prelude.Vec.pop": (v: Vec) => (v.length > 0 ? some(v.pop()) : None),
     "prelude.Vec.insert": (v: Vec, i: Any, x: Any) => {
@@ -841,19 +845,19 @@ const builtins: Record<string, Any> = {
         v[Number(i)] = x;
         return x;
     },
-    "prelude.Vec.iter": (v: Vec) => iterator(v),
+    "prelude.Vec.iter": (v: Vec) => iterator(s(v)),
     "prelude.Array.len": (v: Any) => v.length,
-    "prelude.Array.get": (v: Any, i: Any) => (Number(i) >= 0 && Number(i) < v.length ? some(v[Number(i)]) : None),
-    "prelude.Array.iter": (v: Any) => iterator(v),
+    "prelude.Array.get": (v: Any, i: Any) => (Number(i) >= 0 && Number(i) < v.length ? some(s(v[Number(i)])) : None),
+    "prelude.Array.iter": (v: Any) => iterator(s(v)),
     "prelude.Slice.len": (v: Any) => v.length,
-    "prelude.Slice.get": (v: Any, i: Any) => (Number(i) >= 0 && Number(i) < v.length ? some(v[Number(i)]) : None),
-    "prelude.Slice.iter": (v: Any) => iterator(v),
+    "prelude.Slice.get": (v: Any, i: Any) => (Number(i) >= 0 && Number(i) < v.length ? some(s(v[Number(i)])) : None),
+    "prelude.Slice.iter": (v: Any) => iterator(s(v)),
 
     "prelude.Map.new": () => new MsMap(),
     "prelude.Map.len": (m: MsMap) => m.m.size,
     "prelude.Map.get": (m: MsMap, k: Any) => {
         const e = m.m.get(key(k));
-        return e ? some(e[1]) : None;
+        return e ? some(s(e[1])) : None;
     },
     "prelude.Map.has": (m: MsMap, k: Any) => m.m.has(key(k)),
     "prelude.Map.insert": (m: MsMap, k: Any, v: Any) => {
@@ -910,7 +914,7 @@ const builtins: Record<string, Any> = {
     },
     "prelude.PMap.get": (m: MsMap, k: Any) => {
         const e = m.m.get(key(k));
-        return e ? some(e[1]) : None;
+        return e ? some(s(e[1])) : None;
     },
     "prelude.PMap.has": (m: MsMap, k: Any) => m.m.has(key(k)),
     "prelude.PMap.len": (m: MsMap) => m.m.size,
@@ -1071,12 +1075,12 @@ function variantOrObj(name: string): Any {
 function iterator(xs: Any[]): Any {
     let i = 0;
     const it: Any = {
-        next: () => (i < xs.length ? some(xs[i++]) : None),
-        map: (f: Any) => iterator(xs.slice(i).map((x) => f(x))),
-        filter: (f: Any) => iterator(xs.slice(i).filter((x) => f(x))),
-        collect: () => vec(...xs.slice(i)),
+        next: () => (i < xs.length ? some(s(xs[i++])) : None),
+        map: (f: Any) => iterator(xs.slice(i).map((x) => f(s(x)))),
+        filter: (f: Any) => iterator(xs.slice(i).filter((x) => f(s(x))).map(s)),
+        collect: () => vec(...xs.slice(i).map(s)),
         [Symbol.iterator]: function* () {
-            while (i < xs.length) yield xs[i++];
+            while (i < xs.length) yield s(xs[i++]);
         },
     };
     return it;
