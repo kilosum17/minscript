@@ -351,7 +351,7 @@ class FunctionEffects {
         for (let i = 0; i < 6 && this.bindings(body); i++);
         this.calls.length = 0;
         this.block(body);
-        if (body.value) merge(this.result, this.src(body.value));
+        if (body.value) merge(this.result, this.resultSrc(body.value));
         // substitute the callees' summaries
         for (const c of this.calls) this.substitute(c);
         // the result is a view of, or holds shares of, these paths: the caller decides whether it keeps it
@@ -523,6 +523,15 @@ class FunctionEffects {
             default:
                 return none();
         }
+    }
+
+    /** A returned value's sources: a `-> *T` function returns a view even of a Copy element. */
+    resultSrc(e: H.Expr): Src {
+        if (this.f.retMode === "write" && e.k === "read") {
+            const s = this.placeSrc(e.place);
+            return { views: s.views, holds: s.holds, write: true };
+        }
+        return this.src(e);
     }
 
     /** A composite value holds shares of what its parts are (§9.6). */
@@ -715,7 +724,7 @@ class FunctionEffects {
             case "return":
                 if (e.value) {
                     this.expr(e.value, false);
-                    merge(this.result, this.src(e.value));
+                    merge(this.result, this.resultSrc(e.value));
                 }
                 return;
             case "lock":

@@ -8,6 +8,7 @@ import { loadPrelude, loadProgram, type LoadOptions, type Program } from "./load
 import { lowerProgram, type LowerPackage } from "./lower.ts";
 import { computeWitnesses } from "./witness.ts";
 import { computeEffects, type EffectsResult } from "./effects.ts";
+import { checkAccess } from "./access.ts";
 
 export interface FrontEnd {
     program: Program;
@@ -30,8 +31,11 @@ export function frontEnd(entry: string, opts: LoadOptions = {}): FrontEnd {
     const hir = lowerProgram(packages);
     computeWitnesses(hir);
     const effects = computeEffects(hir);
+    const frontDiagnostics = [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics];
+    // the access check needs well-typed code: after type errors its findings would be noise
+    const access = frontDiagnostics.some((d) => d.severity === "error") ? [] : checkAccess(hir, effects.summaries);
     return {
         program, checked, hir, hirProblems: checkHir(hir), effects,
-        diagnostics: [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics, ...effects.diagnostics],
+        diagnostics: [...frontDiagnostics, ...effects.diagnostics, ...access],
     };
 }

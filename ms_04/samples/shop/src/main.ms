@@ -94,7 +94,7 @@ async fn main() {
             continue
         }
         order := Order { id: o.id, customer: who, channel: o.channel, lines: o.lines, payment: payment(o.pay) }
-        // screen(order)   // E_WRITE_TO_IMMUTABLE: `order` is `:=`; a `*Order` needs `:==` / `var`
+        // order.flags.push("vip")   // E_WRITE_TO_IMMUTABLE: `order` is `:=`; `push` takes `*this`
         await jobs.publish(order) or break
         sent += 1
     }

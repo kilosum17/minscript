@@ -30,10 +30,12 @@ export interface Program {
 export interface FieldDef {
     name: string;
     mode: "shared" | "once" | null;
+    /** its declared type (generic parameters unsubstituted) */
+    ty: Ty;
 }
 
 export type TypeDef =
-    | { kind: "struct"; name: string; fields: FieldDef[]; identity: boolean; unique: boolean }
+    | { kind: "struct"; name: string; sym: Sym | null; fields: FieldDef[]; identity: boolean; unique: boolean }
     | { kind: "union"; name: string; variants: { name: string; fields: string[]; positional: boolean }[] }
     | { kind: "inter"; name: string; methods: string[] };
 

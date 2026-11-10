@@ -5,7 +5,8 @@
 //   node src/cli.ts types   <file.ms>    the type of each binding and parameter (whole program checked)
 //   node src/cli.ts hir     <file.ms>    the file's functions lowered to HIR, with access paths and witnesses
 //   node src/cli.ts effects <file.ms>    the effect summary of each of the file's functions
-//   node src/cli.ts check   <entry>...   parse + load + resolve + type-check each program (a file, a folder or a
+//   node src/cli.ts check   <entry>...   the whole front end on each program (parse, resolve, check,
+//                                        effects, access) (a file, a folder or a
 //                                        project); diagnostics only, exit 1 on errors
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -121,9 +122,9 @@ function main(args: string[]): number {
             let errors = 0;
             const seen = new Set<string>();
             for (const entry of rest) {
-                const program = loadProgram(entry, { tests: true });
-                const checked = checkProgram(program, loadPrelude().file);
-                const all = [...program.diagnostics, ...checked.prelude.diagnostics, ...checked.diagnostics];
+                const fe = frontEnd(entry, { tests: true });
+                const program = fe.program;
+                const all = fe.diagnostics;
                 const fresh = all.filter((d) => !seen.has(`${d.file}:${d.start}:${d.code}`));
                 for (const d of fresh) seen.add(`${d.file}:${d.start}:${d.code}`);
                 errors += printDiagnostics(fresh);

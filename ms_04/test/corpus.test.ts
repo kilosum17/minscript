@@ -8,7 +8,8 @@
 //   its `.refs` snapshot;
 // - test/check/*.ms, resolved and type-checked the same way: annotations, or a `.types` snapshot;
 // - test/hir/*.ms, lowered with the whole front end: valid HIR and a `.hir` snapshot;
-// - test/effects/*.ms: every function's effect summary, an `.effects` snapshot (spec §9.5).
+// - test/effects/*.ms: every function's effect summary, an `.effects` snapshot (spec §9.5);
+// - test/access/*.ms: whole programs through the access check; diagnostics match `//~` exactly.
 // UPDATE_SNAPSHOTS=1 rewrites the snapshots (`npm run test:update`): review the diff.
 
 import assert from "node:assert/strict";
@@ -164,5 +165,15 @@ for (const f of msFiles(join(root, "test/effects"))) {
         const funs = fe.hir.funs.filter((x) => x.file === f);
         const width = Math.max(...funs.map((x) => x.name.length));
         snapshot(f.replace(/\.ms$/, ".effects"), funs.map((x) => `${x.name.padEnd(width)}  ${showSummary(fe.effects.summaries.get(x)!)}`).join("\n") + "\n");
+    });
+}
+
+for (const f of msFiles(join(root, "test/access"))) {
+    test(`access/${relative(join(root, "test/access"), f)}`, () => {
+        const fe = frontEnd(f);
+        const src = readFileSync(f);
+        const lines = new LineMap(src);
+        const actual = fe.diagnostics.filter((d) => d.file === f).map((d) => `${lines.line(d.start)}: ${d.code}`);
+        assert.deepEqual(sortCodes(actual), sortCodes(expectedCodes(readFileSync(f, "utf8"))), show(fe.diagnostics, f, src));
     });
 }

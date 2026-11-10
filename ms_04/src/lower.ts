@@ -245,8 +245,8 @@ class Lowerer {
         const marks = (impls: A.Type[], n: string) => impls.some((i) => i.kind === "TName" && this.refs.get(i)?.pkg === "prelude" && this.refs.get(i)?.name === n);
         if (item.kind === "TypeDecl") {
             if (item.alias) return;
-            const fields = (item.members ?? []).filter((m): m is A.Field => m.kind === "Field").map((f) => ({ name: f.name, mode: f.mode }));
-            this.out.types.push({ kind: "struct", name, fields, identity: marks(item.impls, "Identity"), unique: marks(item.impls, "Unique") });
+            const fields = (item.members ?? []).filter((m): m is A.Field => m.kind === "Field").map((f) => ({ name: f.name, mode: f.mode, ty: this.fieldTy(f) }));
+            this.out.types.push({ kind: "struct", name, sym: sym ?? null, fields, identity: marks(item.impls, "Identity"), unique: marks(item.impls, "Unique") });
         } else if (item.kind === "UnionDecl") {
             const variants = item.members.filter((m): m is A.Variant => m.kind === "Variant").map((v) => ({
                 name: v.name, fields: v.fields ? v.fields.map((f) => f.name) : (v.tuple ?? []).map((_, i) => String(i)), positional: !v.fields,
@@ -255,6 +255,19 @@ class Lowerer {
         } else {
             this.out.types.push({ kind: "inter", name, methods: (item.methods ?? []).map((m) => m.name) });
         }
+    }
+
+    /** A field's declared type, from its default's or a constructor's recorded type, else by name. */
+    fieldTy(f: A.Field): Ty {
+        if (f.type.kind === "TName" && f.type.args.length === 0) {
+            const s = this.refs.get(f.type);
+            if (s && (s.kind === "type" || s.kind === "union")) return { k: "named", sym: s, args: [] };
+        }
+        if (f.type.kind === "TName") {
+            const s = this.refs.get(f.type);
+            if (s && (s.kind === "type" || s.kind === "union")) return { k: "named", sym: s, args: f.type.args.map(() => T.UNKNOWN) };
+        }
+        return T.UNKNOWN;
     }
 
     fn(fn: A.FnDecl, _self: Ty | null, outer: Sym[], abi: string | null = null): void {
