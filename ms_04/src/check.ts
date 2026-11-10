@@ -132,6 +132,62 @@ class World {
     /** each method's receiver symbol */
     readonly thisOf = new Map<object, Sym>();
 
+    /** See `CheckedProgram.membersOf`. Interface defaults come after a type's own methods. */
+    membersOf(t: Ty): MemberInfo[] {
+        const p = T.prune(t);
+        const out: MemberInfo[] = [];
+        const seen = new Set<string>();
+        const add = (m: MemberInfo) => {
+            if (seen.has(m.name)) return;
+            seen.add(m.name);
+            out.push(m);
+        };
+        const interMethods = (types: A.Type[], visited = new Set<Sym>()): A.FnDecl[] => {
+            const fns: A.FnDecl[] = [];
+            for (const it of types) {
+                for (const part of it.kind === "TInter" ? it.parts : [it]) {
+                    const s = part.kind === "TName" ? this.refs.get(part) : undefined;
+                    const info = s ? this.infos.get(s) : undefined;
+                    if (!s || !info || info.kind !== "inter" || visited.has(s)) continue;
+                    visited.add(s);
+                    const d = info.decl as A.InterDecl;
+                    fns.push(...(d.methods ?? []), ...interMethods([...d.supers, ...(d.alias ? [d.alias] : [])], visited));
+                }
+            }
+            return fns;
+        };
+        if (p.k === "package") {
+            for (const [name, sym] of p.sym.target?.exports ?? []) add({ name, kind: "item", decl: null, sym });
+            return out;
+        }
+        if (p.k === "meta") {
+            const inner = T.prune(p.ty);
+            const info = inner.k === "named" ? this.infos.get(inner.sym) : undefined;
+            if (info) {
+                for (const [name, v] of info.variants) add({ name, kind: "variant", decl: v });
+                for (const m of info.methods) if (m.fn.receiver === null) add({ name: m.fn.name, kind: "static", decl: m.fn });
+            }
+            return out;
+        }
+        if (p.k === "record") for (const f of p.fields) add({ name: f.name, kind: "field", decl: null });
+        if (p.k === "tuple") p.elems.forEach((_, i) => add({ name: String(i), kind: "field", decl: null }));
+        if (p.k === "prim" || p.k === "lit") {
+            const name = p.k === "prim" ? p.name : litBase(p);
+            for (const m of this.primMethods.get(name) ?? []) if (m.fn.receiver !== null) add({ name: m.fn.name, kind: "method", decl: m.fn });
+        }
+        if (p.k === "named") {
+            const info = this.infos.get(p.sym);
+            if (info) {
+                for (const [name, f] of info.fields) add({ name, kind: "field", decl: f });
+                for (const m of info.methods) if (m.fn.receiver !== null) add({ name: m.fn.name, kind: "method", decl: m.fn });
+                for (const m of interMethods(info.interfaces)) if (m.receiver !== null) add({ name: m.name, kind: "method", decl: m });
+                if (info.kind === "inter") for (const m of interMethods([{ kind: "TName", span: { start: 0, end: 0 }, path: [p.sym.name], args: [] } as A.Type]).concat((info.decl as A.InterDecl).methods ?? [])) add({ name: m.name, kind: "method", decl: m });
+            }
+        }
+        for (const auto of ["to_str", "eq", "hash", "clone"]) add({ name: auto, kind: "auto", decl: null });
+        return out;
+    }
+
     add(files: ResolveFile[], res: Resolution, std: boolean): void {
         for (const f of res.openFiles) this.openFiles.add(f);
         for (const [k, v] of res.refs) this.refs.set(k, v);
@@ -206,7 +262,25 @@ class World {
 // ---- programs ----------------------------------------------------------------------------------
 
 /** Checks every package of a program, in dependency order, the prelude first. */
-export function checkProgram(program: Program, preludeFile: ResolveFile): { prelude: CheckResult; packages: Map<LoadedPackage, CheckResult>; diagnostics: Diagnostic[] } {
+/** A member of a type, for editors (completion after `x.` / `Type.` / `pkg.`). */
+export interface MemberInfo {
+    name: string;
+    kind: "field" | "method" | "static" | "variant" | "auto" | "item";
+    /** its declaration; null for generated methods and tuple elements */
+    decl: A.FnDecl | A.Field | A.Variant | null;
+    /** an item of a package (`pkg.`) */
+    sym?: Sym;
+}
+
+export interface CheckedProgram {
+    prelude: CheckResult;
+    packages: Map<LoadedPackage, CheckResult>;
+    diagnostics: Diagnostic[];
+    /** what can follow a value of type `t` and a `.` (fields, methods, statics, variants, package items) */
+    membersOf(t: Ty): MemberInfo[];
+}
+
+export function checkProgram(program: Program, preludeFile: ResolveFile): CheckedProgram {
     const world = new World();
     world.add([preludeFile], program.prelude, true);
     const prelude = new Checker(world, [preludeFile], program.prelude, true).run();
@@ -219,7 +293,7 @@ export function checkProgram(program: Program, preludeFile: ResolveFile): { prel
         packages.set(p, r);
         diagnostics.push(...r.diagnostics);
     }
-    return { prelude, packages, diagnostics };
+    return { prelude, packages, diagnostics, membersOf: (t) => world.membersOf(t) };
 }
 
 /** Checks one package on its own (with the prelude): what `ms check file.ms` does for a single file. */
