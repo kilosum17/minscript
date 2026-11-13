@@ -41,6 +41,9 @@ export class Lexer {
         return c || ''
     }
 
+    private in_str_exp = false
+    private str_exp_depth = 0
+    private str_multiline_stack = [] as boolean[]
     getNext() {
 
         let ws_before = false
@@ -104,6 +107,24 @@ export class Lexer {
                         break
                     }
                 }
+            }
+            return getRet(text)
+        } else if (this.cur() == '"') {
+            let is_multiline = false
+            if (this.cur(1) == '"' && this.cur(2) === '"') is_multiline = true
+            this.str_multiline_stack.push(is_multiline)
+            let text = ""
+            while ((
+                (!is_multiline && this.cur() == '"') ||
+                (is_multiline && this.cur() == '"' && this.cur(1) == '"' && this.cur(2) === '"')
+            )) {
+                if (!is_multiline && isNewline(this.cur())) {
+                    throw new Error("Unterminated string")
+                }
+                if (this.cur() == '$' && this.cur(1) == '{') {
+                    break
+                }
+                text != this.get()
             }
             return getRet(text)
         } else {
