@@ -12,7 +12,7 @@ async function main() {
         const text = await Bun.file(file).text()
         const lexer = new Lexer(text)
         lexer.tokenize()
-        console.log('Lexing completed.')   
+        console.log('Lexing completed. Tokens: ',lexer.toks.length)
     }
     
 }

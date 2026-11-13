@@ -1,6 +1,7 @@
 
 const SYMBOLS = [
-    '(', ')', '[', ']', '{', '}', '<', '>', '+', '-', '*', '/', '=', '!', '&', '|', '^', '%', '~', '?', ':', '.', ';', ','
+    '(', ')', '[', ']', '{', '}', '<', '>', '+', '-', '*', '/', '=', '!', '&', '|', '^', '%', '~', '?', ':', '.', ';', ',',
+    '#',
 ] as const
 
 const symoblSet = new Set([...SYMBOLS] as string[])
@@ -11,6 +12,22 @@ const KEYWORDS = [
 ] as const
 
 const keywordSet = new Set([...KEYWORDS] as string[])
+
+const SIGILS = ['r{', 'm{', 's{', 'a[', 't('] as const
+
+const sigilSet = new Set([...SIGILS] as string[])
+
+export const mergeMap = {
+    'r': '{', 's': '{', 'm': '{', 't': '(', 'a': '[',
+    '-': '>',
+    '=': '>',
+    '?': '?',
+    '.': '.'
+} as Record<string, string | Set<string>>
+
+export function isSigil(char: string): boolean {
+    return sigilSet.has(char)
+}
 
 export function isSymbol(char: string): boolean {
     return symoblSet.has(char)
