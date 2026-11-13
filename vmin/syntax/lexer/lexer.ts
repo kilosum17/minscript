@@ -1,5 +1,5 @@
-import type { Span, Token, TokenType } from "./lexer_types";
-import { isDigit, isIdentPart, isIdentStart, isNewline, isSigil, isSymbol, isWhitespace, mergeMap } from "./lexer_utils";
+import { Token, type Span, type TokenType } from "./lexer_types";
+import { isDigit, isIdentPart, isIdentStart, isNewline, isSigil, isSymbol, isWhitespace, KEYWORDS, mergeMap } from "./lexer_utils";
 
 export class Lexer {
     private source: string;
@@ -7,6 +7,7 @@ export class Lexer {
     private line = 1
     private col = 1
     toks = [] as Token[]
+    trivia = [] as Token[]
 
     constructor(source: string) {
         this.source = source;
@@ -19,12 +20,15 @@ export class Lexer {
         this.line = 1
         this.col = 1
         this.toks = []
+        this.tok_pos = 0
 
         while (true) {
             let part = this.getNext()
             console.log(this.printPart(part))
 
             const span: Span = {
+                start: part?.start_pos || this.pos,
+                end: this.pos,
                 start_line: part?.start_line || this.line,
                 start_col: part?.start_col || this.col,
                 end_line: this.line,
@@ -32,27 +36,60 @@ export class Lexer {
             }
 
             if (!part) {
-                this.toks.push({
-                    type: 'EOF',
-                    value: '<eof>',
-                    span,
-                } satisfies Token)
+                this.toks.push(this.getEofTok())
                 break
             } else {
-                this.toks.push({
-                    type: part.type,
-                    value: part.text,
+                const tok = new Token(
+                    part.type,
+                    part.text,
                     span,
-                } satisfies Token)
+                )
+                if (tok.type === 'COMMENT') this.trivia.push(tok)
+                else this.toks.push(tok)
             }
         }
     }
 
-    cur(offset = 0) {
+    private tok_pos = 0
+    peek(no = 0) {
+        const tok = this.toks[this.tok_pos + no]
+        return tok || this.getEofTok()
+    }
+
+    expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token) {
+        const tok = _tok ?? this.toks[this.tok_pos]
+        const got = `[${this.peek(-1).value}-${tok?.value}-${this.peek(1).value}]`
+        if (!tok || (tok.value != val && tok.type != val)) throw new Error(`Expected: ${val} got: ${got}`)
+        this.tok_pos++
+        return tok
+    }
+    expect_(val: string, _tok?: Token) {
+        return this.expect(val as any, _tok)
+    }
+    getTokPos() {
+        return this.tok_pos
+    }
+
+    next() {
+        const tok = this.toks[this.tok_pos]
+        this.tok_pos++
+        return tok || this.getEofTok()
+    }
+
+    private getEofTok() {
+        const span: Span = {
+            start: this.pos, end: this.pos,
+            start_line: this.line, start_col: this.col,
+            end_line: this.col, end_col: this.col
+        }
+        return new Token('EOF', "<eof>", span)
+    }
+
+    private cur(offset = 0) {
         return this.source[this.pos + offset] || ''
     }
 
-    get(n = 1) {
+    private get(n = 1) {
         let text = ''
         for (let i = 0; i < n; i++) {
             let c = this.source[this.pos]
@@ -75,7 +112,7 @@ export class Lexer {
     private str_exp_mode = 'expr' as 'raw' | 'expr'
     private str_exp_depth = 0
     private str_multiline_stack = [] as boolean[]
-    getNext() {
+    private getNext() {
         let ws_before = false
         let nl_before = false
         let is_comment = false
@@ -90,11 +127,12 @@ export class Lexer {
 
         let start_line = this.line
         let start_col = this.col
+        let start_pos = this.pos
 
         function getRet(text: string) {
             return {
                 text, ws_before, nl_before, is_comment,
-                start_line, start_col, type,
+                start_line, start_col, type, start_pos,
             }
         }
 

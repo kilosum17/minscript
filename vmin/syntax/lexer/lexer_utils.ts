@@ -1,19 +1,20 @@
 
-const SYMBOLS = [
+export const SYMBOLS = [
     '(', ')', '[', ']', '{', '}', '<', '>', '+', '-', '*', '/', '=', '!', '&', '|', '^', '%', '~', '?', ':', '.', ';', ',',
     '#',
 ] as const
 
 const symoblSet = new Set([...SYMBOLS] as string[])
-const KEYWORDS = [
-    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const',
+
+export const KEYWORDS = [
+    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const','as',
     'class', 'extends', 'super', 'this', 'new', 'delete', 'TypeOf', 'is', 'in', 'void', 'yield', 'await', 'package', 'import', 'pub'
     // Add more keywords as needed
 ] as const
 
 const keywordSet = new Set([...KEYWORDS] as string[])
 
-const SIGILS = ['r{', 'm{', 's{', 'a[', 't('] as const
+export const SIGILS = ['r{', 'm{', 's{', 'a[', 't('] as const
 
 const sigilSet = new Set([...SIGILS] as string[])
 
