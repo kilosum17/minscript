@@ -1,0 +1,6 @@
+code 0, value 7, stdout captured
+printed
+code 0, value 0, stdout ''
+panic: Error: boom
+code 101, value 0
+shell 3

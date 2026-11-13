@@ -1,0 +1,15 @@
+read: alpha
+inner is a dir: true
+walk: ["/a.txt", "/inner/b.txt"]
+missing: ENOENT
+exists after remove: false
+env: on, args: 0
+slept: true
+math: 4.0 3 7 true
+point: 1.5 2.0 no label
+json: {"x":1.5,"y":2,"label":null}
+first label: origin
+shape error: expected an object
+crypto: 10 bytes back, wrong password fails: true
+sha256: ba7816bf8f01
+io: one 2 3.5

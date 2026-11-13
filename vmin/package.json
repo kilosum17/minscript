@@ -1,0 +1,16 @@
+{
+  "name": "vmin",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lex":"bun run index.ts lex",
+    "typecheck": "bun check"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  }
+}

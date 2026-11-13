@@ -1,0 +1,6 @@
+["a:hi", "a:there", "b:hi", "b:there"]
+squares [1, 4, 9, 16]
+answer 42
+online [2, 1, 0]
+message 7 timeout Some(8)
+timed out: true
