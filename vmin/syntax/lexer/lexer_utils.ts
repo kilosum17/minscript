@@ -1,14 +1,15 @@
 
 export const SYMBOLS = [
     '(', ')', '[', ']', '{', '}', '<', '>', '+', '-', '*', '/', '=', '!', '&', '|', '^', '%', '~', '?', ':', '.', ';', ',',
-    '#',
+    '->', '=>', '#',
 ] as const
 
 const symoblSet = new Set([...SYMBOLS] as string[])
 
 export const KEYWORDS = [
-    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const','as',
-    'class', 'extends', 'super', 'this', 'new', 'delete', 'TypeOf', 'is', 'in', 'void', 'yield', 'await', 'package', 'import', 'pub'
+    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const', 'as',
+    'class', 'extends', 'super', 'this', 'new', 'delete', 'TypeOf', 'is', 'in', 'void', 'yield', 'await', 'package', 'import',
+    'pub', 'type', 'async', 'union'
     // Add more keywords as needed
 ] as const
 

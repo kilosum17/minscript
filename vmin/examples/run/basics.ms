@@ -6,7 +6,23 @@ import pub "std.build.*" as bld
 import "std.fs" as fs2
 
 type Point { x: int, y: int }
-type Account { owner: str, balance: i64, tags: Vec[str] = [], note: str? }
+pub type Account {
+    owner: str, 
+    balance: i64, 
+    tags: Vec[str],
+    // tags2:Vec[str]=[],
+    note: str? 
+}
+
+type Point2 { 
+    x: int,
+    y: int 
+
+    fn dist(this)->int{
+        this.x + this.y
+    }
+
+}
 
 union Shape {
     Circle { r: f64 }

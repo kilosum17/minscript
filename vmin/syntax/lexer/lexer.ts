@@ -42,6 +42,8 @@ export class Lexer {
                 const tok = new Token(
                     part.type,
                     part.text,
+                    part.ws_before,
+                    part.nl_before,
                     span,
                 )
                 if (tok.type === 'COMMENT') this.trivia.push(tok)
@@ -58,9 +60,9 @@ export class Lexer {
 
     expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token) {
         const tok = _tok ?? this.toks[this.tok_pos]
-        const got = `[${this.peek(-1).value}-${tok?.value}-${this.peek(1).value}]`
-        if (!tok || (tok.value != val && tok.type != val)) throw new Error(`Expected: ${val} got: ${got}`)
-        this.tok_pos++
+        const got = `[${this.peek(-1).val}-${tok?.val}-${this.peek(1).val}]`
+        if (!tok || (tok.val != val && tok.type != val)) throw new Error(`Expected: ${val} got: ${got}`)
+        if (!_tok) this.tok_pos++
         return tok
     }
     expect_(val: string, _tok?: Token) {
@@ -68,6 +70,9 @@ export class Lexer {
     }
     getTokPos() {
         return this.tok_pos
+    }
+    info() {
+        return`[${this.peek(-1).val}-${this.peek().val}-${this.peek(1).val}]`
     }
 
     next() {
@@ -82,7 +87,7 @@ export class Lexer {
             start_line: this.line, start_col: this.col,
             end_line: this.col, end_col: this.col
         }
-        return new Token('EOF', "<eof>", span)
+        return new Token('EOF', "<eof>", false, false, span)
     }
 
     private cur(offset = 0) {

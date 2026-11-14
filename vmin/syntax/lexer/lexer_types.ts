@@ -16,17 +16,33 @@ export type Span = {
 export class Token {
     constructor(
         public type: TokenType,
-        public value: string,
+        public val: string,
+        public ws_before: boolean,
+        public nl_before: boolean,
         public span: Span,
     ) { }
 
-    getKwd(): typeof KEYWORDS[number] {
-        return this.value as typeof KEYWORDS[number]
+    kwd(): typeof KEYWORDS[number] {
+        return this.val as typeof KEYWORDS[number]
     }
 
-    getSymb(): typeof SYMBOLS[number] {
-        return this.value as typeof SYMBOLS[number]
+    symb(): typeof SYMBOLS[number] {
+        return this.val as typeof SYMBOLS[number]
+    }
+
+    kwd_(expc: typeof KEYWORDS[number]) {
+        return this.kwd() === expc
+    }
+    symb_(expc: typeof SYMBOLS[number]) {
+        return this.symb() === expc
+    }
+    val_(expc: string) {
+        return this.val == expc
+    }
+    type_(expc: string) {
+        return this.type == expc
     }
 
 }
+
 
