@@ -54,6 +54,12 @@ fn classify(n: int) -> str {
 
 fn parse_all(items: Vec[str]) -> Result[int, str] {
     var total = 0
+    a := 10
+    b :== 20
+
+    var result:bool
+    b = 40
+
     for s in items {
         total += s.to_int()?
     }

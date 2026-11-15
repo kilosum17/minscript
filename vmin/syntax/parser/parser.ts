@@ -321,11 +321,13 @@ export class Parser {
             const p1 = this.lex.peek()
             if (p1.kwd_('return')) {
                 this.lex.expect('return')
-                let exp = undefined as undefined | Expr
+                let expr = undefined as undefined | Expr
                 if (!this.lex.peek().nl_before) {
-                    exp = this.pratt.parseExpr(0)
+                    expr = this.pratt.parseExpr(0)
                 }
-                items.push({ kind: 'Return', exp })
+                items.push({ kind: 'Return', expr })
+            } else if (p1.kwd_('var') || p1.kwd_('let')) {
+                items.push(this.parseBinding())
             } else {
                 const exp = this.pratt.parseExpr(0)
                 console.log('Exp', exp)
@@ -335,6 +337,53 @@ export class Parser {
         if (has_brace) this.lex.expect_('}')
         // console.log('Done', this.lex.peek().value, this.lex.peek(1).value)
         return { kind: 'BlockDecl', items, span: this.getSpan() }
+    }
+
+    parseBinding(): StmtDecl {
+        const p1 = this.lex.peek()
+        const p2 = this.lex.peek(1)
+
+        let is_short = false
+        let is_mut = false
+        if (p1.kwd_('var') || p1.kwd_('let')) {
+            is_short = false
+            is_mut = p1.kwd_('var')
+            this.lex.next()
+        } else if (p2.val_(':==') || p2.val_(':=')) {
+            is_short = true
+            is_mut = p2.val_(':==')
+            this.lex.next()
+        } else {
+            throw new Error('Unkown binding format')
+        }
+
+        const name = this.lex.expect('ID').val
+        let type = undefined as undefined | AstType
+        if (!is_short && this.lex.peek().val_(':')) {
+            this.lex.expect_(':')
+            type = this.parseType()
+        }
+
+        let has_expr = false
+        if (is_short) {
+            this.lex.expect_('=')
+            has_expr = true
+        } else {
+            if (!is_short && this.lex.peek().val_('=')) {
+                this.lex.expect_('=')
+                has_expr = true
+            }
+        }
+
+        if (!has_expr && !this.lex.peek().nl_before) {
+            this.lex.expect_('=')
+        }
+
+        let expr = undefined as undefined | Expr
+        if (has_expr) {
+            expr = this.pratt.parseExpr(0)
+        }
+        return { kind: 'Binding', name, is_short, is_mut, expr }
     }
 
 }

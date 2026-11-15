@@ -123,7 +123,13 @@ export type BlockDecl = {
 
 export type StmtDecl = {
     kind: 'Return',
-    exp?: Expr,
+    expr?: Expr,
+} | {
+    kind: 'Binding',
+    name: string
+    is_short: boolean
+    is_mut: boolean
+    expr?: Expr
 }
 
 export type Expr = {
@@ -194,7 +200,7 @@ export type MatchArm = {
     block: BlockDecl,
 } | {
     mode: 'IfCond',
-    var_name:string,
+    var_name: string,
     cond: Expr,
     block: BlockDecl,
 }
