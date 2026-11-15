@@ -52,16 +52,61 @@ export function print(n?: AstNode, d?: number): string {
                 return `${n.name}:${n.is_mut ? '*' : ''}${print(n.type)}`
             }
             case "BlockDecl": {
-                return 'TODO'
+                const body = n.items.map(t => print(t, d + 1)).join('\n')
+                return body
             }
             case "Var": {
-                return ``
+                return `Var(${n.name})`
             }
             case "Unary": {
-                return ``
+                return `${n.oper}${print(n.expr)}`
             }
-            case "StmtDecl": {
-                return ``
+            case "Binary": {
+                return `${n.oper}(${print(n.lhs)},${print(n.rhs)})`
+            }
+            case "Member": {
+                return `${print(n.lhs)}.${print(n.lhs)}`
+            }
+            case "Literal": {
+                return `Lit(${n.val})`
+            }
+            case "Match": {
+                const arms = n.arms.map(m => {
+                    if (m.mode == 'Struct') {
+                        return `${m.name}{${m.fields?.join(',') || ''}}=>${print(m.block)}`
+                    } else if (m.mode == 'Tuple') {
+                        return `${m.name}(${m.fields?.join(',') || ''})=>${print(m.block)}`
+                    } else if (m.mode == 'Bare') {
+                        return `${m.name}=>${print(m.block)}`
+                    } else if (m.mode == 'Literal') {
+                        return `${m.val}=>${print(m.block)}`
+                    } else if (m.mode == 'IfCond') {
+                        return `${m.var_name} if ${print(m.cond)}=>${print(m.block)}`
+                    } else if (m.mode == 'Range') {
+                        return `${print(m.start)}${m.oper}${print(m.end)} =>${print(m.block)}`
+                    } else {
+                        return `TODO`
+                    }
+                }).join('\n')
+                return `match ${print(n.cond)}\n${arms}`
+            }
+            case "If": {
+                const else_ = n.else ? `\nelse ${print(n.else, d + 1)}` : ''
+                return `if ${print(n.cond)}:\n${print(n.then, d + 1)}${else_}`
+            }
+            case "Call": {
+                const args = n.args.map(n => print(n)).join(',')
+                return `${print(n.lhs)}(${args})`
+            }
+            case "Return": {
+                return `return ${print(n.exp)}`
+            }
+            case "String": {
+                const parts = n.parts.map(p => {
+                    if (typeof p === 'string') return p
+                    return print(p, 0)
+                }).join(' | ')
+                return `str(${parts})`
             }
         }
 

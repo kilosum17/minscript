@@ -72,7 +72,7 @@ export class Lexer {
         return this.tok_pos
     }
     info() {
-        return`[${this.peek(-1).val}-${this.peek().val}-${this.peek(1).val}]`
+        return `[${this.peek(-1).val}-${this.peek().val}-${this.peek(1).val}]`
     }
 
     next() {
@@ -251,16 +251,12 @@ export class Lexer {
     }
 
     private tryMerge(text: string) {
-        const m = mergeMap[text]
-        if (m) {
-            if (typeof m === 'string') {
-                if (this.cur() === m) {
-                    text += this.get()
-                }
+        while (true) {
+            const m = mergeMap[text]
+            if (m && m.has(this.cur())) {
+                text += this.get()
             } else {
-                if (m.has(this.cur())) {
-                    text += this.get()
-                }
+                break
             }
         }
         return text

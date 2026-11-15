@@ -118,10 +118,12 @@ export type FuncParam = {
 export type BlockDecl = {
     kind: 'BlockDecl',
     items: (StmtDecl | Expr)[],
+    span: AstSpan,
 }
 
 export type StmtDecl = {
-    kind: 'StmtDecl',
+    kind: 'Return',
+    exp?: Expr,
 }
 
 export type Expr = {
@@ -130,6 +132,7 @@ export type Expr = {
     span: AstSpan,
 } | {
     kind: 'Unary',
+    oper: string,
     expr: Expr,
     span: AstSpan,
 } | {
@@ -137,9 +140,62 @@ export type Expr = {
     oper: string,
     lhs: Expr,
     rhs: Expr,
+    span: AstSpan,
 } | {
     kind: 'Member',
     lhs: Expr,
     rhs: Expr,
+    span: AstSpan,
+} | {
+    kind: 'Literal',
+    val: string,
+    span: AstSpan,
+} | {
+    kind: 'Match',
+    cond?: Expr,
+    arms: MatchArm[]
+} | {
+    kind: 'If',
+    cond: Expr,
+    then: BlockDecl,
+    else?: BlockDecl | Expr,
+} | {
+    kind: 'Call',
+    lhs: Expr,
+    args: Expr[]
+} | {
+    kind: 'String',
+    parts: (string | Expr)[]
+}
+
+export type MatchArm = {
+    mode: 'Struct',
+    name: string,
+    fields?: string[],
+    block: BlockDecl,
+} | {
+    mode: 'Tuple',
+    name: string,
+    fields?: string[],
+    block: BlockDecl,
+} | {
+    mode: 'Bare',
+    name: string,
+    block: BlockDecl,
+} | {
+    mode: 'Literal'
+    val: String,
+    block: BlockDecl,
+} | {
+    mode: 'Range'
+    oper: string,
+    start: Expr,
+    end: Expr,
+    block: BlockDecl,
+} | {
+    mode: 'IfCond',
+    var_name:string,
+    cond: Expr,
+    block: BlockDecl,
 }
 

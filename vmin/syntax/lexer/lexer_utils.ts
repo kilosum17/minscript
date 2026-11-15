@@ -9,7 +9,7 @@ const symoblSet = new Set([...SYMBOLS] as string[])
 export const KEYWORDS = [
     'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const', 'as',
     'class', 'extends', 'super', 'this', 'new', 'delete', 'TypeOf', 'is', 'in', 'void', 'yield', 'await', 'package', 'import',
-    'pub', 'type', 'async', 'union'
+    'pub', 'type', 'async', 'union', 'match', 'select',
     // Add more keywords as needed
 ] as const
 
@@ -19,13 +19,28 @@ export const SIGILS = ['r{', 'm{', 's{', 'a[', 't('] as const
 
 const sigilSet = new Set([...SIGILS] as string[])
 
-export const mergeMap = {
-    'r': '{', 's': '{', 'm': '{', 't': '(', 'a': '[',
-    '-': '>',
-    '=': '>',
-    '?': '?',
-    '.': '.'
-} as Record<string, string | Set<string>>
+export const mergeMap = (() => {
+    const all = [
+        'r{', 's{', 'm{', 't(', 'a[',
+        '->', '=>',
+        '==', '!=', '<=', '>=',
+        '+=', '-=', '/=', '*=',
+        '??', '..', '..='
+    ]
+    const map = {} as Record<string, Set<string>>
+    all.forEach(v => {
+        const k = v.substring(0, 1)
+        if (!map[k]) map[k] = new Set([])
+        map[k].add(v.substring(1, 2))
+        if (v.length > 2) {
+            const k2 = v.substring(0, 2)
+            if (!map[k2]) map[k2] = new Set([])
+            map[k2].add(v.substring(2, 3))
+        }
+    })
+    console.log('MAP', map)
+    return map
+})()
 
 export function isSigil(char: string): boolean {
     return sigilSet.has(char)

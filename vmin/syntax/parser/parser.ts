@@ -1,6 +1,11 @@
 import type { Lexer } from "../lexer/lexer";
 import type { Span } from "../lexer/lexer_types";
-import type { AstNode, AstSpan, AstType, BlockDecl, Expr, FuncDecl, FuncParam, GenericsDecl, ImportDecl, PackageDecl, StmtDecl, StructDecl, StructField, StructFieldsList, UnionDecl, UnionItem } from "./ast_types";
+import type {
+    AstNode, AstSpan, AstType, BlockDecl, Expr,
+    FuncDecl, FuncParam, GenericsDecl, ImportDecl, PackageDecl,
+    StmtDecl, StructDecl, StructField, StructFieldsList, UnionDecl,
+    UnionItem
+} from "./ast_types";
 import { printAstNode } from "./ast_utils";
 import { Pratt } from "./pratt";
 
@@ -295,23 +300,41 @@ export class Parser {
         return params
     }
 
-    private parseBlockDecl(): BlockDecl {
-        this.lex.expect_('{')
+    parseBlockDecl(brace_optional = false): BlockDecl {
+        this.saveStart()
+        let has_brace = false
+        if (brace_optional) {
+            if (this.lex.peek().val_('{')) has_brace = true
+        } else {
+            has_brace = true
+        }
+        if (has_brace) this.lex.expect_('{')
+
+        const items = [] as (StmtDecl | Expr)[]
         let depth = 1
         while (true) {
+            if (has_brace) {
+                if (this.lex.peek().val_('}')) break
+            } else {
+                if (this.lex.peek().nl_before) break
+            }
             const p1 = this.lex.peek()
-            if (p1.val === '{') {
-                depth++
+            if (p1.kwd_('return')) {
+                this.lex.expect('return')
+                let exp = undefined as undefined | Expr
+                if (!this.lex.peek().nl_before) {
+                    exp = this.pratt.parseExpr(0)
+                }
+                items.push({ kind: 'Return', exp })
+            } else {
+                const exp = this.pratt.parseExpr(0)
+                console.log('Exp', exp)
+                items.push(exp)
             }
-            if (p1.val == '}') {
-                depth--
-                if (depth == 0) break
-            }
-            this.lex.next()
         }
-        this.lex.expect_('}')
+        if (has_brace) this.lex.expect_('}')
         // console.log('Done', this.lex.peek().value, this.lex.peek(1).value)
-        return { kind: 'BlockDecl', items: [] }
+        return { kind: 'BlockDecl', items, span: this.getSpan() }
     }
 
 }

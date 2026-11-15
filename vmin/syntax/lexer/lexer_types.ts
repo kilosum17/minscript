@@ -39,7 +39,7 @@ export class Token {
     val_(expc: string) {
         return this.val == expc
     }
-    type_(expc: string) {
+    type_(expc: TokenType) {
         return this.type == expc
     }
 
