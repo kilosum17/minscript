@@ -10,7 +10,7 @@ pub type Account {
     owner: str, 
     balance: i64, 
     tags: Vec[str],
-    // tags2:Vec[str]=[],
+    tags2:Vec[str]=[],
     note: str? 
 }
 
@@ -118,9 +118,13 @@ fn main() {
             hits += 1
         }
     }
-    let found = for {
+    var found =false
+    for {
         hits += 1
-        if hits % 7 == 0 { break hits }
+        if hits % 7 == 0 { 
+            found = hits
+            break 
+        }
     }
     log.println("hits", hits, "found", found)
 

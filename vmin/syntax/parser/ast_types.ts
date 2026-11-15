@@ -146,6 +146,12 @@ export type StmtDecl = {
             mode: 'infinite',
         }
     )
+    | {
+        kind: 'Label',
+        name: string,
+        span: AstSpan,
+    }
+
 
 export type Expr = {
     kind: 'Var',
@@ -177,7 +183,9 @@ export type Expr = {
     arms: MatchArm[]
 } | {
     kind: 'If',
+    is_let: boolean,
     cond: Expr,
+    variant?: Expr,
     then: BlockDecl,
     else?: BlockDecl | Expr,
 } | {
@@ -192,6 +200,50 @@ export type Expr = {
     oper: string,
     start: Expr,
     end: Expr,
+} | {
+    kind: 'ErrorProp',
+    lhs: Expr,
+} | {
+    kind: 'StructInit',
+    name: string,
+    fields: StructInitField[],
+} | {
+    kind: 'VecInit',
+    items: Expr[]
+} | {
+    kind: 'Closure',
+    args?: string[]
+    block: BlockDecl,
+} | {
+    kind: 'MapInit',
+    fields: MapInitField[]
+} | {
+    kind: 'Index',
+    lhs: Expr,
+    key: Expr,
+} | {
+    kind: 'SetInit',
+    items: Expr[],
+} | {
+    kind: 'Recover',
+    block: BlockDecl,
+}
+
+export type StructInitField = {
+    mode: 'field',
+    name: string,
+    expr: Expr,
+} | {
+    mode: 'spread',
+    expr: Expr,
+}
+export type MapInitField = {
+    mode: 'field',
+    key: Expr,
+    val: Expr,
+} | {
+    mode: 'spread',
+    expr: Expr,
 }
 
 export type MatchArm = {

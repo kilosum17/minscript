@@ -60,8 +60,7 @@ export class Lexer {
 
     expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token) {
         const tok = _tok ?? this.toks[this.tok_pos]
-        const got = `[${this.peek(-1).val}-${tok?.val}-${this.peek(1).val}]`
-        if (!tok || (tok.val != val && tok.type != val)) throw new Error(`Expected: ${val} got: ${got}`)
+        if (!tok || (tok.val != val && tok.type != val)) throw new Error(`Expected: ${val} got: ${this.info()}`)
         if (!_tok) this.tok_pos++
         return tok
     }
@@ -72,7 +71,7 @@ export class Lexer {
         return this.tok_pos
     }
     info() {
-        return `[${this.peek(-1).val}_${this.peek().val}_${this.peek(1).val}]`
+        return `[${this.peek(-1).val}_${this.peek().val}_${this.peek(1).val}_${this.peek(2).val}](${this.peek().span.start_line})`
     }
 
     next() {

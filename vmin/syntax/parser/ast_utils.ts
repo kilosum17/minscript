@@ -65,7 +65,7 @@ export function print(n?: AstNode, d?: number): string {
                 return `${n.oper}(${print(n.lhs)},${print(n.rhs)})`
             }
             case "Member": {
-                return `${print(n.lhs)}.${print(n.lhs)}`
+                return `${print(n.lhs)}.${print(n.rhs)}`
             }
             case "Literal": {
                 return `Lit(${n.val})`
@@ -92,7 +92,7 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "If": {
                 const else_ = n.else ? `\nelse ${print(n.else, d + 1)}` : ''
-                return `if ${print(n.cond)}:\n${print(n.then, d + 1)}${else_}`
+                return `if ${n.is_let ? 'let' : ''} ${print(n.cond)}:\n${print(n.then, d + 1)}${else_}`
             }
             case "Call": {
                 const args = n.args.map(n => print(n)).join(',')
@@ -103,7 +103,7 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "String": {
                 const parts = n.parts.map(p => {
-                    if (typeof p === 'string') return p
+                    if (typeof p === 'string') return `"${p}"`
                     return print(p, 0)
                 }).join(' | ')
                 return `str(${parts})`
@@ -123,8 +123,55 @@ export function print(n?: AstNode, d?: number): string {
                 }
                 return `> for TODO`
             }
+            case "ErrorProp": {
+                return `${print(n.lhs, d + 1)}?`
+            }
+            case "StructInit": {
+                const fields = n.fields.map(f => {
+                    if (f.mode == 'field') {
+                        return `${f.name}: ${print(f.expr)}`
+                    } else if (f.mode == 'spread') {
+                        return `...${print(f.expr)}`
+                    } else {
+                        return `TODO`
+                    }
+                }).join('\n')
+                return `${n.name}\n${fields}`
+            }
+            case "VecInit": {
+                const items = n.items.map(t => print(t, 0)).join(',\n')
+                return `vec[${items}]`
+            }
+            case "Closure": {
+                const args = n.args ? `${n.args.join(',')}=>` : ''
+                return `#{${args}\n${print(n.block, d + 1)}`
+            }
+            case "Label": {
+                return `Label(${n.name})`
+            }
+            case "MapInit": {
+                const fields = n.fields.map(f => {
+                    if (f.mode == 'field') {
+                        return `${print(f.key)}: ${print(f.val)}`
+                    } else if (f.mode == 'spread') {
+                        return `...${print(f.expr)}`
+                    } else {
+                        return `TODO`
+                    }
+                }).join('\n')
+                return `m{\n${fields}`
+            }
+            case "Index": {
+                return `${print(n.lhs)}[${print(n.key)}]`
+            }
+            case "SetInit": {
+                const items = n.items.map(t => print(t)).join(',')
+                return `s{${items}`
+            }
+            case "Recover": {
+                return `recover ${print(n.block)}`
+            }
         }
-
         // return `> TODO [${n.kind}]`
     }
     let prefix = ' '.repeat(d)

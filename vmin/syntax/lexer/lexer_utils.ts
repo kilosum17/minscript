@@ -1,7 +1,7 @@
 
 export const SYMBOLS = [
     '(', ')', '[', ']', '{', '}', '<', '>', '+', '-', '*', '/', '=', '!', '&', '|', '^', '%', '~', '?', ':', '.', ';', ',',
-    '->', '=>', '#',
+    '->', '=>', '#', '??'
 ] as const
 
 const symoblSet = new Set([...SYMBOLS] as string[])
@@ -9,7 +9,7 @@ const symoblSet = new Set([...SYMBOLS] as string[])
 export const KEYWORDS = [
     'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const', 'as',
     'class', 'extends', 'super', 'this', 'new', 'delete', 'TypeOf', 'is', 'in', 'void', 'yield', 'await', 'package', 'import',
-    'pub', 'type', 'async', 'union', 'match', 'select',
+    'pub', 'type', 'async', 'union', 'match', 'select', 'recover', 'panic',
     // Add more keywords as needed
 ] as const
 
@@ -21,11 +21,12 @@ const sigilSet = new Set([...SIGILS] as string[])
 
 export const mergeMap = (() => {
     const all = [
-        'r{', 's{', 'm{', 't(', 'a[',
-        '->', '=>',
+        'r{', 's{', 'm{', 't(', 'a[', '#{',
+        '->', '=>', ':=', ':==',
         '==', '!=', '<=', '>=',
         '+=', '-=', '/=', '*=',
-        '??', '?.', '..', '..=', ':=', ':=='
+        '??', '?.',
+        '...', '..', '..=',
     ]
     const map = {} as Record<string, Set<string>>
     all.forEach(v => {

@@ -1,5 +1,4 @@
 import type { Lexer } from "../lexer/lexer";
-import type { Span } from "../lexer/lexer_types";
 import type {
     AstNode, AstSpan, AstType, BlockDecl, Expr,
     FuncDecl, FuncParam, GenericsDecl, ImportDecl, PackageDecl,
@@ -163,7 +162,11 @@ export class Parser {
         const name = this.lex.expect('ID').val
         this.lex.expect_(':')
         const type = this.parseType()
-        const init = undefined
+        let init = undefined as undefined | Expr
+        if (this.lex.peek().val_('=')) {
+            this.lex.expect_('=')
+            init = this.pratt.parseExpr(0, { avoidBrace: false })
+        }
         if (this.lex.peek().val == ',') this.lex.next()
         return {
             kind: 'StructField', is_pub, name, type, init,
@@ -300,23 +303,25 @@ export class Parser {
         return params
     }
 
-    parseBlockDecl(brace_optional = false): BlockDecl {
+    parseBlockDecl(ops?: { openBraceOptional?: boolean, bracesOptional?: boolean }): BlockDecl {
         this.saveStart()
-        let has_brace = false
-        if (brace_optional) {
-            if (this.lex.peek().val_('{')) has_brace = true
+        let brace_optional = ops?.bracesOptional ?? false
+        let open_brace_optional = ops?.openBraceOptional ?? false
+        let has_open_brace = false
+        if (brace_optional || open_brace_optional) {
+            if (this.lex.peek().val_('{')) has_open_brace = true
         } else {
-            has_brace = true
+            has_open_brace = true
         }
-        if (has_brace) this.lex.expect_('{')
+        if (has_open_brace) this.lex.expect_('{')
 
         const items = [] as (StmtDecl | Expr)[]
-        let depth = 1
+        let loops = 0
         while (true) {
-            if (has_brace) {
+            if (has_open_brace) {
                 if (this.lex.peek().val_('}')) break
             } else {
-                if (this.lex.peek().nl_before) break
+                if (loops > 0) break
             }
             const p1 = this.lex.peek()
             const p2 = this.lex.peek(1)
@@ -324,7 +329,7 @@ export class Parser {
                 this.lex.expect('return')
                 let expr = undefined as undefined | Expr
                 if (!this.lex.peek().nl_before) {
-                    expr = this.pratt.parseExpr(0)
+                    expr = this.pratt.parseExpr(0, { avoidBrace: false })
                 }
                 items.push({ kind: 'Return', expr, span: this.getSpan() })
             } else if (p1.kwd_('var') || p1.kwd_('let')) {
@@ -332,20 +337,29 @@ export class Parser {
                 items.push(stmt)
             } else if (p2.val_(':=') || p2.val_(':==')) {
                 const stmt = this.parseBinding()
-                console.log('stms', stmt)
                 items.push(stmt)
             } else if (p1.kwd_('for')) {
                 const stmt = this.parseForLoop()
-                console.log('stms', stmt)
                 items.push(stmt)
+            } else if (p1.type_('ID') && p2.val_(':')) {
+                const name = this.lex.expect('ID').val
+                this.lex.expect_(':')
+                items.push({ kind: 'Label', name, span: this.getSpan() })
             } else {
-                const exp = this.pratt.parseExpr(0)
-                console.log('Exp', exp)
+                const exp = this.pratt.parseExpr(0, { avoidBrace: false })
                 items.push(exp)
             }
+            console.log(printAstNode(items.at(-1)!))
+            loops += 1
         }
-        if (has_brace) this.lex.expect_('}')
-        // console.log('Done', this.lex.peek().value, this.lex.peek(1).value)
+        if (
+            (brace_optional && has_open_brace) ||
+            !brace_optional
+        ) {
+            // console.log('Consumed } ')
+            this.lex.expect_('}')
+        }
+        // console.log('>>> Done', this.lex.peek().val, this.lex.peek(1).val)
         return { kind: 'BlockDecl', items, span: this.getSpan() }
     }
 
@@ -392,7 +406,7 @@ export class Parser {
 
         let expr = undefined as undefined | Expr
         if (has_expr) {
-            expr = this.pratt.parseExpr(0)
+            expr = this.pratt.parseExpr(0, { avoidBrace: false })
         }
         return { kind: 'Binding', name, is_short, is_mut, type, expr, span: this.getSpan() }
     }
@@ -405,7 +419,7 @@ export class Parser {
         if (p1.type_('ID') && p2.val_('in')) {
             const var_name = this.lex.expect('ID').val
             this.lex.expect('in')
-            const expr = this.pratt.parseExpr(0)
+            const expr = this.pratt.parseExpr(0, { avoidBrace: true })
             const block = this.parseBlockDecl()
             return { kind: 'ForLoop', mode: 'in', var_name, expr, block, span: this.getSpan() }
         } else if (p1.val_('{')) {

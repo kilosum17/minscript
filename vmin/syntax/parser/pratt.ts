@@ -1,9 +1,16 @@
 import type { Lexer } from "../lexer/lexer";
 import type { Token } from "../lexer/lexer_types";
-import type { BlockDecl, Expr, MatchArm, StmtDecl } from "./ast_types";
+import type { BlockDecl, Expr, MapInitField, MatchArm, StmtDecl, StructInitField } from "./ast_types";
 import type { Parser } from "./parser";
 
+type ParseOps = {
+    avoidBrace: boolean,
+    avoidAssign?: boolean,
+}
+
 export class Pratt {
+    private avoidBrace = false
+    private avoidAssign = false
 
     constructor(
         private pa: Parser,
@@ -12,7 +19,11 @@ export class Pratt {
 
     }
 
-    parseExpr(minBp: number): Expr {
+    parseExpr(minBp: number, ops: ParseOps | null): Expr {
+        if (ops) {
+            this.avoidBrace = ops.avoidBrace ?? false
+            this.avoidAssign = ops.avoidAssign ?? false
+        }
         let left = this.parseNull()
         let next = this.getBp(this.le.peek().val)
         while (next && minBp < next.lbp) {
@@ -26,19 +37,31 @@ export class Pratt {
     private conds = new Set(['>', '<', '>=', '<=', '==', '!=',])
     private assigns = new Set(['=', '+=', '-=', '*=', '/=',])
     getBp(oper: string) {
-        if (this.assigns.has(oper)) return { lbp: 2, rbp: 1 }
-        if (this.conds.has(oper)) return { lbp: 5, rbp: 5 }
-        if (oper == '+' || oper == '-') return { lbp: 10, rbp: 10 }
-        if (oper == '*' || oper == '/') return { lbp: 40, rbp: 40 }
-        if (oper == '.') return { lbp: 60, rbp: 60 }
+        if (this.avoidAssign && oper == '=') return null
+        if (this.assigns.has(oper)) return { lbp: 10, rbp: 10 }
+        if (oper == '!') return { lbp: 15, rbp: 15 }
+        if (oper == '..' || oper == '..=') return { lbp: 20, rbp: 20 }
+        if (oper == '??') return { lbp: 30, rbp: 30 }
+        if (this.conds.has(oper)) return { lbp: 40, rbp: 40 }
+        if (oper == '+' || oper == '-') return { lbp: 50, rbp: 50 }
+        if (oper == '*' || oper == '/' || oper == '%') return { lbp: 60, rbp: 60 }
+        if (oper == '.') return { lbp: 70, rbp: 70 }
+        if (oper == '[') return { lbp: 75, rbp: 75 }
         if (oper == '(') return { lbp: 80, rbp: 80 }
+        if (oper == '?') return { lbp: 90, rbp: 90 } // error propagation
         return null
     }
 
     parseNull(): Expr {
         this.pa.saveStart()
         const p1 = this.le.peek()
+        const p2 = this.le.peek(1)
         console.log('p1', p1.kwd(), p1.type)
+        if (p1.val_('-') || p1.val_('!')) {
+            const oper = this.le.next().val
+            const expr = this.parseExpr(0, null)
+            return { kind: 'Unary', oper, expr, span: this.pa.getSpan() }
+        }
         if (p1.kwd_('match')) {
             return this.parseMatchExpr()
         }
@@ -48,7 +71,25 @@ export class Pratt {
         if (p1.type_('STR_START')) {
             return this.parseString()
         }
+        if (p1.symb_('[')) {
+            return this.parseVec()
+        }
+        if (p1.val_('#{')) {
+            return this.parseClosure()
+        }
+        if (p1.val_('s{')) {
+            return this.parseSet()
+        }
+        if (p1.val_('m{')) {
+            return this.parseMap()
+        }
+        if (p1.kwd_('recover')) {
+            return this.parseRecover()
+        }
         if (p1.type_('ID')) {
+            if (!this.avoidBrace && p2.val_('{')) {
+                return this.parseStructInit()
+            }
             const name = this.le.expect('ID').val
             return { kind: 'Var', name, span: this.pa.getSpan() }
         }
@@ -60,15 +101,16 @@ export class Pratt {
     }
 
     private bins = new Set([
-        '+', '-', '*', '/',
+        '+', '-', '*', '/', '%',
         '>', '<', '>=', '<=', '==', '!=',
+        '??', '..', '..=',
         ...this.assigns,
     ])
     parserInfixExp(tok: Token, minBp: number, lhs: Expr): Expr {
         this.pa.saveStart()
         const oper = tok.symb()
-        if (this.bins.has(oper)) {
-            const rhs = this.parseExpr(minBp)
+        if (this.bins.has(oper) || this.conds.has(oper)) {
+            const rhs = this.parseExpr(minBp, null)
             return { kind: 'Binary', oper, lhs, rhs, span: this.pa.getSpan() }
         }
         if (oper == '.') {
@@ -86,6 +128,14 @@ export class Pratt {
         if (oper == '(') {
             return this.parseFuncCall(lhs, true)
         }
+        if (oper == '[') {
+            const key = this.parseExpr(0, null)
+            this.le.expect_(']')
+            return { kind: 'Index', lhs, key, }
+        }
+        if (oper == '?') {
+            return { kind: 'ErrorProp', lhs }
+        }
         throw new Error(`UNKOWn infix operator: ${oper}, ${this.le.info()}`)
     }
 
@@ -93,7 +143,7 @@ export class Pratt {
         this.le.expect('match')
         let cond = undefined as undefined | Expr
         if (!this.le.peek().val_('{')) {
-            cond = this.parseExpr(0)
+            cond = this.parseExpr(0, { avoidBrace: true })
         }
         this.le.expect_('{')
 
@@ -117,9 +167,9 @@ export class Pratt {
                 }
                 this.le.expect_('}')
                 this.le.expect_('=>')
-                const block = this.pa.parseBlockDecl(true)
+                const block = this.pa.parseBlockDecl({ bracesOptional: true })
                 arms.push({ mode: 'Struct', name, fields, block })
-            
+
             } else if (p1.type_('ID') && p2.val_('(')) {
                 //tuple
                 const name = this.le.expect('ID').val
@@ -134,35 +184,35 @@ export class Pratt {
                 }
                 this.le.expect_(')')
                 this.le.expect_('=>')
-                const block = this.pa.parseBlockDecl(true)
+                const block = this.pa.parseBlockDecl({ bracesOptional: true })
                 arms.push({ mode: 'Tuple', name, fields, block })
-            
+
             } else if (p1.type_('ID') && p2.val_('=>')) {
                 const name = this.le.expect('ID').val
                 this.le.expect_('=>')
-                const block = this.pa.parseBlockDecl(true)
+                const block = this.pa.parseBlockDecl({ bracesOptional: true })
                 arms.push({ mode: 'Bare', name, block })
 
             } else if (p1.type_('NUM') && p2.val_('=>')) {
                 const val = this.le.expect('NUM').val
                 this.le.expect_('=>')
-                const block = this.pa.parseBlockDecl(true)
+                const block = this.pa.parseBlockDecl({ bracesOptional: true })
                 arms.push({ mode: 'Literal', val, block })
-            
+
             } else if ((p2.val_('..') || p2.val_('..=')) && p4.val_('=>')) {
-                const range = this.parseRange()
+                const range = this.parseExpr(0, { avoidBrace: true })
                 this.le.expect_('=>')
-                const block = this.pa.parseBlockDecl(true)
+                const block = this.pa.parseBlockDecl({ bracesOptional: true })
                 arms.push({ mode: 'Range', range, block })
-            
+
             } else if (p1.type_('ID') && p2.kwd_('if')) {
                 const var_name = this.le.expect('ID').val
                 this.le.expect('if')
-                const cond = this.parseExpr(0)
+                const cond = this.parseExpr(0, { avoidBrace: true })
                 this.le.expect_('=>')
-                const block = this.pa.parseBlockDecl(true)
+                const block = this.pa.parseBlockDecl({ bracesOptional: true })
                 arms.push({ mode: 'IfCond', var_name, cond, block })
-            
+
             } else {
                 console.log('arms', arms)
                 throw new Error('Unkowm match arm')
@@ -174,7 +224,19 @@ export class Pratt {
 
     parseIfExpr(): Expr {
         this.le.expect('if')
-        const cond = this.parseExpr(0)
+        let is_let = false
+        if (this.le.peek().kwd_('let')) {
+            is_let = true
+            this.le.expect('let')
+        }
+        console.log('then', is_let)
+        const cond = this.parseExpr(0, { avoidBrace: !is_let, avoidAssign: true })
+        console.log('then', cond)
+        let variant = undefined as undefined | Expr
+        if (is_let) {
+            this.le.expect_('=')
+            variant = this.parseExpr(0, { avoidBrace: true })
+        }
         const then = this.pa.parseBlockDecl()
         let else_ = undefined as undefined | Expr | BlockDecl
         if (this.le.peek().kwd_('else')) {
@@ -185,14 +247,14 @@ export class Pratt {
                 else_ = this.pa.parseBlockDecl()
             }
         }
-        return { kind: 'If', cond, then, else: else_ }
+        return { kind: 'If', is_let, cond, variant, then, else: else_ }
     }
 
     parseFuncCall(lhs: Expr, skip_bracket = false): Expr {
         if (!skip_bracket) this.le.expect_('(')
         const args = [] as Expr[]
         while (!this.le.peek().val_(')')) {
-            args.push(this.parseExpr(0))
+            args.push(this.parseExpr(0, { avoidBrace: false }))
             if (!this.le.peek().val_(')')) {
                 this.le.expect_(',')
             }
@@ -210,7 +272,7 @@ export class Pratt {
                 const part = this.le.expect('STR_PART')
                 parts.push(part.val)
             } else if (p1.type_('STR_EXP_OPEN')) {
-                const exp = this.parseExpr(0)
+                const exp = this.parseExpr(0, null)
                 parts.push(exp)
                 this.le.expect('STR_EXP_CLOSE')
             } else {
@@ -221,14 +283,119 @@ export class Pratt {
         return { kind: 'String', parts }
     }
 
-    parseRange(): Expr {
-        const start = this.parseExpr(0)
-        const oper = this.le.next()
-        if (!oper.val_('..') && !oper.val_('..=')) {
-            this.le.expect_('..', oper)
+    parseStructInit(): Expr {
+        const name = this.le.expect('ID').val
+        const fields = this.parseStructFields()
+        return { kind: 'StructInit', name, fields }
+    }
+
+    parseStructFields() {
+        this.le.expect_('{')
+
+        const fields = [] as StructInitField[]
+        while (!this.le.peek().val_('}')) {
+            if (this.le.peek().val_('...')) {
+                this.le.expect_('...')
+                const expr = this.parseExpr(0, { avoidBrace: false })
+                fields.push({ mode: 'spread', expr })
+            } else {
+                const name = this.le.expect('ID').val
+                this.le.expect_(':')
+                const expr = this.parseExpr(0, { avoidBrace: false })
+                fields.push({ mode: 'field', name, expr })
+            }
+            if (!this.le.peek().val_('}')) this.le.expect_(',')
         }
-        const end = this.parseExpr(0)
-        return { kind: "Range", start, end, oper: oper.val }
+
+        this.le.expect_('}')
+
+        return fields
+
+    }
+
+    parseVec(): Expr {
+        this.le.expect_('[')
+        const items = [] as Expr[]
+        while (!this.le.peek().val_(']')) {
+            items.push(this.parseExpr(0, { avoidBrace: false }))
+            if (!this.le.peek().val_(']')) this.le.expect_(',')
+        }
+        this.le.expect_(']')
+        return { kind: 'VecInit', items }
+    }
+
+    parseClosure(): Expr {
+        this.le.expect_('#{')
+        let has_args = false
+        let offset = 0
+        while (true) {
+            const p1 = this.le.peek(offset)
+            if (p1.nl_before) break
+            if (p1.val_('}')) break
+            if (p1.val_('=>')) {
+                has_args = true
+                break
+            }
+            offset++
+        }
+
+        let args = undefined as undefined | string[]
+        if (has_args) {
+            args = []
+            while (!this.le.peek().val_('=>')) {
+                const name = this.le.expect('ID').val
+                args.push(name)
+                if (!this.le.peek().val_('=>')) this.le.expect_(',')
+            }
+            this.le.expect_('=>')
+        }
+        const block = this.pa.parseBlockDecl({ openBraceOptional: true })
+        return { kind: 'Closure', args, block }
+    }
+
+    parseMap(): Expr {
+        const fields = this.parseMapFields()
+        return { kind: 'MapInit', fields }
+    }
+
+    parseMapFields(): MapInitField[] {
+        this.le.expect_('m{')
+
+        const fields = [] as MapInitField[]
+        while (!this.le.peek().val_('}')) {
+            if (this.le.peek().val_('...')) {
+                this.le.expect_('...')
+                const expr = this.parseExpr(0, { avoidBrace: false })
+                fields.push({ mode: 'spread', expr })
+            } else {
+                const key = this.parseExpr(0, { avoidBrace: true })
+                this.le.expect_(':')
+                const val = this.parseExpr(0, { avoidBrace: false })
+                fields.push({ mode: 'field', key, val })
+            }
+            if (!this.le.peek().val_('}')) this.le.expect_(',')
+        }
+
+        this.le.expect_('}')
+
+        return fields
+    }
+
+    parseSet(): Expr {
+        this.le.expect_('s{')
+        const items = [] as Expr[]
+        while (!this.le.peek().val_('}')) {
+            items.push(this.parseExpr(0, null))
+            if (!this.le.peek().val_('}')) this.le.expect_(',')
+        }
+        this.le.expect_('}')
+        return { kind: 'SetInit', items }
+    }
+
+    parseRecover(): Expr {
+        this.le.expect('recover')
+        const block = this.pa.parseBlockDecl()
+        return { kind: 'Recover', block }
     }
 
 }
