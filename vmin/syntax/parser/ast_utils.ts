@@ -83,7 +83,7 @@ export function print(n?: AstNode, d?: number): string {
                     } else if (m.mode == 'IfCond') {
                         return `${m.var_name} if ${print(m.cond)}=>${print(m.block)}`
                     } else if (m.mode == 'Range') {
-                        return `${print(m.start)}${m.oper}${print(m.end)} =>${print(m.block)}`
+                        return `${print(m.range)} =>${print(m.block)}`
                     } else {
                         return `TODO`
                     }
@@ -99,7 +99,7 @@ export function print(n?: AstNode, d?: number): string {
                 return `${print(n.lhs)}(${args})`
             }
             case "Return": {
-                return `return ${print(n.exp)}`
+                return `return ${print(n.expr)}`
             }
             case "String": {
                 const parts = n.parts.map(p => {
@@ -107,6 +107,21 @@ export function print(n?: AstNode, d?: number): string {
                     return print(p, 0)
                 }).join(' | ')
                 return `str(${parts})`
+            }
+            case "Binding": {
+                const symb = n.is_short ? (n.is_mut ? ':==' : ':=') : (n.is_mut ? 'var' : 'let')
+                return `${n.is_short ? '' : symb} ${n.name}${n.is_short ? symb : '='} ${print(n.expr)}`
+            }
+            case "Range": {
+                return `${print(n.start)}${n.oper}${print(n.end)}`
+            }
+            case "ForLoop": {
+                if (n.mode == 'in') {
+                    return `for ${n.var_name} in ${print(n.expr)}\n${print(n.block, d + 1)}`
+                } else if (n.mode == 'infinite') {
+                    return `for \n${print(n.block, d + 1)}`
+                }
+                return `> for TODO`
             }
         }
 

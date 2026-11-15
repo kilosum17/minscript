@@ -124,13 +124,28 @@ export type BlockDecl = {
 export type StmtDecl = {
     kind: 'Return',
     expr?: Expr,
+    span: AstSpan,
 } | {
     kind: 'Binding',
     name: string
     is_short: boolean
     is_mut: boolean
     expr?: Expr
-}
+    type?: AstType,
+    span: AstSpan,
+} | {
+    kind: 'ForLoop',
+    block: BlockDecl,
+    span: AstSpan,
+} & (
+        {
+            mode: 'in',
+            var_name: string,
+            expr: Expr,
+        } | {
+            mode: 'infinite',
+        }
+    )
 
 export type Expr = {
     kind: 'Var',
@@ -172,6 +187,11 @@ export type Expr = {
 } | {
     kind: 'String',
     parts: (string | Expr)[]
+} | {
+    kind: 'Range',
+    oper: string,
+    start: Expr,
+    end: Expr,
 }
 
 export type MatchArm = {
@@ -194,9 +214,7 @@ export type MatchArm = {
     block: BlockDecl,
 } | {
     mode: 'Range'
-    oper: string,
-    start: Expr,
-    end: Expr,
+    range: Expr,
     block: BlockDecl,
 } | {
     mode: 'IfCond',

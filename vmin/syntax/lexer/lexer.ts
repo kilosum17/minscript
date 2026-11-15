@@ -72,7 +72,7 @@ export class Lexer {
         return this.tok_pos
     }
     info() {
-        return `[${this.peek(-1).val}-${this.peek().val}-${this.peek(1).val}]`
+        return `[${this.peek(-1).val}_${this.peek().val}_${this.peek(1).val}]`
     }
 
     next() {

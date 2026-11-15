@@ -24,7 +24,9 @@ export class Pratt {
     }
 
     private conds = new Set(['>', '<', '>=', '<=', '==', '!=',])
+    private assigns = new Set(['=', '+=', '-=', '*=', '/=',])
     getBp(oper: string) {
+        if (this.assigns.has(oper)) return { lbp: 2, rbp: 1 }
         if (this.conds.has(oper)) return { lbp: 5, rbp: 5 }
         if (oper == '+' || oper == '-') return { lbp: 10, rbp: 10 }
         if (oper == '*' || oper == '/') return { lbp: 40, rbp: 40 }
@@ -60,6 +62,7 @@ export class Pratt {
     private bins = new Set([
         '+', '-', '*', '/',
         '>', '<', '>=', '<=', '==', '!=',
+        ...this.assigns,
     ])
     parserInfixExp(tok: Token, minBp: number, lhs: Expr): Expr {
         this.pa.saveStart()
@@ -116,6 +119,7 @@ export class Pratt {
                 this.le.expect_('=>')
                 const block = this.pa.parseBlockDecl(true)
                 arms.push({ mode: 'Struct', name, fields, block })
+            
             } else if (p1.type_('ID') && p2.val_('(')) {
                 //tuple
                 const name = this.le.expect('ID').val
@@ -132,23 +136,25 @@ export class Pratt {
                 this.le.expect_('=>')
                 const block = this.pa.parseBlockDecl(true)
                 arms.push({ mode: 'Tuple', name, fields, block })
+            
             } else if (p1.type_('ID') && p2.val_('=>')) {
                 const name = this.le.expect('ID').val
                 this.le.expect_('=>')
                 const block = this.pa.parseBlockDecl(true)
                 arms.push({ mode: 'Bare', name, block })
+
             } else if (p1.type_('NUM') && p2.val_('=>')) {
                 const val = this.le.expect('NUM').val
                 this.le.expect_('=>')
                 const block = this.pa.parseBlockDecl(true)
                 arms.push({ mode: 'Literal', val, block })
+            
             } else if ((p2.val_('..') || p2.val_('..=')) && p4.val_('=>')) {
-                const start = this.parseExpr(0)
-                const oper = this.le.next().val
-                const end = this.parseExpr(0)
+                const range = this.parseRange()
                 this.le.expect_('=>')
                 const block = this.pa.parseBlockDecl(true)
-                arms.push({ mode: 'Range', oper, start, end, block })
+                arms.push({ mode: 'Range', range, block })
+            
             } else if (p1.type_('ID') && p2.kwd_('if')) {
                 const var_name = this.le.expect('ID').val
                 this.le.expect('if')
@@ -156,6 +162,7 @@ export class Pratt {
                 this.le.expect_('=>')
                 const block = this.pa.parseBlockDecl(true)
                 arms.push({ mode: 'IfCond', var_name, cond, block })
+            
             } else {
                 console.log('arms', arms)
                 throw new Error('Unkowm match arm')
@@ -213,4 +220,15 @@ export class Pratt {
         this.le.expect_('STR_END')
         return { kind: 'String', parts }
     }
+
+    parseRange(): Expr {
+        const start = this.parseExpr(0)
+        const oper = this.le.next()
+        if (!oper.val_('..') && !oper.val_('..=')) {
+            this.le.expect_('..', oper)
+        }
+        const end = this.parseExpr(0)
+        return { kind: "Range", start, end, oper: oper.val }
+    }
+
 }

@@ -25,7 +25,7 @@ export const mergeMap = (() => {
         '->', '=>',
         '==', '!=', '<=', '>=',
         '+=', '-=', '/=', '*=',
-        '??', '..', '..='
+        '??', '?.', '..', '..=', ':=', ':=='
     ]
     const map = {} as Record<string, Set<string>>
     all.forEach(v => {

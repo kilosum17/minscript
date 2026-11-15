@@ -319,15 +319,25 @@ export class Parser {
                 if (this.lex.peek().nl_before) break
             }
             const p1 = this.lex.peek()
+            const p2 = this.lex.peek(1)
             if (p1.kwd_('return')) {
                 this.lex.expect('return')
                 let expr = undefined as undefined | Expr
                 if (!this.lex.peek().nl_before) {
                     expr = this.pratt.parseExpr(0)
                 }
-                items.push({ kind: 'Return', expr })
+                items.push({ kind: 'Return', expr, span: this.getSpan() })
             } else if (p1.kwd_('var') || p1.kwd_('let')) {
-                items.push(this.parseBinding())
+                const stmt = this.parseBinding()
+                items.push(stmt)
+            } else if (p2.val_(':=') || p2.val_(':==')) {
+                const stmt = this.parseBinding()
+                console.log('stms', stmt)
+                items.push(stmt)
+            } else if (p1.kwd_('for')) {
+                const stmt = this.parseForLoop()
+                console.log('stms', stmt)
+                items.push(stmt)
             } else {
                 const exp = this.pratt.parseExpr(0)
                 console.log('Exp', exp)
@@ -340,6 +350,7 @@ export class Parser {
     }
 
     parseBinding(): StmtDecl {
+        this.saveStart()
         const p1 = this.lex.peek()
         const p2 = this.lex.peek(1)
 
@@ -352,12 +363,13 @@ export class Parser {
         } else if (p2.val_(':==') || p2.val_(':=')) {
             is_short = true
             is_mut = p2.val_(':==')
-            this.lex.next()
         } else {
             throw new Error('Unkown binding format')
         }
 
         const name = this.lex.expect('ID').val
+        if (is_short) this.lex.next()
+
         let type = undefined as undefined | AstType
         if (!is_short && this.lex.peek().val_(':')) {
             this.lex.expect_(':')
@@ -366,7 +378,6 @@ export class Parser {
 
         let has_expr = false
         if (is_short) {
-            this.lex.expect_('=')
             has_expr = true
         } else {
             if (!is_short && this.lex.peek().val_('=')) {
@@ -383,7 +394,26 @@ export class Parser {
         if (has_expr) {
             expr = this.pratt.parseExpr(0)
         }
-        return { kind: 'Binding', name, is_short, is_mut, expr }
+        return { kind: 'Binding', name, is_short, is_mut, type, expr, span: this.getSpan() }
+    }
+
+    parseForLoop(): StmtDecl {
+        this.saveStart()
+        this.lex.expect('for')
+        const p1 = this.lex.peek()
+        const p2 = this.lex.peek(1)
+        if (p1.type_('ID') && p2.val_('in')) {
+            const var_name = this.lex.expect('ID').val
+            this.lex.expect('in')
+            const expr = this.pratt.parseExpr(0)
+            const block = this.parseBlockDecl()
+            return { kind: 'ForLoop', mode: 'in', var_name, expr, block, span: this.getSpan() }
+        } else if (p1.val_('{')) {
+            const block = this.parseBlockDecl()
+            return { kind: 'ForLoop', mode: 'infinite', block, span: this.getSpan() }
+        } else {
+            throw new Error('Unkown for-loop format')
+        }
     }
 
 }
