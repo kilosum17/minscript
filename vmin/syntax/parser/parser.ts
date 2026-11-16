@@ -336,10 +336,11 @@ export class Parser {
         return params
     }
 
-    parseBlockDecl(ops?: { openBraceOptional?: boolean, bracesOptional?: boolean }): BlockDecl {
+    parseBlockDecl(ops?: { openBraceOptional?: boolean, bracesOptional?: boolean, hasClosingBrace?: boolean }): BlockDecl {
         this.saveStart()
         let brace_optional = ops?.bracesOptional ?? false
         let open_brace_optional = ops?.openBraceOptional ?? false
+        let hasClosingBrace = ops?.hasClosingBrace ?? null
         let has_open_brace = false
         if (brace_optional || open_brace_optional) {
             if (this.lex.peek().val_('{')) has_open_brace = true
@@ -354,7 +355,11 @@ export class Parser {
             if (has_open_brace) {
                 if (this.lex.peek().val_('}')) break
             } else {
-                if (loops > 0) break
+                if (hasClosingBrace != null && hasClosingBrace === true) {
+                    if (this.lex.peek().val_('}')) break
+                } else {
+                    if (loops > 0) break
+                }
             }
             const p1 = this.lex.peek()
             const p2 = this.lex.peek(1)
@@ -365,7 +370,9 @@ export class Parser {
                     expr = this.pratt.parseExpr(0, { avoidBrace: false })
                 }
                 items.push({ kind: 'Return', expr, span: this.getSpan() })
-            } else if (p1.kwd_('var') || p1.kwd_('let')) {
+            } else if (p1.kwd_('var') || p1.kwd_('let') ||
+                (p1.kwd_('shared') && (p2.kwd_('var') || p2.kwd_('let')))
+            ) {
                 const stmt = this.parseBinding()
                 items.push(stmt)
             } else if (p2.val_(':=') || p2.val_(':==')) {
@@ -384,12 +391,22 @@ export class Parser {
             } else if (p1.kwd_('await')) {
                 this.lex.expect('await')
                 const expr = this.pratt.parseExpr(0, null)
-                items.push({ kind: 'Await', expr })
+                items.push({ kind: 'Await', expr, span: this.getSpan() })
             } else {
                 const exp = this.pratt.parseExpr(0, { avoidBrace: false })
                 items.push(exp)
             }
-            // console.log(printAstNode(items.at(-1)!))
+           
+            console.log(printAstNode(items.at(-1)!))
+           
+            if (this.lex.peek().val_(';')) {
+                this.lex.expect_(';')
+                items.push({ kind: 'SemiColon' })
+            } else {
+                if (!this.lex.peek().nl_before) {
+                    throw new Error(`More than 1 expression in a line: ${this.lex.info()}`)
+                }
+            }
             loops += 1
         }
         if (
@@ -405,6 +422,11 @@ export class Parser {
 
     parseBinding(): StmtDecl {
         this.saveStart()
+        let is_shared = false
+        if (this.lex.peek().kwd_('shared')) {
+            is_shared = true
+            this.lex.expect('shared')
+        }
         const p1 = this.lex.peek()
         const p2 = this.lex.peek(1)
 
@@ -448,7 +470,7 @@ export class Parser {
         if (has_expr) {
             expr = this.pratt.parseExpr(0, { avoidBrace: false })
         }
-        return { kind: 'Binding', name, is_short, is_mut, type, expr, span: this.getSpan() }
+        return { kind: 'Binding', name, is_short, is_mut,is_shared, type, expr, span: this.getSpan() }
     }
 
     parseForLoop(): StmtDecl {

@@ -139,6 +139,7 @@ export type StmtDecl = {
     name: string
     is_short: boolean
     is_mut: boolean
+    is_shared: boolean
     expr?: Expr
     type?: AstType,
     span: AstSpan,
@@ -162,6 +163,8 @@ export type StmtDecl = {
     } | {
         kind: 'Select',
         arms: SelectArm[]
+    } | {
+        kind: 'SemiColon',
     }
 
 export type SelectArm = {
@@ -263,6 +266,14 @@ export type Expr = {
     kind: 'Await',
     expr: Expr,
     span: AstSpan,
+} | {
+    kind: 'Block',
+    block: BlockDecl,
+    span: AstSpan,
+} | {
+    kind: 'Lock',
+    vars: Expr[],
+    block: BlockDecl,
 }
 
 export type StructInitField = {

@@ -60,7 +60,7 @@ export function print(n?: AstNode, d?: number): string {
                 return body
             }
             case "Var": {
-                return `Var(${n.name})`
+                return `${n.name}`
             }
             case "Unary": {
                 return `${n.oper}${print(n.expr)}`
@@ -114,7 +114,9 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "Binding": {
                 const symb = n.is_short ? (n.is_mut ? ':==' : ':=') : (n.is_mut ? 'var' : 'let')
-                return `${n.is_short ? '' : symb} ${n.name}${n.is_short ? symb : '='} ${print(n.expr)}`
+                const type = !n.is_short && n.type ? ':' + print(n.type) : ''
+                const shared = n.is_shared ? 'shared ' : ''
+                return `${shared}${n.is_short ? '' : symb} ${n.name}${type}${n.is_short ? symb : '='} ${print(n.expr)}`
             }
             case "Range": {
                 return `${print(n.start)}${n.oper}${print(n.end)}`
@@ -204,6 +206,16 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "Await": {
                 return `await ${print(n.expr)}`
+            }
+            case "SemiColon": {
+                return `;`
+            }
+            case "Block": {
+                return `block: ${print(n.block, d + 1)}`
+            }
+            case "Lock": {
+                const vars = n.vars.map(v => print(v)).join(',')
+                return `lock ${vars}: \n${print(n.block, d + 1)}`
             }
         }
         // return `> TODO [${n.kind}]`

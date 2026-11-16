@@ -10,8 +10,8 @@ type Outcome {
     list: Vec[json.Value] = []
 }
 
-fn main() {
-    let o = json.parse.[Outcome]("{\"config\":{\"a\":1},\"plain\":{\"b\":2},\"list\":[true,\"x\"]}") or e => {
+fn main3() {
+    let o = json.parse.[Outcome]("{\"config\":{\"a\":1},\"plain\":{\"b\":2},\"list\":[true,\"x\"]}") or #{e =>
         log.println("error: ${e}")
         return
     }

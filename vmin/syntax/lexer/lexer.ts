@@ -169,6 +169,12 @@ export class Lexer {
                     if (!saved_is_multiline && isNewline(this.cur())) {
                         throw new Error('Unterminated string')
                     }
+                    let escapes = ['\\', '"', "n", 't']
+                    if (this.cur() == '\\') {
+                        if (escapes.includes(this.cur(1))) {
+                            this.get()
+                        }
+                    }
                     text += this.get()
                 }
                 // console.log('Got s',text, this.cur(), saved_is_multiline, this.str_exp_mode)

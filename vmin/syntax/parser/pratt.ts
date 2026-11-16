@@ -42,7 +42,8 @@ export class Pratt {
         if (this.assigns.has(oper)) return { lbp: 10, rbp: 9 }
         if (oper == '!') return { lbp: 15, rbp: 15 }
         if (oper == '..' || oper == '..=') return { lbp: 20, rbp: 20 }
-        if (oper == '??' || oper == '?.') return { lbp: 30, rbp: 30 }
+        if (oper == '??' || oper == '?.' || oper == 'or') return { lbp: 30, rbp: 30 }
+        if (oper == '&&' || oper == '||') return { lbp: 35, rbp: 35 }
         if (this.conds.has(oper)) return { lbp: 40, rbp: 40 }
         if (oper == '<<' || oper == '>>') return { lbp: 45, rbp: 45 }
         if (oper == '+' || oper == '-') return { lbp: 50, rbp: 50 }
@@ -98,11 +99,18 @@ export class Pratt {
         if (p1.kwd_('recover')) {
             return this.parseRecover()
         }
+        if (p1.kwd_('lock')) {
+            return this.parseLock()
+        }
         if (p1.val_('(')) {
             this.le.expect_('(')
             const expr = this.parseExpr(0, null)
             this.le.expect_(')')
             return { kind: 'Bracket', expr }
+        }
+        if (p1.val_('{')) {
+            const block = this.pa.parseBlockDecl()
+            return { kind: 'Block', block, span: this.pa.getSpan() }
         }
         if (p1.type_('ID')) {
             if (!this.avoidBrace && p2.val_('{')) {
@@ -121,7 +129,8 @@ export class Pratt {
     private bins = new Set([
         '+', '-', '*', '/', '%',
         '>', '<', '>=', '<=', '==', '!=',
-        '??', '?.', '..', '..=', '<<', '>>',
+        '??', '?.', 'or', '..', '..=', '<<', '>>',
+        "&&", '||',
         ...this.assigns,
     ])
     parserInfixExp(tok: Token, minBp: number, lhs: Expr): Expr {
@@ -241,8 +250,9 @@ export class Pratt {
 
             } else {
                 console.log('arms', arms)
-                throw new Error('Unkowm match arm')
+                throw new Error(`Unkowm match arm${this.le.info()} `)
             }
+            if (this.le.peek().val_(',')) this.le.expect_(',')
         }
         this.le.expect_('}')
         return { kind: 'Match', cond, arms }
@@ -375,7 +385,7 @@ export class Pratt {
             }
             this.le.expect_('=>')
         }
-        const block = this.pa.parseBlockDecl({ openBraceOptional: true })
+        const block = this.pa.parseBlockDecl({ openBraceOptional: true, hasClosingBrace: true })
         return { kind: 'Closure', args, block }
     }
 
@@ -428,6 +438,17 @@ export class Pratt {
         this.le.expect_('r{')
         const fields = this.parseStructFields(true)
         return { kind: 'RecordInit', fields }
+    }
+
+    parseLock(): Expr {
+        this.le.expect('lock')
+        const vars = [] as Expr[]
+        while (!this.le.peek().val_('{')) {
+            vars.push(this.parseExpr(0, { avoidBrace: true }))
+            if (!this.le.peek().val_('{')) this.le.expect_(',')
+        }
+        const block = this.pa.parseBlockDecl()
+        return { kind: "Lock", vars, block }
     }
 
 }
