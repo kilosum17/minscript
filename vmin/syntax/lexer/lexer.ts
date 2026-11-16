@@ -71,7 +71,7 @@ export class Lexer {
         return this.tok_pos
     }
     info() {
-        return `[${this.peek(-1).val}_${this.peek().val}_${this.peek(1).val}_${this.peek(2).val}](${this.peek().span.start_line})`
+        return `[${this.peek(-1).val}_${this.peek().val}_${this.peek(1).val}_${this.peek(2).val}] (${this.peek().span.start_line},${this.peek().span.start_col})`
     }
 
     next() {
@@ -212,6 +212,8 @@ export class Lexer {
             let isTupleIndex = false
             let text = ''
             if (before1 == '.' && before2 != '.') isTupleIndex = true
+            let has_dot = false
+            let has_e = false
             while (true) {
                 if (isTupleIndex) {
                     if (isDigit(this.cur()) || this.cur() == '_') {
@@ -220,7 +222,18 @@ export class Lexer {
                         break
                     }
                 } else {
-                    if (isDigit(this.cur()) || this.cur() == '_' || (this.cur() == '.' && this.cur(1) != '.')) {
+                    if (isDigit(this.cur()) || this.cur() == '_'
+                        || (this.cur() == '.' && this.cur(1) != '.')
+                        || (this.cur() === 'e')
+                    ) {
+                        if (this.cur() == '.') {
+                            if (has_dot) break
+                            has_dot = true
+                        }
+                        if (this.cur() === 'e') {
+                            if (has_e) break
+                            has_e = true
+                        }
                         text += this.get()
                     } else {
                         break
@@ -244,7 +257,7 @@ export class Lexer {
 
         } else {
             // unkowns error
-            throw new Error("Unkown token")
+            throw new Error("Unkown token: " + this.cur())
         }
 
     }

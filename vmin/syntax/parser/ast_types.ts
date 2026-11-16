@@ -67,11 +67,19 @@ export type StructField = {
 
 export type AstType = {
     kind: "AstType",
-    name: string,
     is_option: boolean,
-    generics?: GenericsDecl,
     span: AstSpan,
-}
+} & (
+        {
+            mode: 'var',
+            name: string,
+            generics?: GenericsDecl,
+        } | {
+            mode: 'func',
+            args: AstType[],
+            ret: AstType,
+        }
+    )
 
 export type UnionDecl = {
     kind: 'UnionDecl',
@@ -102,6 +110,7 @@ export type FuncDecl = {
     kind: 'FuncDecl',
     name: string,
     is_pub: boolean,
+    is_async: boolean,
     generics?: GenericsDecl,
     params: FuncParam[]
     return?: AstType,
@@ -150,8 +159,16 @@ export type StmtDecl = {
         kind: 'Label',
         name: string,
         span: AstSpan,
+    } | {
+        kind: 'Select',
+        arms: SelectArm[]
     }
 
+export type SelectArm = {
+    var_name?: string,
+    expr: Expr,
+    block: BlockDecl
+}
 
 export type Expr = {
     kind: 'Var',
@@ -167,6 +184,12 @@ export type Expr = {
     oper: string,
     lhs: Expr,
     rhs: Expr,
+    span: AstSpan,
+} | {
+    kind: 'Cast',
+    oper: string,
+    lhs: Expr,
+    type: AstType,
     span: AstSpan,
 } | {
     kind: 'Member',
@@ -208,6 +231,9 @@ export type Expr = {
     name: string,
     fields: StructInitField[],
 } | {
+    kind: 'RecordInit',
+    fields: StructInitField[],
+} | {
     kind: 'VecInit',
     items: Expr[]
 } | {
@@ -227,6 +253,16 @@ export type Expr = {
 } | {
     kind: 'Recover',
     block: BlockDecl,
+} | {
+    kind: 'Bracket',
+    expr: Expr
+} | {
+    kind: 'GenericExpr',
+    type: AstType,
+} | {
+    kind: 'Await',
+    expr: Expr,
+    span: AstSpan,
 }
 
 export type StructInitField = {

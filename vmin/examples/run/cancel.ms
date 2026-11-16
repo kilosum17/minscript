@@ -24,7 +24,7 @@ async fn guarded() -> str {
     }
 }
 
-async fn main() {
+async fn main2() {
     shared var count = 0
     // A detached task may take a `shared` cell through `*T`: it keeps an alias (spec §10.1, §11.2).
     t := ticker(count)
@@ -41,7 +41,7 @@ async fn main() {
 
     slow := guarded()
     select {
-        _ = slow => log.println("the slow task won")
+        _:slow => log.println("the slow task won")
         time.after(2) => {
             log.println("the timeout won")
             slow.cancel()

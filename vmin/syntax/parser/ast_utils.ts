@@ -13,18 +13,22 @@ export function print(n?: AstNode, d?: number): string {
                 return `> import${n.is_pub ? ' pub' : ''} ${n.path}${n.alias ? ` as ${n.alias} ` : ''}`
             }
             case "StructDecl": {
-                return `${n.is_pub ? 'pub ' : ''}type ${n.name}${print(n.generics, d + 1)}\n${print(n.fields_list, d + 1)}`
+                return `\n${n.is_pub ? 'pub ' : ''}type ${n.name}${print(n.generics, d + 1)}\n${print(n.fields_list, d + 1)}`
             }
             case "StructFieldsList": {
                 return n.fields.map(f => print(f, d + 1)).join('\n')
             }
             case "StructField": {
-                return `${n.is_pub ? 'pub ' : ''}${n.name}: ${print(n.type, 0)}`
+                return `${n.is_pub ? 'pub ' : ''}${n.name}: ${print(n.type, 0)}${n.init ? '=' + print(n.init) : ''}`
             }
             case "GenericDecl": {
                 return '[' + n.items.map(t => print(t, 0)).join(',') + ']'
             }
             case "AstType": {
+                if (n.mode == 'func') {
+                    const args = n.args.map(n => print(n)).join(',')
+                    return `${n.is_option ? '?' : ''}(${args})->${print(n.ret)}`
+                }
                 return `${n.name}${print(n.generics, 0)}${n.is_option ? '?' : ''}`
             }
             case "UnionDecl": {
@@ -45,7 +49,7 @@ export function print(n?: AstNode, d?: number): string {
                 const params = n.params.map(p => print(p, 0)).join(',')
                 const ret = n.return ? ` -> ${print(n.return)}` : ''
                 const block = print(n.block, d + 1)
-                return `${n.is_pub ? 'pub ' : ''}fn ${n.name}${print(n.generics, 0)}(${params})${ret}\n${block}`
+                return `\n${n.is_pub ? 'pub ' : ''}fn ${n.name}${print(n.generics, 0)}(${params})${ret}\n${block}`
             }
             case "FuncParam": {
                 if (n.name == 'this') return n.is_mut ? '*this' : 'this'
@@ -92,7 +96,7 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "If": {
                 const else_ = n.else ? `\nelse ${print(n.else, d + 1)}` : ''
-                return `if ${n.is_let ? 'let' : ''} ${print(n.cond)}:\n${print(n.then, d + 1)}${else_}`
+                return `if ${n.is_let ? 'let' : ''} ${print(n.cond)}${n.variant ? '=' + print(n.variant) : ''}:\n${print(n.then, d + 1)}${else_}`
             }
             case "Call": {
                 const args = n.args.map(n => print(n)).join(',')
@@ -129,9 +133,9 @@ export function print(n?: AstNode, d?: number): string {
             case "StructInit": {
                 const fields = n.fields.map(f => {
                     if (f.mode == 'field') {
-                        return `${f.name}: ${print(f.expr)}`
+                        return `${f.name}: ${print(f.expr, d + 1)}`
                     } else if (f.mode == 'spread') {
-                        return `...${print(f.expr)}`
+                        return `...${print(f.expr, d + 1)}`
                     } else {
                         return `TODO`
                     }
@@ -152,9 +156,9 @@ export function print(n?: AstNode, d?: number): string {
             case "MapInit": {
                 const fields = n.fields.map(f => {
                     if (f.mode == 'field') {
-                        return `${print(f.key)}: ${print(f.val)}`
+                        return `${print(f.key)}: ${print(f.val, d + 1)}`
                     } else if (f.mode == 'spread') {
-                        return `...${print(f.expr)}`
+                        return `...${print(f.expr, d + 1)}`
                     } else {
                         return `TODO`
                     }
@@ -170,6 +174,36 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "Recover": {
                 return `recover ${print(n.block)}`
+            }
+            case "Bracket": {
+                return `(${print(n.expr)})`
+            }
+            case "Cast": {
+                return `(${print(n.lhs)} ${n.oper} ${print(n.type)})`
+            }
+            case "GenericExpr": {
+                return `.[${print(n.type)}]`
+            }
+            case "RecordInit": {
+                const fields = n.fields.map(f => {
+                    if (f.mode == 'field') {
+                        return `${f.name}: ${print(f.expr, d + 1)}`
+                    } else if (f.mode == 'spread') {
+                        return `...${print(f.expr, d + 1)}`
+                    } else {
+                        return `TODO`
+                    }
+                }).join('\n')
+                return `r{\n${fields}`
+            }
+            case "Select": {
+                const arms = n.arms.map(m => {
+                    return `${m.var_name ? `${m.var_name}: ` : ''}${print(m.expr)}=>${print(m.block)}`
+                }).join('\n')
+                return `select \n${arms}`
+            }
+            case "Await": {
+                return `await ${print(n.expr)}`
             }
         }
         // return `> TODO [${n.kind}]`

@@ -2,6 +2,7 @@ import type { Lexer } from "../lexer/lexer";
 import type {
     AstNode, AstSpan, AstType, BlockDecl, Expr,
     FuncDecl, FuncParam, GenericsDecl, ImportDecl, PackageDecl,
+    SelectArm,
     StmtDecl, StructDecl, StructField, StructFieldsList, UnionDecl,
     UnionItem
 } from "./ast_types";
@@ -26,6 +27,7 @@ export class Parser {
             if (!node) {
                 break
             }
+            this.nodes.push(node)
             console.log(printAstNode(node))
         }
 
@@ -42,7 +44,7 @@ export class Parser {
         return { start, end: this.lex.peek().span.end }
     }
 
-    getNode(): AstNode {
+    getNode(): AstNode | null {
         let offset = 0
         while (true) {
             const p1 = this.lex.peek(offset)
@@ -53,6 +55,8 @@ export class Parser {
             } else {
                 offset = 0
             }
+            if (p1.type_('EOF')) break
+
             if (kwd == 'package') {
                 return this.parsePackageDecl()
             } else if (kwd == 'import') {
@@ -63,10 +67,13 @@ export class Parser {
                 return this.parseUnionDecl()
             } else if (kwd === 'fn') {
                 return this.parseFuncDecl()
+            } else if (kwd == 'var' || kwd === 'let') {
+                return this.parseBinding()
             }
 
-            throw new Error(`Unkown type: ${offset} ${kwd} ${this.lex.peek(1).val} ${this.lex.peek(2).val}`)
+            throw new Error(`Unkown type: ${offset} ${kwd} ${this.lex.info()}`)
         }
+        return null
     }
 
     private parsePackageDecl(): PackageDecl {
@@ -174,18 +181,39 @@ export class Parser {
         }
     }
 
-    private parseType(): AstType {
+    parseType(): AstType {
         this.saveStart()
-        const name = this.lex.expect('ID').val
-        const generics = this.tryParseGenerics()
-        let is_option = false
-        if (this.lex.peek().symb() == '?') {
-            is_option = true
-            this.lex.expect_('?')
-        }
-        return {
-            kind: 'AstType', name, generics, is_option,
-            span: this.getSpan()
+        const p1 = this.lex.peek()
+        const p2 = this.lex.peek(1)
+        if (p1.val_('(') || (p1.val_('?') && p2.val_('('))) {
+            let is_option = p1.val_('?')
+            if (is_option) this.lex.expect_('?')
+            this.lex.expect_('(')
+            const args = [] as AstType[]
+            while (!this.lex.peek().val_(')')) {
+                args.push(this.parseType())
+                if (!this.lex.peek().val_(')')) this.lex.expect_(',')
+            }
+            this.lex.expect_(')')
+            this.lex.expect_('->')
+            const ret = this.parseType()
+            return { kind: 'AstType', mode: 'func', is_option, args, ret, span: this.getSpan() }
+        } else {
+            let name = this.lex.expect('ID').val
+            while (this.lex.peek().val_('.')) {
+                this.lex.expect_('.')
+                name += '.' + this.lex.expect('ID').val
+            }
+            const generics = this.tryParseGenerics()
+            let is_option = false
+            if (this.lex.peek().symb() == '?') {
+                is_option = true
+                this.lex.expect_('?')
+            }
+            return {
+                kind: 'AstType', mode: 'var', name, generics, is_option,
+                span: this.getSpan()
+            }
         }
     }
 
@@ -254,6 +282,11 @@ export class Parser {
             is_pub = true
             n1 = this.lex.next()
         }
+        let is_async = false
+        if (n1.kwd_('async')) {
+            is_async = true
+            n1 = this.lex.next()
+        }
         this.lex.expect('fn', n1)
         const name = this.lex.expect('ID').val
         const generics = this.tryParseGenerics()
@@ -264,7 +297,7 @@ export class Parser {
             ret = this.parseType()
         }
         const block = this.parseBlockDecl()
-        return { kind: 'FuncDecl', name, is_pub, params, return: ret, generics, block }
+        return { kind: 'FuncDecl', name, is_pub, is_async, params, return: ret, generics, block }
     }
 
     private parseFuncParams(): FuncParam[] {
@@ -345,11 +378,18 @@ export class Parser {
                 const name = this.lex.expect('ID').val
                 this.lex.expect_(':')
                 items.push({ kind: 'Label', name, span: this.getSpan() })
+            } else if (p1.kwd_('select')) {
+                const exp = this.parseSelect()
+                items.push(exp)
+            } else if (p1.kwd_('await')) {
+                this.lex.expect('await')
+                const expr = this.pratt.parseExpr(0, null)
+                items.push({ kind: 'Await', expr })
             } else {
                 const exp = this.pratt.parseExpr(0, { avoidBrace: false })
                 items.push(exp)
             }
-            console.log(printAstNode(items.at(-1)!))
+            // console.log(printAstNode(items.at(-1)!))
             loops += 1
         }
         if (
@@ -428,6 +468,28 @@ export class Parser {
         } else {
             throw new Error('Unkown for-loop format')
         }
+    }
+
+    parseSelect(): StmtDecl {
+        this.lex.expect('select')
+        this.lex.expect_('{')
+        const arms = [] as SelectArm[]
+        while (!this.lex.peek().val_('}')) {
+            const p1 = this.lex.peek()
+            const p2 = this.lex.peek(1)
+            let var_name = undefined as undefined | string
+            if (p1.type_('ID') && p2.val_(':')) {
+                var_name = this.lex.expect('ID').val
+                this.lex.expect_(':')
+            }
+            const expr = this.pratt.parseExpr(0, null)
+            this.lex.expect_('=>')
+            const block = this.parseBlockDecl({ bracesOptional: true })
+            arms.push({ var_name, expr, block })
+            if (this.lex.peek().val_(',')) this.lex.expect_(',')
+        }
+        this.lex.expect_('}')
+        return { kind: 'Select', arms }
     }
 
 }

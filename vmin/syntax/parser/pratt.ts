@@ -28,6 +28,7 @@ export class Pratt {
         let next = this.getBp(this.le.peek().val)
         while (next && minBp < next.lbp) {
             const tok = this.le.next()
+            // console.log('Next', next.lbp, tok.val, this.avoidAssign)
             left = this.parserInfixExp(tok, next.rbp, left)
             next = this.getBp(this.le.peek().val)
         }
@@ -38,17 +39,20 @@ export class Pratt {
     private assigns = new Set(['=', '+=', '-=', '*=', '/=',])
     getBp(oper: string) {
         if (this.avoidAssign && oper == '=') return null
-        if (this.assigns.has(oper)) return { lbp: 10, rbp: 10 }
+        if (this.assigns.has(oper)) return { lbp: 10, rbp: 9 }
         if (oper == '!') return { lbp: 15, rbp: 15 }
         if (oper == '..' || oper == '..=') return { lbp: 20, rbp: 20 }
-        if (oper == '??') return { lbp: 30, rbp: 30 }
+        if (oper == '??' || oper == '?.') return { lbp: 30, rbp: 30 }
         if (this.conds.has(oper)) return { lbp: 40, rbp: 40 }
+        if (oper == '<<' || oper == '>>') return { lbp: 45, rbp: 45 }
         if (oper == '+' || oper == '-') return { lbp: 50, rbp: 50 }
         if (oper == '*' || oper == '/' || oper == '%') return { lbp: 60, rbp: 60 }
         if (oper == '.') return { lbp: 70, rbp: 70 }
         if (oper == '[') return { lbp: 75, rbp: 75 }
         if (oper == '(') return { lbp: 80, rbp: 80 }
         if (oper == '?') return { lbp: 90, rbp: 90 } // error propagation
+        if (oper == '-') return { lbp: 1, rbp: 100 }  // TODO 
+        if (oper == 'as') return { lbp: 110, rbp: 110 }
         return null
     }
 
@@ -56,11 +60,16 @@ export class Pratt {
         this.pa.saveStart()
         const p1 = this.le.peek()
         const p2 = this.le.peek(1)
-        console.log('p1', p1.kwd(), p1.type)
+        // console.log('p1', p1.kwd(), p1.type)
         if (p1.val_('-') || p1.val_('!')) {
             const oper = this.le.next().val
             const expr = this.parseExpr(0, null)
             return { kind: 'Unary', oper, expr, span: this.pa.getSpan() }
+        }
+        if (p1.kwd_('await')) {
+            this.le.expect('await')
+            const expr = this.parseExpr(0, null)
+            return { kind: 'Await', expr, span: this.pa.getSpan() }
         }
         if (p1.kwd_('match')) {
             return this.parseMatchExpr()
@@ -83,8 +92,17 @@ export class Pratt {
         if (p1.val_('m{')) {
             return this.parseMap()
         }
+        if (p1.val_('r{')) {
+            return this.parseRecord()
+        }
         if (p1.kwd_('recover')) {
             return this.parseRecover()
+        }
+        if (p1.val_('(')) {
+            this.le.expect_('(')
+            const expr = this.parseExpr(0, null)
+            this.le.expect_(')')
+            return { kind: 'Bracket', expr }
         }
         if (p1.type_('ID')) {
             if (!this.avoidBrace && p2.val_('{')) {
@@ -103,7 +121,7 @@ export class Pratt {
     private bins = new Set([
         '+', '-', '*', '/', '%',
         '>', '<', '>=', '<=', '==', '!=',
-        '??', '..', '..=',
+        '??', '?.', '..', '..=', '<<', '>>',
         ...this.assigns,
     ])
     parserInfixExp(tok: Token, minBp: number, lhs: Expr): Expr {
@@ -113,6 +131,10 @@ export class Pratt {
             const rhs = this.parseExpr(minBp, null)
             return { kind: 'Binary', oper, lhs, rhs, span: this.pa.getSpan() }
         }
+        if (tok.kwd_('as')) {
+            const type = this.pa.parseType()
+            return { kind: 'Cast', oper, lhs, type, span: this.pa.getSpan() }
+        }
         if (oper == '.') {
             let next = this.le.next()
             let rhs: Expr
@@ -120,6 +142,10 @@ export class Pratt {
                 rhs = { kind: 'Var', name: next.val, span: this.pa.getSpan() }
             } else if (next.type_('NUM')) {
                 rhs = { kind: 'Literal', val: next.val, span: this.pa.getSpan() }
+            } else if (next.val_('[')) {
+                const type = this.pa.parseType()
+                this.le.expect_(']')
+                return { kind: 'GenericExpr', type }
             } else {
                 throw new Error(`Unexpected member value ${this.le.info()}`)
             }
@@ -229,9 +255,9 @@ export class Pratt {
             is_let = true
             this.le.expect('let')
         }
-        console.log('then', is_let)
+        // console.log('then', is_let)
         const cond = this.parseExpr(0, { avoidBrace: !is_let, avoidAssign: true })
-        console.log('then', cond)
+        // console.log('then', cond)
         let variant = undefined as undefined | Expr
         if (is_let) {
             this.le.expect_('=')
@@ -254,7 +280,7 @@ export class Pratt {
         if (!skip_bracket) this.le.expect_('(')
         const args = [] as Expr[]
         while (!this.le.peek().val_(')')) {
-            args.push(this.parseExpr(0, { avoidBrace: false }))
+            args.push(this.parseExpr(0, { avoidBrace: false, avoidAssign: this.avoidAssign }))
             if (!this.le.peek().val_(')')) {
                 this.le.expect_(',')
             }
@@ -289,8 +315,8 @@ export class Pratt {
         return { kind: 'StructInit', name, fields }
     }
 
-    parseStructFields() {
-        this.le.expect_('{')
+    parseStructFields(skip_brace = false) {
+        if (!skip_brace) this.le.expect_('{')
 
         const fields = [] as StructInitField[]
         while (!this.le.peek().val_('}')) {
@@ -396,6 +422,12 @@ export class Pratt {
         this.le.expect('recover')
         const block = this.pa.parseBlockDecl()
         return { kind: 'Recover', block }
+    }
+
+    parseRecord(): Expr {
+        this.le.expect_('r{')
+        const fields = this.parseStructFields(true)
+        return { kind: 'RecordInit', fields }
     }
 
 }

@@ -192,7 +192,7 @@ function pr(node: AstNode, d: number): string {
             const asy = node.is_async ? 'async ' : ''
             const ret = node.return && node.return.name !== 'void' ? ` -> ${pr(node.return, d)}` : ''
             const blk = node.block ? ` ${block(node.block, d)}` : ''
-            return `${pub}${asy}fun ${node.name}${printGenerics(node.generics)}${pr(node.params, d)}${ret}${blk}`
+            return `\n${pub}${asy}fun ${node.name}${printGenerics(node.generics)}${pr(node.params, d)}${ret}${blk}`
         }
         case 'GenericItem':
             return `${node.name}${printGenerics(node.generics)}`
@@ -222,7 +222,7 @@ function pr(node: AstNode, d: number): string {
             return node.expr ? `return ${pr(node.expr, d)}` : 'return'
         case 'StructDecl': {
             const pub = node.is_public ? 'pub ' : ''
-            return `${pub}type ${node.name}${printGenerics(node.generics)} = ${pr(node.fields, d)}`
+            return `\n${pub}type ${node.name}${printGenerics(node.generics)} = ${pr(node.fields, d)}`
         }
         case 'StructFieldList': {
             if (node.fields.length === 0) return '{}'
@@ -233,7 +233,7 @@ function pr(node: AstNode, d: number): string {
             return `${node.is_public ? 'pub ' : ''}${node.name}: ${pr(node.type, d)}`
         case 'UnionDecl': {
             const pub = node.is_public ? 'pub ' : ''
-            return `${pub}union ${node.name}${printGenerics(node.generics)} = ${pr(node.fields, d)}`
+            return `\n${pub}union ${node.name}${printGenerics(node.generics)} = ${pr(node.fields, d)}`
         }
         case 'UnionFieldList': {
             if (node.fields.length === 0) return '{}'
