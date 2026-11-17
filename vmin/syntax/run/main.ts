@@ -1,5 +1,6 @@
 import { Lexer } from "../lexer/lexer"
 import { Parser } from "../parser/parser"
+import { Checker } from "../sem/check"
 
 async function main() {
     const operation = process.argv[2]
@@ -36,7 +37,8 @@ async function main() {
             parser.parse()
         }
     } else if (runSemantic) {
-
+        const checker = new Checker(path)
+        await checker.runCheck()
     }
 }
 

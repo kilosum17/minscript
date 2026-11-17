@@ -165,7 +165,10 @@ export class Parser {
     private parseStructField(): StructField {
         this.saveStart()
         let is_pub = false
-        if (this.lex.peek().kwd() === 'pub') is_pub = true
+        if (this.lex.peek().kwd() === 'pub') {
+            this.lex.expect('pub')
+            is_pub = true
+        }
         const name = this.lex.expect('ID').val
         this.lex.expect_(':')
         const type = this.parseType()
@@ -399,8 +402,9 @@ export class Parser {
             }
             const p1 = this.lex.peek()
             const p2 = this.lex.peek(1)
-            let prev_stmt = '' as 'label' | ''
+            let prev_stmt = '' as 'label' | 'return' | ''
             if (p1.kwd_('return')) {
+                prev_stmt = 'return'
                 this.lex.expect('return')
                 let expr = undefined as undefined | Expr
                 if (!this.lex.peek().nl_before && !this.lex.peek().val_('}')) {
@@ -445,7 +449,8 @@ export class Parser {
             } else {
                 if (!this.lex.peek().val_('}') &&
                     !this.lex.peek().nl_before &&
-                    prev_stmt != 'label'
+                    prev_stmt != 'label' &&
+                    this.lex.peek(-1).val_('or')
                     // !this.lex.peek().val_('or')
                 ) {
                     throw new Error(`More than 1 expression in a line: ${this.lex.info()}`)

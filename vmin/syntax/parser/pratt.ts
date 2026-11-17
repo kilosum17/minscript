@@ -53,7 +53,7 @@ export class Pratt {
         // prefix - and !  → 70   (in parseNull)
         if (oper == '?') return { lbp: 72, rbp: 72 }             // postfix
         // prefix await    → 75   (in parseNull)
-        if (oper == '.' || oper == '?.' || oper == '[' || oper == '(')
+        if (oper == '.' || oper == '?.' || oper == '[' || oper == '(' || oper == '{')
             return { lbp: 80, rbp: 80 }
         return null
     }
@@ -299,6 +299,7 @@ export class Pratt {
         const args = [] as Expr[]
         while (!this.le.peek().val_(')')) {
             args.push(this.parseExpr(0, { avoidBrace: false, avoidAssign: this.avoidAssign }))
+            console.log('LAst expr', args.at(-1))
             if (!this.le.peek().val_(')')) {
                 this.le.expect_(',')
             }

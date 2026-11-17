@@ -300,6 +300,7 @@ export type Expr = {
 export type StructInitField = {
     mode: 'field',
     name: string,
+    // is_pub: boolean,
     expr: Expr,
 } | {
     mode: 'spread',
