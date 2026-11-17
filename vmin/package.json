@@ -1,10 +1,10 @@
 {
   "name": "vmin",
-  "module": "index.ts",
+  "module": "syntax/run/main.ts",
   "type": "module",
   "private": true,
   "scripts": {
-    "cli":"bun run index.ts",
+    "cli": "bun run syntax/run/main.ts",
     "typecheck": "bun check"
   },
   "devDependencies": {

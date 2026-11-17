@@ -40,7 +40,7 @@ export const mergeMap = (() => {
             map[k2].add(v.substring(2, 3))
         }
     })
-    console.log('MAP', map)
+    // console.log('MAP', map)
     return map
 })()
 
