@@ -126,7 +126,8 @@ export function print(n?: AstNode, d?: number): string {
                 const symb = n.is_short ? (n.is_mut ? ':==' : ':=') : (n.is_mut ? 'var' : 'let')
                 const type = !n.is_short && n.type ? ':' + print(n.type) : ''
                 const shared = n.is_shared ? 'shared ' : ''
-                return `${shared}${n.is_short ? '' : symb} ${n.name}${type}${n.is_short ? symb : '='} ${print(n.expr)}`
+                const name = n.name ? n.name : print(n.bind_expr)
+                return `${shared}${n.is_short ? '' : symb} ${name}${type}${n.is_short ? symb : '='} ${print(n.expr)}`
             }
             case "Range": {
                 return `${print(n.start)}${n.oper}${print(n.end)}`
@@ -230,6 +231,12 @@ export function print(n?: AstNode, d?: number): string {
             case "TupleInit": {
                 const items = n.items.map(n => print(n)).join(',')
                 return `t(${items})`
+            }
+            case "Continue": {
+                return `continue ${n.label || ''}`
+            }
+            case "Break": {
+                return `break ${n.label || ''}`
             }
         }
         // return `> TODO [${n.kind}]`

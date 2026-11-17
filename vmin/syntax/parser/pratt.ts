@@ -40,20 +40,24 @@ export class Pratt {
     getBp(oper: string) {
         if (this.avoidAssign && oper == '=') return null
         if (this.assigns.has(oper)) return { lbp: 10, rbp: 9 }
-        if (oper == '!') return { lbp: 15, rbp: 15 }
+        if (oper == 'or') return { lbp: 12, rbp: 12 }
+        // if (oper == '!') return { lbp: 15, rbp: 15 }
         if (oper == '..' || oper == '..=') return { lbp: 20, rbp: 20 }
-        if (oper == '??' || oper == '?.' || oper == 'or') return { lbp: 30, rbp: 30 }
-        if (oper == '&&' || oper == '||') return { lbp: 35, rbp: 35 }
+        if (oper == '??') return { lbp: 30, rbp: 30 }
+        if (oper == '||') return { lbp: 35, rbp: 35 }
+        if (oper == '&&' || oper == '||') return { lbp: 36, rbp: 36 }
         if (this.conds.has(oper)) return { lbp: 40, rbp: 40 }
         if (oper == '<<' || oper == '>>') return { lbp: 45, rbp: 45 }
         if (oper == '+' || oper == '-') return { lbp: 50, rbp: 50 }
         if (oper == '*' || oper == '/' || oper == '%') return { lbp: 60, rbp: 60 }
-        if (oper == '.') return { lbp: 70, rbp: 70 }
-        if (oper == '[') return { lbp: 75, rbp: 75 }
-        if (oper == '(') return { lbp: 80, rbp: 80 }
+        if (oper == 'as') return { lbp: 61, rbp: 61 }
+        // unary - , ! = 62
+        // await = 65
+        if (oper == '.' || oper == '?.') return { lbp: 70, rbp: 70 }
+        if (oper == '[') return { lbp: 70, rbp: 70 }
+        if (oper == '(') return { lbp: 70, rbp: 70 }
         if (oper == '?') return { lbp: 90, rbp: 90 } // error propagation
-        if (oper == '-') return { lbp: 1, rbp: 100 }  // TODO 
-        if (oper == 'as') return { lbp: 110, rbp: 110 }
+        // if (oper == '-') return { lbp: 1, rbp: 100 }  // TODO 
         return null
     }
 
@@ -64,12 +68,12 @@ export class Pratt {
         // console.log('p1', p1.kwd(), p1.type)
         if (p1.val_('-') || p1.val_('!')) {
             const oper = this.le.next().val
-            const expr = this.parseExpr(0, null)
+            const expr = this.parseExpr(62, null)
             return { kind: 'Unary', oper, expr, span: this.pa.getSpan() }
         }
         if (p1.kwd_('await')) {
             this.le.expect('await')
-            const expr = this.parseExpr(0, null)
+            const expr = this.parseExpr(65, null)
             return { kind: 'Await', expr, span: this.pa.getSpan() }
         }
         if (p1.kwd_('match')) {
@@ -135,7 +139,7 @@ export class Pratt {
     private bins = new Set([
         '+', '-', '*', '/', '%',
         '>', '<', '>=', '<=', '==', '!=',
-        '??', '?.', 'or', '..', '..=', '<<', '>>',
+        '??', 'or', '..', '..=', '<<', '>>',
         "&&", '||',
         ...this.assigns,
     ])
@@ -150,7 +154,7 @@ export class Pratt {
             const type = this.pa.parseType()
             return { kind: 'Cast', oper, lhs, type, span: this.pa.getSpan() }
         }
-        if (oper == '.') {
+        if (oper == '.' || tok.val == '?.') {
             let next = this.le.next()
             let rhs: Expr
             if (next.type_('ID')) {
@@ -164,7 +168,8 @@ export class Pratt {
             } else {
                 throw new Error(`Unexpected member value ${this.le.info()}`)
             }
-            return { kind: 'Member', lhs, rhs, span: this.pa.getSpan() }
+            const is_optional = tok.val_('?.')
+            return { kind: 'Member', is_optional, lhs, rhs, span: this.pa.getSpan() }
         }
         if (oper == '(') {
             return this.parseFuncCall(lhs, true)

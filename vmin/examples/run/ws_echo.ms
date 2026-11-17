@@ -4,7 +4,7 @@ package main
 import "std.net.ws"
 
 async fn echo(conn: ws.Connection) {
-    let t(var reader, writer) = conn.split()
+    let t(reader, writer) = conn.split()
     for {
         let msg = await reader.receive() or break
         match msg {
@@ -29,9 +29,9 @@ async fn main() {
     let client = await server.accept() or return
     echo(client).ignore()
 
-    let t(var reader, writer) = conn.split()
+    let t(reader, writer) = conn.split()
     for word in ["hello", "minscript", "bye"] {
-        await writer.send(Text(word)) or return
+        (await writer.send(Text(word))) or return
         let reply = await reader.receive() or return
         if let Text(s) = reply { log.println("echo: ${s}") }
     }

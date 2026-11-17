@@ -399,6 +399,7 @@ export class Parser {
             }
             const p1 = this.lex.peek()
             const p2 = this.lex.peek(1)
+            let prev_stmt = '' as 'label' | ''
             if (p1.kwd_('return')) {
                 this.lex.expect('return')
                 let expr = undefined as undefined | Expr
@@ -407,6 +408,14 @@ export class Parser {
                     expr = this.pratt.parseExpr(0, { avoidBrace: false })
                 }
                 items.push({ kind: 'Return', expr, span: this.getSpan() })
+            } else if (p1.kwd_('continue') || p1.kwd_('break')) {
+                const is_continue = p1.kwd_('continue')
+                this.lex.next()
+                let label = undefined as undefined | string
+                if (this.lex.peek().type_('ID')) {
+                    label = this.lex.expect('ID').val
+                }
+                items.push({ kind: is_continue ? 'Continue' : 'Break', label })
             } else if (p1.kwd_('var') || p1.kwd_('let') ||
                 (p1.kwd_('shared') && (p2.kwd_('var') || p2.kwd_('let')))
             ) {
@@ -419,25 +428,26 @@ export class Parser {
                 const stmt = this.parseForLoop()
                 items.push(stmt)
             } else if (p1.type_('ID') && p2.val_(':')) {
+                prev_stmt = 'label'
                 const name = this.lex.expect('ID').val
                 this.lex.expect_(':')
                 items.push({ kind: 'Label', name, span: this.getSpan() })
-            } else if (p1.kwd_('await')) {
-                this.lex.expect('await')
-                const expr = this.pratt.parseExpr(0, null)
-                items.push({ kind: 'Await', expr, span: this.getSpan() })
             } else {
                 const exp = this.pratt.parseExpr(0, { avoidBrace: false })
                 items.push(exp)
             }
 
-            console.log(printAstNode(items.at(-1)!))
+            // console.log(printAstNode(items.at(-1)!))
 
             if (this.lex.peek().val_(';')) {
                 this.lex.expect_(';')
                 items.push({ kind: 'SemiColon' })
             } else {
-                if (!this.lex.peek().val_('}') && !this.lex.peek().nl_before) {
+                if (!this.lex.peek().val_('}') &&
+                    !this.lex.peek().nl_before &&
+                    prev_stmt != 'label'
+                    // !this.lex.peek().val_('or')
+                ) {
                     throw new Error(`More than 1 expression in a line: ${this.lex.info()}`)
                 }
             }
@@ -477,8 +487,20 @@ export class Parser {
             throw new Error('Unkown binding format')
         }
 
-        const name = this.lex.expect('ID').val
-        if (is_short) this.lex.next()
+        let name = undefined as undefined | string
+        let bind_expr = undefined as undefined | Expr
+        if (is_short) {
+            name = this.lex.expect('ID').val
+            this.lex.next() // consume :=
+        } else {
+            if (this.lex.peek().type_('ID') &&
+                (this.lex.peek(1).val_('=') || this.lex.peek(1).val_(':'))
+            ) {
+                name = this.lex.expect('ID').val
+            } else {
+                bind_expr = this.pratt.parseExpr(0, { avoidBrace: false, avoidAssign: true })
+            }
+        }
 
         let type = undefined as undefined | AstType
         if (!is_short && this.lex.peek().val_(':')) {
@@ -504,7 +526,7 @@ export class Parser {
         if (has_expr) {
             expr = this.pratt.parseExpr(0, { avoidBrace: false })
         }
-        return { kind: 'Binding', name, is_short, is_mut, is_shared, type, expr, span: this.getSpan() }
+        return { kind: 'Binding', name, bind_expr, is_short, is_mut, is_shared, type, expr, span: this.getSpan() }
     }
 
     parseForLoop(): StmtDecl {

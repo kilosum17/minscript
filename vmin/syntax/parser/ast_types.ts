@@ -145,7 +145,8 @@ export type StmtDecl = {
     span: AstSpan,
 } | {
     kind: 'Binding',
-    name: string
+    name?: string
+    bind_expr?: Expr
     is_short: boolean
     is_mut: boolean
     is_shared: boolean
@@ -172,6 +173,12 @@ export type StmtDecl = {
         span: AstSpan,
     } | {
         kind: 'SemiColon',
+    } | {
+        kind: 'Continue',
+        label?: string
+    } | {
+        kind: 'Break',
+        label?: string
     }
 
 export type SelectArm = {
@@ -203,6 +210,7 @@ export type Expr = {
     span: AstSpan,
 } | {
     kind: 'Member',
+    is_optional: boolean,
     lhs: Expr,
     rhs: Expr,
     span: AstSpan,
