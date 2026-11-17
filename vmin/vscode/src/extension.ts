@@ -9,8 +9,10 @@ let client: LanguageClient
 
 export function activate(context: vscode.ExtensionContext) {
     const serverModule = context.asAbsolutePath(
-        "../lsp/dist/server.js"
+        "../lsp/dist/lsp/src/server.js"
     )
+    
+    // console.log("MinScript server:", serverModule)
 
     const serverOptions: ServerOptions = {
         run: {

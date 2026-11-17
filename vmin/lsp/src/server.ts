@@ -56,6 +56,13 @@ documents.onDidChangeContent(async ({ document }) => {
     })
 })
 
+documents.onDidOpen(async ({ document }) => {
+    connection.sendDiagnostics({
+        uri: document.uri,
+        diagnostics: await validate(document)
+    })
+})
+
 documents.listen(connection)
 connection.listen()
 
