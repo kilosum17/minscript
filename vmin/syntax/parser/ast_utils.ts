@@ -29,6 +29,16 @@ export function print(n?: AstNode, d?: number): string {
                     const args = n.args.map(n => print(n)).join(',')
                     return `${n.is_option ? '?' : ''}(${args})->${print(n.ret)}`
                 }
+                if (n.mode == 'tuple') {
+                    const items = n.items.map(n => print(n)).join(',')
+                    return `t(${items})`
+                }
+                if (n.mode == 'record') {
+                    const items = n.fields.map(n => {
+                        return `${n.key}:${print(n.type)}`
+                    }).join(',\n')
+                    return `r{${items}}`
+                }
                 return `${n.name}${print(n.generics, 0)}${n.is_option ? '?' : ''}`
             }
             case "UnionDecl": {
@@ -123,7 +133,7 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "ForLoop": {
                 if (n.mode == 'in') {
-                    return `for ${n.var_name} in ${print(n.expr)}\n${print(n.block, d + 1)}`
+                    return `for ${n.is_await ? 'await ' : ''}${n.var_name} in ${print(n.expr)}\n${print(n.block, d + 1)}`
                 } else if (n.mode == 'infinite') {
                     return `for \n${print(n.block, d + 1)}`
                 }
@@ -216,6 +226,10 @@ export function print(n?: AstNode, d?: number): string {
             case "Lock": {
                 const vars = n.vars.map(v => print(v)).join(',')
                 return `lock ${vars}: \n${print(n.block, d + 1)}`
+            }
+            case "TupleInit": {
+                const items = n.items.map(n => print(n)).join(',')
+                return `t(${items})`
             }
         }
         // return `> TODO [${n.kind}]`

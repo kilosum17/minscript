@@ -185,7 +185,43 @@ export class Parser {
         this.saveStart()
         const p1 = this.lex.peek()
         const p2 = this.lex.peek(1)
-        if (p1.val_('(') || (p1.val_('?') && p2.val_('('))) {
+        if (p1.val_('t(')) {
+            this.lex.expect_('t(')
+            const items = [] as AstType[]
+            while (!this.lex.peek().val_(')')) {
+                items.push(this.parseType())
+                if (!this.lex.peek().val_(')')) {
+                    this.lex.expect_(',')
+                }
+            }
+            this.lex.expect_(')')
+            let is_option = false
+            if (this.lex.peek().val_('?')) {
+                is_option = true
+                this.lex.expect_('?')
+            }
+            console.log('IN record type')
+            return { kind: 'AstType', mode: 'tuple', is_option, items, span: this.getSpan() }
+        } else if (p1.val_('r{')) {
+            this.lex.expect_('r{')
+            const fields = [] as { key: string, type: AstType }[]
+            while (!this.lex.peek().val_('}')) {
+                const key = this.lex.expect('ID').val
+                this.lex.expect_(':')
+                const type = this.parseType()
+                fields.push({ key, type })
+                if (!this.lex.peek().val_('}')) {
+                    this.lex.expect_(',')
+                }
+            }
+            this.lex.expect_('}')
+            let is_option = false
+            if (this.lex.peek().val_('?')) {
+                is_option = true
+                this.lex.expect_('?')
+            }
+            return { kind: 'AstType', mode: 'record', is_option, fields, span: this.getSpan() }
+        } else if (p1.val_('(') || (p1.val_('?') && p2.val_('('))) {
             let is_option = p1.val_('?')
             if (is_option) this.lex.expect_('?')
             this.lex.expect_('(')
@@ -366,7 +402,8 @@ export class Parser {
             if (p1.kwd_('return')) {
                 this.lex.expect('return')
                 let expr = undefined as undefined | Expr
-                if (!this.lex.peek().nl_before) {
+                if (!this.lex.peek().nl_before && !this.lex.peek().val_('}')) {
+                    console.log('getting return expt', this.lex.peek().val)
                     expr = this.pratt.parseExpr(0, { avoidBrace: false })
                 }
                 items.push({ kind: 'Return', expr, span: this.getSpan() })
@@ -385,9 +422,6 @@ export class Parser {
                 const name = this.lex.expect('ID').val
                 this.lex.expect_(':')
                 items.push({ kind: 'Label', name, span: this.getSpan() })
-            } else if (p1.kwd_('select')) {
-                const exp = this.parseSelect()
-                items.push(exp)
             } else if (p1.kwd_('await')) {
                 this.lex.expect('await')
                 const expr = this.pratt.parseExpr(0, null)
@@ -396,14 +430,14 @@ export class Parser {
                 const exp = this.pratt.parseExpr(0, { avoidBrace: false })
                 items.push(exp)
             }
-           
+
             console.log(printAstNode(items.at(-1)!))
-           
+
             if (this.lex.peek().val_(';')) {
                 this.lex.expect_(';')
                 items.push({ kind: 'SemiColon' })
             } else {
-                if (!this.lex.peek().nl_before) {
+                if (!this.lex.peek().val_('}') && !this.lex.peek().nl_before) {
                     throw new Error(`More than 1 expression in a line: ${this.lex.info()}`)
                 }
             }
@@ -470,7 +504,7 @@ export class Parser {
         if (has_expr) {
             expr = this.pratt.parseExpr(0, { avoidBrace: false })
         }
-        return { kind: 'Binding', name, is_short, is_mut,is_shared, type, expr, span: this.getSpan() }
+        return { kind: 'Binding', name, is_short, is_mut, is_shared, type, expr, span: this.getSpan() }
     }
 
     parseForLoop(): StmtDecl {
@@ -478,40 +512,26 @@ export class Parser {
         this.lex.expect('for')
         const p1 = this.lex.peek()
         const p2 = this.lex.peek(1)
-        if (p1.type_('ID') && p2.val_('in')) {
+        if ((p1.type_('ID') && p2.val_('in')) ||
+            (p1.kwd_('await'))
+        ) {
+            let is_await = false
+            if (p1.kwd_('await')) {
+                is_await = true
+                this.lex.expect('await')
+            }
             const var_name = this.lex.expect('ID').val
             this.lex.expect('in')
             const expr = this.pratt.parseExpr(0, { avoidBrace: true })
             const block = this.parseBlockDecl()
-            return { kind: 'ForLoop', mode: 'in', var_name, expr, block, span: this.getSpan() }
+            return { kind: 'ForLoop', is_await, mode: 'in', var_name, expr, block, span: this.getSpan() }
         } else if (p1.val_('{')) {
             const block = this.parseBlockDecl()
             return { kind: 'ForLoop', mode: 'infinite', block, span: this.getSpan() }
         } else {
-            throw new Error('Unkown for-loop format')
+            throw new Error(`Unkown for-loop format: ${this.lex.info()}`)
         }
     }
 
-    parseSelect(): StmtDecl {
-        this.lex.expect('select')
-        this.lex.expect_('{')
-        const arms = [] as SelectArm[]
-        while (!this.lex.peek().val_('}')) {
-            const p1 = this.lex.peek()
-            const p2 = this.lex.peek(1)
-            let var_name = undefined as undefined | string
-            if (p1.type_('ID') && p2.val_(':')) {
-                var_name = this.lex.expect('ID').val
-                this.lex.expect_(':')
-            }
-            const expr = this.pratt.parseExpr(0, null)
-            this.lex.expect_('=>')
-            const block = this.parseBlockDecl({ bracesOptional: true })
-            arms.push({ var_name, expr, block })
-            if (this.lex.peek().val_(',')) this.lex.expect_(',')
-        }
-        this.lex.expect_('}')
-        return { kind: 'Select', arms }
-    }
 
 }

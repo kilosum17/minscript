@@ -112,10 +112,9 @@ export class Lexer {
         return text
     }
 
-    private in_str_exp = false
-    private str_exp_mode = 'expr' as 'raw' | 'expr'
-    private str_exp_depth = 0
-    private str_multiline_stack = [] as boolean[]
+    private mode = 'expr' as 'raw' | 'expr'
+    private str_stack = [] as boolean[]
+    private wait_for_brace = false
     private getNext() {
         let ws_before = false
         let nl_before = false
@@ -123,7 +122,7 @@ export class Lexer {
         let type: TokenType = 'UNK'
 
         // skip spaces
-        while (isWhitespace(this.cur())) {
+        while (this.mode == 'expr' && isWhitespace(this.cur())) {
             if (isNewline(this.cur())) nl_before = true
             this.get()
             ws_before = true
@@ -144,23 +143,30 @@ export class Lexer {
         if (this.pos >= this.source.length) return null
 
         // handle string parts
-        if (this.str_exp_mode == 'raw') {
-            if (this.cur() == '"') {
+        if (this.mode == 'raw') {
+            if (this.cur() == '$' && this.cur(1) === '{') {
+                this.get()
+                this.get()
+                this.mode = 'expr'
+                this.wait_for_brace = true
+                type = 'STR_EXP_OPEN'
+                return getRet('${')
+            } else if (this.cur() == '"') {
                 let is_multiline = false
                 if (this.cur(1) == '"' && this.cur(2) == '"') is_multiline = true
-                let saved_is_multiline = this.str_multiline_stack.at(-1)
+                let saved_is_multiline = this.str_stack.at(-1)
                 if (is_multiline != saved_is_multiline) throw new Error('UNEXPECTED state ' + is_multiline + '=' + saved_is_multiline)
                 let text = ""
                 if (!is_multiline) text += this.get()
                 if (is_multiline) text += this.get(3)
-                this.str_exp_mode = 'expr'
-                this.str_multiline_stack.pop()
+                this.mode = 'expr'
+                this.str_stack.pop()
                 // console.log('Got \\', text, this.cur(), this.str_exp_mode)
                 type = 'STR_END'
                 return getRet(text)
             } else {
                 let text = ""
-                let saved_is_multiline = this.str_multiline_stack.at(-1)
+                let saved_is_multiline = this.str_stack.at(-1)
                 if (saved_is_multiline == undefined) throw new Error('UNEXPECTED state')
                 while (
                     (!saved_is_multiline && this.cur() !== '"') ||
@@ -175,11 +181,25 @@ export class Lexer {
                             this.get()
                         }
                     }
+                    if (this.cur() === '$' && this.cur(1) == '{') {
+                        break
+                    }
                     text += this.get()
                 }
                 // console.log('Got s',text, this.cur(), saved_is_multiline, this.str_exp_mode)
                 type = 'STR_PART'
                 return getRet(text)
+            }
+        }
+
+        if (this.mode === 'expr' && this.wait_for_brace) {
+            if (this.cur() === '}') {
+                this.get()
+                this.wait_for_brace = false
+                this.mode = 'raw'
+                type = 'STR_EXP_CLOSE'
+                console.log('Got close')
+                return getRet('}')
             }
         }
 
@@ -253,8 +273,8 @@ export class Lexer {
             // handle string start
             let is_multiline = false
             if (this.cur(1) == '"' && this.cur(2) === '"') is_multiline = true
-            this.str_exp_mode = 'raw'
-            this.str_multiline_stack.push(is_multiline)
+            this.mode = 'raw'
+            this.str_stack.push(is_multiline)
             let text = ''
             if (!is_multiline) text += this.get()
             if (is_multiline) text += this.get(3)

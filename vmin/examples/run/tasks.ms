@@ -70,7 +70,7 @@ async fn main() {
     var sub = topic.subscribe()
     topic.publish(7)
     let first = select {
-        Some(v) = sub.next() => "message ${v}"
+        v:sub.next() => "message ${v}"
         time.after(1000) => "timeout"
     }
     let second = select {

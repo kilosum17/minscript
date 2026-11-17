@@ -12,8 +12,8 @@ import "std.io"
 type Point { x: f64, y: f64, label: str? }
 
 async fn files() {
-    let dir = "${env.get("TMPDIR") ?? "/tmp"}/minscript-std-test"
-    await fs.create_dir("${dir}/inner") or e => { log.error("${e}"); return }
+    let dir = "fedss${env.get("TMPDIR") ?? "/tmp"}/minscript-std-test"
+    await fs.create_dir("${dir}/inner") or #{e => log.error("${e}"); return }
     await fs.write_text("${dir}/a.txt", "alpha") or return
     await fs.write_text("${dir}/inner/b.txt", "beta") or return
 
@@ -45,7 +45,7 @@ async fn main() {
 
     log.println("math: ${math.sqrt(16.0)} ${math.abs(-3)} ${math.max(2, 7)} ${math.pi > 3.14}")
 
-    let p = json.parse.[Point]("{\"x\": 1.5, \"y\": 2}") or e => {
+    let p = json.parse.[Point]("{\"x\": 1.5, \"y\": 2}") or #{e => 
         log.error("${e}")
         return
     }

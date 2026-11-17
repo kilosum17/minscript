@@ -16,13 +16,13 @@ async fn echo(conn: ws.Connection) {
 }
 
 async fn main() {
-    var server = await ws.listen("127.0.0.1", 0) or e => {
+    var server = await ws.listen("127.0.0.1", 0) or #{e => 
         log.error("listen failed: ${e}")
         return
     }
     port := server.port()
 
-    let conn = await ws.connect("ws://127.0.0.1:${port}/") or e => {
+    let conn = await ws.connect("ws://127.0.0.1:${port}/") or #{e => 
         log.error("connect failed: ${e}")
         return
     }

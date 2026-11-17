@@ -1,6 +1,6 @@
 import type { Lexer } from "../lexer/lexer";
 import type { Token } from "../lexer/lexer_types";
-import type { BlockDecl, Expr, MapInitField, MatchArm, StmtDecl, StructInitField } from "./ast_types";
+import type { BlockDecl, Expr, MapInitField, MatchArm, SelectArm, StmtDecl, StructInitField } from "./ast_types";
 import type { Parser } from "./parser";
 
 type ParseOps = {
@@ -75,6 +75,9 @@ export class Pratt {
         if (p1.kwd_('match')) {
             return this.parseMatchExpr()
         }
+        if (p1.kwd_('select')) {
+            return this.parseSelect()
+        }
         if (p1.kwd_('if')) {
             return this.parseIfExpr()
         }
@@ -95,6 +98,9 @@ export class Pratt {
         }
         if (p1.val_('r{')) {
             return this.parseRecord()
+        }
+        if (p1.val_('t(')) {
+            return this.parseTuple()
         }
         if (p1.kwd_('recover')) {
             return this.parseRecover()
@@ -308,6 +314,7 @@ export class Pratt {
                 const part = this.le.expect('STR_PART')
                 parts.push(part.val)
             } else if (p1.type_('STR_EXP_OPEN')) {
+                this.le.expect_('STR_EXP_OPEN')
                 const exp = this.parseExpr(0, null)
                 parts.push(exp)
                 this.le.expect('STR_EXP_CLOSE')
@@ -340,7 +347,9 @@ export class Pratt {
                 const expr = this.parseExpr(0, { avoidBrace: false })
                 fields.push({ mode: 'field', name, expr })
             }
-            if (!this.le.peek().val_('}')) this.le.expect_(',')
+            if (!this.le.peek().val_('}')) {
+                if (this.le.peek().val_(',')) this.le.expect_(',')
+            }
         }
 
         this.le.expect_('}')
@@ -449,6 +458,39 @@ export class Pratt {
         }
         const block = this.pa.parseBlockDecl()
         return { kind: "Lock", vars, block }
+    }
+
+    parseSelect(): Expr {
+        this.le.expect('select')
+        this.le.expect_('{')
+        const arms = [] as SelectArm[]
+        while (!this.le.peek().val_('}')) {
+            const p1 = this.le.peek()
+            const p2 = this.le.peek(1)
+            let var_name = undefined as undefined | string
+            if (p1.type_('ID') && p2.val_(':')) {
+                var_name = this.le.expect('ID').val
+                this.le.expect_(':')
+            }
+            const expr = this.parseExpr(0, null)
+            this.le.expect_('=>')
+            const block = this.pa.parseBlockDecl({ bracesOptional: true })
+            arms.push({ var_name, expr, block })
+            if (this.le.peek().val_(',')) this.le.expect_(',')
+        }
+        this.le.expect_('}')
+        return { kind: 'Select', arms }
+    }
+
+    parseTuple(): Expr {
+        this.le.expect_('t(')
+        const items = [] as Expr[]
+        while (!this.le.peek().val_(')')) {
+            items.push(this.parseExpr(0, null))
+            if (!this.le.peek().val_(')')) this.le.expect_(',')
+        }
+        this.le.expect_(')')
+        return { kind: 'TupleInit', items }
     }
 
 }

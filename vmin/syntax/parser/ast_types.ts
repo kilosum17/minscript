@@ -78,6 +78,15 @@ export type AstType = {
             mode: 'func',
             args: AstType[],
             ret: AstType,
+        } | {
+            mode: 'tuple',
+            items: AstType[]
+        } | {
+            mode: 'record',
+            fields: {
+                key: string,
+                type: AstType
+            }[]
         }
     )
 
@@ -150,6 +159,7 @@ export type StmtDecl = {
 } & (
         {
             mode: 'in',
+            is_await: boolean,
             var_name: string,
             expr: Expr,
         } | {
@@ -160,9 +170,6 @@ export type StmtDecl = {
         kind: 'Label',
         name: string,
         span: AstSpan,
-    } | {
-        kind: 'Select',
-        arms: SelectArm[]
     } | {
         kind: 'SemiColon',
     }
@@ -274,6 +281,12 @@ export type Expr = {
     kind: 'Lock',
     vars: Expr[],
     block: BlockDecl,
+} | {
+    kind: 'Select',
+    arms: SelectArm[]
+} | {
+    kind: 'TupleInit',
+    items: Expr[],
 }
 
 export type StructInitField = {
