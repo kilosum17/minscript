@@ -53,13 +53,13 @@ pub type Config {
             scripts[k] = entry
         }
         Object(m{
-            "name": Str(this.name)
-            "version": Str(this.version)
-            "main": Str(this.main)
-            "deps": strings(this.deps)
-            "dev_deps": strings(this.dev_deps)
-            "scripts": Object(scripts)
-            "sections": Object(this.sections)
+            "name": Str(this.name),
+            "version": Str(this.version),
+            "main": Str(this.main),
+            "deps": strings(this.deps),
+            "dev_deps": strings(this.dev_deps),
+            "scripts": Object(scripts),
+            "sections": Object(this.sections),
         })
     }
 }

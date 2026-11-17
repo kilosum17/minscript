@@ -1,4 +1,7 @@
+import { getLogger } from "../utils/log"
 import type { AstNode } from "./ast_types"
+
+export const ParseLog = getLogger('parser')
 
 export function print(n?: AstNode, d?: number): string {
     d ??= 0
@@ -59,7 +62,7 @@ export function print(n?: AstNode, d?: number): string {
                 const params = n.params.map(p => print(p, 0)).join(',')
                 const ret = n.return ? ` -> ${print(n.return)}` : ''
                 const block = print(n.block, d + 1)
-                return `\n${n.is_pub ? 'pub ' : ''}fn ${n.name}${print(n.generics, 0)}(${params})${ret}\n${block}`
+                return `\n${n.is_pub ? 'pub ' : ''}${n.is_async ? 'async ' : ''}fn ${n.name}${print(n.generics, 0)}(${params})${ret}\n${block}`
             }
             case "FuncParam": {
                 if (n.name == 'this') return n.is_mut ? '*this' : 'this'
@@ -153,7 +156,7 @@ export function print(n?: AstNode, d?: number): string {
                         return `TODO`
                     }
                 }).join('\n')
-                return `${n.name}\n${fields}`
+                return `${print(n.lhs)}{${fields}}`
             }
             case "VecInit": {
                 const items = n.items.map(t => print(t, 0)).join(',\n')
@@ -237,6 +240,9 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "Break": {
                 return `break ${n.label || ''}`
+            }
+            case "AliasDecl": {
+                return `${n.is_pub ? 'pub ' : ''}type ${n.name}${print(n.generics)}=${print(n.type)}`
             }
         }
         // return `> TODO [${n.kind}]`

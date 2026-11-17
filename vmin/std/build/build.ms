@@ -59,13 +59,13 @@ pub type Config {
             scripts[k] = entry
         }
         Object(m{
-            "name": Str(this.name)
-            "version": Str(this.version)
-            "main": Str(this.main)
-            "deps": strings(this.deps)
-            "dev_deps": strings(this.dev_deps)
-            "scripts": Object(scripts)
-            "sections": Object(this.sections)
+            "name": Str(this.name),
+            "version": Str(this.version),
+            "main": Str(this.main),
+            "deps": strings(this.deps),
+            "dev_deps": strings(this.dev_deps),
+            "scripts": Object(scripts),
+            "sections": Object(this.sections),
         })
     }
 }
@@ -139,7 +139,7 @@ fn current_target() -> Target { _builtin() }
 
 /// Environment variables (reads are part of the evaluation's cache key, §17.5).
 pub type Env {
-    pub fn get(this, name: str) -> str? { std_env.get(name) }
+    pub async fn get(this, name: str) -> str? { std_env.get(name) }
 }
 
 pub let env = Env {}

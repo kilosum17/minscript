@@ -1,3 +1,6 @@
+import { getLogger } from "../utils/log"
+
+export const LexLog = getLogger('lex')
 
 export const SYMBOLS = [
     '(', ')', '[', ']', '{', '}', '<', '>', '+', '-', '*', '/', '=', '!', '&', '|', '^', '%', '~', '?', ':', '.', ';', ',',

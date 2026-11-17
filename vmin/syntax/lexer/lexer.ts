@@ -1,5 +1,5 @@
 import { Token, type Span, type TokenType } from "./lexer_types";
-import { isDigit, isIdentPart, isIdentStart, isNewline, isSigil, isSymbol, isWhitespace, KEYWORDS, mergeMap } from "./lexer_utils";
+import { isDigit, isIdentPart, isIdentStart, isNewline, isSigil, isSymbol, isWhitespace, KEYWORDS, LexLog, mergeMap } from "./lexer_utils";
 
 export class Lexer {
     private source: string;
@@ -11,8 +11,8 @@ export class Lexer {
 
     constructor(source: string) {
         this.source = source;
-        console.log(`Lexer initialized with source of length ${source.length}`);
-        console.log(source.substring(0, 100)); // Log the first 100 characters of the source for debugging
+        LexLog.info(`Lexer initialized with source of length ${source.length}`);
+        LexLog.info(source.substring(0, 100)); // Log the first 100 characters of the source for debugging
     }
 
     tokenize() {
@@ -24,7 +24,7 @@ export class Lexer {
 
         while (true) {
             let part = this.getNext()
-            console.log(this.printPart(part))
+            LexLog.info(this.printPart(part))
 
             const span: Span = {
                 start: part?.start_pos || this.pos,
@@ -58,14 +58,17 @@ export class Lexer {
         return tok || this.getEofTok()
     }
 
-    expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token) {
+    expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token, msg?: string) {
         const tok = _tok ?? this.toks[this.tok_pos]
-        if (!tok || (tok.val != val && tok.type != val)) throw new Error(`Expected: ${val} got: ${this.info()}`)
+        if (!tok || (tok.val != val && tok.type != val)) {
+            const _msg = msg ? `[${msg}]` : ''
+            throw new Error(`Expected: ${val}${_msg} got: ${this.info()}`)
+        }
         if (!_tok) this.tok_pos++
         return tok
     }
-    expect_(val: string, _tok?: Token) {
-        return this.expect(val as any, _tok)
+    expect_(val: string, _tok?: Token, msg?: string) {
+        return this.expect(val as any, _tok, msg)
     }
     getTokPos() {
         return this.tok_pos
@@ -100,7 +103,7 @@ export class Lexer {
             if (isNewline(c || '')) {
                 this.line++
                 this.col = 1
-                // console.log("NEWLINE", this.pos)
+                // LexLog.info("NEWLINE", this.pos)
             } else {
                 this.col++
             }
@@ -161,7 +164,7 @@ export class Lexer {
                 if (is_multiline) text += this.get(3)
                 this.mode = 'expr'
                 this.str_stack.pop()
-                // console.log('Got \\', text, this.cur(), this.str_exp_mode)
+                // LexLog.info('Got \\', text, this.cur(), this.str_exp_mode)
                 type = 'STR_END'
                 return getRet(text)
             } else {
@@ -186,7 +189,7 @@ export class Lexer {
                     }
                     text += this.get()
                 }
-                // console.log('Got s',text, this.cur(), saved_is_multiline, this.str_exp_mode)
+                // LexLog.info('Got s',text, this.cur(), saved_is_multiline, this.str_exp_mode)
                 type = 'STR_PART'
                 return getRet(text)
             }
@@ -198,7 +201,7 @@ export class Lexer {
                 this.wait_for_brace = false
                 this.mode = 'raw'
                 type = 'STR_EXP_CLOSE'
-                console.log('Got close')
+                LexLog.info('Got close')
                 return getRet('}')
             }
         }

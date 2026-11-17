@@ -4,10 +4,11 @@ export type AstSpan = {
     end: number
 }
 
-export type AstNode =
+export type AstNode = (
     | PackageDecl
     | ImportDecl
     | StructDecl
+    | AliasDecl
     | StructFieldsList
     | StructField
     | GenericsDecl
@@ -19,6 +20,7 @@ export type AstNode =
     | BlockDecl
     | Expr
     | StmtDecl
+)
 
 export type PackageDecl = {
     kind: 'PackageDecl',
@@ -43,6 +45,14 @@ export type StructDecl = {
     span: AstSpan,
 }
 
+export type AliasDecl = {
+    kind: 'AliasDecl',
+    name: string,
+    is_pub: boolean,
+    type: AstType,
+    generics?: GenericsDecl
+    span: AstSpan,
+}
 
 export type GenericsDecl = {
     kind: 'GenericDecl',
@@ -124,6 +134,7 @@ export type FuncDecl = {
     params: FuncParam[]
     return?: AstType,
     block: BlockDecl,
+    span: AstSpan,
 }
 
 export type FuncParam = {
@@ -131,6 +142,7 @@ export type FuncParam = {
     name: string,
     is_mut: boolean,
     type?: AstType,
+    span: AstSpan,
 }
 
 export type BlockDecl = {
@@ -147,6 +159,7 @@ export type StmtDecl = {
     kind: 'Binding',
     name?: string
     bind_expr?: Expr
+    is_pub: boolean,
     is_short: boolean
     is_mut: boolean
     is_shared: boolean
@@ -162,6 +175,7 @@ export type StmtDecl = {
             mode: 'in',
             is_await: boolean,
             var_name: string,
+            var_name2?: string,
             expr: Expr,
         } | {
             mode: 'infinite',
@@ -173,18 +187,22 @@ export type StmtDecl = {
         span: AstSpan,
     } | {
         kind: 'SemiColon',
+        span: AstSpan,
     } | {
         kind: 'Continue',
         label?: string
+        span: AstSpan,
     } | {
         kind: 'Break',
         label?: string
+        span: AstSpan,
     }
 
 export type SelectArm = {
     var_name?: string,
     expr: Expr,
     block: BlockDecl
+    span: AstSpan,
 }
 
 export type Expr = {
@@ -222,6 +240,7 @@ export type Expr = {
     kind: 'Match',
     cond?: Expr,
     arms: MatchArm[]
+    span: AstSpan,
 } | {
     kind: 'If',
     is_let: boolean,
@@ -229,54 +248,69 @@ export type Expr = {
     variant?: Expr,
     then: BlockDecl,
     else?: BlockDecl | Expr,
+    span: AstSpan,
 } | {
     kind: 'Call',
     lhs: Expr,
     args: Expr[]
+    span: AstSpan,
 } | {
     kind: 'String',
     parts: (string | Expr)[]
+    span: AstSpan,
 } | {
     kind: 'Range',
     oper: string,
     start: Expr,
     end: Expr,
+    span: AstSpan,
 } | {
     kind: 'ErrorProp',
     lhs: Expr,
+    span: AstSpan,
 } | {
     kind: 'StructInit',
-    name: string,
+    lhs: Expr,
     fields: StructInitField[],
+    span: AstSpan,
 } | {
     kind: 'RecordInit',
     fields: StructInitField[],
+    span: AstSpan,
 } | {
     kind: 'VecInit',
     items: Expr[]
+    span: AstSpan,
 } | {
     kind: 'Closure',
-    args?: string[]
+    args?: { name: string, type?: AstType }[]
     block: BlockDecl,
+    span: AstSpan,
 } | {
     kind: 'MapInit',
     fields: MapInitField[]
+    span: AstSpan,
 } | {
     kind: 'Index',
     lhs: Expr,
     key: Expr,
+    span: AstSpan,
 } | {
     kind: 'SetInit',
     items: Expr[],
+    span: AstSpan,
 } | {
     kind: 'Recover',
     block: BlockDecl,
+    span: AstSpan,
 } | {
     kind: 'Bracket',
     expr: Expr
+    span: AstSpan,
 } | {
     kind: 'GenericExpr',
     type: AstType,
+    span: AstSpan,
 } | {
     kind: 'Await',
     expr: Expr,
@@ -289,12 +323,15 @@ export type Expr = {
     kind: 'Lock',
     vars: Expr[],
     block: BlockDecl,
+    span: AstSpan,
 } | {
     kind: 'Select',
     arms: SelectArm[]
+    span: AstSpan,
 } | {
     kind: 'TupleInit',
     items: Expr[],
+    span: AstSpan,
 }
 
 export type StructInitField = {
