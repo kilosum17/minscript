@@ -11,7 +11,7 @@ export function activate(context: vscode.ExtensionContext) {
     const serverModule = context.asAbsolutePath(
         "../lsp/dist/lsp/src/server.js"
     )
-    
+
     // console.log("MinScript server:", serverModule)
 
     const serverOptions: ServerOptions = {
@@ -41,7 +41,11 @@ export function activate(context: vscode.ExtensionContext) {
         clientOptions
     )
 
-    client.start()
+    client.start().catch(error => {
+        vscode.window.showErrorMessage(
+            `MinScript LSP failed to start: ${error}`
+        )
+    })
 }
 
 export function deactivate() {

@@ -20,7 +20,9 @@ export class Diagnostic {
     severity(): 'error' | 'lint' {
         return 'lint'
     }
+    
     message() {
         return `Error: ${this.code}`
     }
+
 }

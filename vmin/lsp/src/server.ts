@@ -15,6 +15,25 @@ import { fileURLToPath } from "node:url"
 const connection = createConnection(ProposedFeatures.all)
 const documents = new TextDocuments(TextDocument)
 
+const originalLog = console.log
+const originalError = console.error
+const originalWarn = console.warn
+
+console.log = (...args) => {
+    connection.console.log(args.map(String).join(" "))
+    originalLog(...args)
+}
+
+console.error = (...args) => {
+    connection.console.error(args.map(String).join(" "))
+    originalError(...args)
+}
+
+console.warn = (...args) => {
+    connection.console.warn(args.map(String).join(" "))
+    originalWarn(...args)
+}
+
 connection.onInitialize(() => ({
     capabilities: {
         textDocumentSync: TextDocumentSyncKind.Incremental,

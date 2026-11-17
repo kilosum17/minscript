@@ -40,11 +40,14 @@ export class Checker {
 export function compilerCheck({ text, path }: { text?: string, path: string }): Diagnostic[] {
     const diags = [] as Diagnostic[]
 
+
     diags.push(new Diagnostic(
-        'PUB_ONLY_TOP_LEVEL',
-        { start: 0, end: 1 },
+        'BREAK_OUTSIDE_LOOP',
+        { start: 10, end: 14 },
         'Not allowed as test',
     ))
+    
+    console.log('Got check', text?.substring(0, 10), 'path:', path)
 
     return diags
 }
