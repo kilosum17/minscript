@@ -216,7 +216,7 @@ export function print(n?: AstNode, d?: number): string {
                 return `select \n${arms}`
             }
             case "Await": {
-                return `await ${print(n.expr)}`
+                return `(await ${print(n.expr)})`
             }
             case "SemiColon": {
                 return `;`
