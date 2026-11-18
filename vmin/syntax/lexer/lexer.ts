@@ -58,17 +58,20 @@ export class Lexer {
         return tok || this.getEofTok()
     }
 
-    expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token, msg?: string) {
+    expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token, msg?: string, not_nl?: boolean) {
         const tok = _tok ?? this.toks[this.tok_pos]
-        if (!tok || (tok.val != val && tok.type != val)) {
+        if (!tok ||
+            (tok.val != val && tok.type != val) ||
+            (not_nl != undefined && not_nl && tok.nl_before)
+        ) {
             const _msg = msg ? `[${msg}]` : ''
-            throw new Error(`Expected: ${val}${_msg} got: ${this.info()}`)
+            throw new Error(`Expected--${val}--${_msg} got: ${this.info()}`)
         }
         if (!_tok) this.tok_pos++
         return tok
     }
-    expect_(val: string, _tok?: Token, msg?: string) {
-        return this.expect(val as any, _tok, msg)
+    expect_(val: string, _tok?: Token, msg?: string, not_nl?: boolean) {
+        return this.expect(val as any, _tok, msg, not_nl)
     }
     getTokPos() {
         return this.tok_pos

@@ -1,6 +1,6 @@
 package build
 
-package fed
+// package fed
 
 import "std."
 
@@ -10,6 +10,9 @@ import "std."
 
 import "std.json"
 import "std.env" as std_env
+
+shared var n = r{}
+
 
 /// The project configuration that `mod.ms`'s `config()` returns (spec §17.2).
 pub type Config {
@@ -48,6 +51,7 @@ pub type Config {
 
     /// A tool's settings as untyped JSON.
     pub fn raw_section(this, name: str) -> json.Value? {
+        // break
         this.sections.get(name)
     }
 
@@ -144,10 +148,15 @@ fn current_target() -> Target { _builtin() }
 
 /// Environment variables (reads are part of the evaluation's cache key, §17.5).
 pub type Env {
-    pub async fn get(this, name: str) -> str? { std_env.get(name) }
+    pub async fn get(this, name: str) -> str? {
+        break
+        std_env.get(name)
+    }
 }
 
 pub let env = Env {
-    a:23
+    a:23, 
+    e:22,
+    f:34,
 }
 

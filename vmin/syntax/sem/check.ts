@@ -2,7 +2,7 @@ import { readdir } from "node:fs/promises";
 import type { AstNode } from "../parser/ast_types";
 import { File } from "./file";
 import path from "node:path";
-import { Diagnostic } from "./diagnostics";
+import { Diagnostic } from "../utils/diagnostics";
 
 
 export class Checker {

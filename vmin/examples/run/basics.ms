@@ -1,11 +1,13 @@
-package main
+package
+// main
 
 // Runs on the JS back end; the output must match basics.out.
 import "std.io"
 import pub "std.build.*" as bld
-import "std.fs" as fs2
+import "std.fs" 
+as fs2
 
-type Point { x: int, y: int }
+type Point { x: int, y: int, fns }
 pub type Account {
     owner: str, 
     balance: i64, 

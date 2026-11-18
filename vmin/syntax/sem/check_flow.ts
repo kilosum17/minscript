@@ -1,5 +1,5 @@
 import type { AstNode, BlockDecl, FuncDecl } from "../parser/ast_types";
-import { Diagnostic } from "./diagnostics";
+import { Diagnostic } from "../utils/diagnostics";
 
 export class CheckFlow {
     diagnostics: Diagnostic[] = []
@@ -17,7 +17,7 @@ export class CheckFlow {
             ))
         }
         let packageDecls = this.nodes.filter(n => n.kind == 'PackageDecl')
-        if (packageDecls.length > 0) {
+        if (packageDecls.length > 1) {
             packageDecls.forEach((p, idx) => {
                 if (idx == 0) return
                 this.diagnostics.push(new Diagnostic(
@@ -31,7 +31,7 @@ export class CheckFlow {
         for (const node of this.nodes) {
             this.checkFile(node)
         }
-        
+
     }
 
     checkFile(node: AstNode) {

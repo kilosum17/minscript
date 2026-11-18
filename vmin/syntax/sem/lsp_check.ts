@@ -1,8 +1,7 @@
 import { Lexer } from "../lexer/lexer"
 import { Parser } from "../parser/parser"
 import { CheckFlow } from "./check_flow"
-import { Diagnostic } from "./diagnostics"
-import { readFile, readdir, stat } from "node:fs/promises"
+import { Diagnostic } from "../utils/diagnostics"
 
 export async function lspCheck({ text, path }: {
     text?: string, path: string
@@ -24,7 +23,8 @@ export async function lspCheck({ text, path }: {
         const parser = new Parser(lexer)
         parser.parse()
         const check_flow = new CheckFlow(parser.nodes)
-        return check_flow.diagnostics
+        check_flow.runChecks()
+        return [...parser.diags, ...check_flow.diagnostics]
     } catch (e) {
         console.warn('Error', e)
     }

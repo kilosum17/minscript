@@ -1,6 +1,7 @@
 import { Lexer } from "../lexer/lexer"
 import { Parser } from "../parser/parser"
 import { Checker } from "../sem/check"
+import { printDiag } from "../utils/diag_utils"
 
 async function main() {
     const operation = process.argv[2]
@@ -35,6 +36,8 @@ async function main() {
         if (runParser) {
             lexer.tokenize()
             parser.parse()
+            const diags = parser.diags.map(d => printDiag(d)).join('\n')
+            console.log(diags)
         }
     } else if (runSemantic) {
         const checker = new Checker(path)
