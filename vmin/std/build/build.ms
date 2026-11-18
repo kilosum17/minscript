@@ -13,7 +13,6 @@ import "std.env" as std_env
 
 shared var n = r{}
 
-
 /// The project configuration that `mod.ms`'s `config()` returns (spec §17.2).
 pub type Config {
     pub name: str
@@ -94,7 +93,7 @@ pub fn evaluate(config: () -> Config) -> Config { _builtin() }
 
 /// A tool: reads the config, writes its own section (and maybe scripts), returns the result.
 pub type Tool = (Config) -> Config
-
+ 
 /// A script's arguments: everything after `--` in `ms run <name> -- …`.
 pub type Args {
     pub list: Vec[str] = []
@@ -149,14 +148,14 @@ fn current_target() -> Target { _builtin() }
 /// Environment variables (reads are part of the evaluation's cache key, §17.5).
 pub type Env {
     pub async fn get(this, name: str) -> str? {
-        break
+        for i in 0..2{
+            break
+        }
         std_env.get(name)
     }
 }
 
-pub let env = Env {
-    a:23, 
-    e:22,
-    f:34,
-}
+pub let env = Env {}
+
+
 

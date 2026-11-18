@@ -7,9 +7,9 @@ import pub "std.build.*" as bld
 import "std.fs" 
 as fs2
 
-type Point { x: int, y: int, fns }
+type Point { x: int, y: int, fns r{} }
 pub type Account {
-    owner: str, 
+    owner: str+1, 
     balance: i64, 
     tags: Vec[str],
     tags2:Vec[str]=[],

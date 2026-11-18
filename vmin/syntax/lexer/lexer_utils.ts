@@ -7,7 +7,7 @@ export const SYMBOLS = [
     '->', '=>', '#', '??', '\\'
 ] as const
 
-const symoblSet = new Set([...SYMBOLS] as string[])
+export const symoblSet = new Set([...SYMBOLS] as string[])
 
 export const KEYWORDS = [
     'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const', 'as',
@@ -16,7 +16,7 @@ export const KEYWORDS = [
     // Add more keywords as needed
 ] as const
 
-const keywordSet = new Set([...KEYWORDS] as string[])
+export const keywordSet = new Set([...KEYWORDS] as string[])
 
 export const SIGILS = ['r{', 'm{', 's{', 'a[', 't('] as const
 

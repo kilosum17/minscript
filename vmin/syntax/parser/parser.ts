@@ -57,38 +57,47 @@ export class Parser {
     }
 
     getNode(): AstNode | null | 0 {
-        let offset = 0
-        while (true) {
-            const p1 = this.lex.peek(offset)
-            const p2 = this.lex.peek(offset + 1)
-            const p3 = this.lex.peek(offset + 2)
-            const kwd = p1.kwd()
-            if (kwd === 'pub' || kwd == 'async' || kwd === 'shared') {
-                offset++
-                continue
-            } else {
-                offset = 0
-            }
-            if (p1.type_('EOF')) break
+        return this.rec.rec(
+            ['type', 'pub', 'shared', 'union', 'import', 'fn'],
+            0,
+            () => {
 
-            if (kwd == 'package') {
-                return this.parsePackageDecl()
-            } else if (kwd == 'import') {
-                return this.parseImportDecl()
-            } else if (kwd === 'type') {
-                if (p3.val_('=')) return this.parseAlias()
-                return this.parseStruct()
-            } else if (kwd === 'union') {
-                return this.parseUnionDecl()
-            } else if (kwd === 'fn') {
-                return this.parseFuncDecl()
-            } else if (kwd == 'var' || kwd === 'let') {
-                return this.parseBinding()
-            }
+                let offset = 0
+                while (true) {
+                    const p1 = this.lex.peek(offset)
+                    const p2 = this.lex.peek(offset + 1)
+                    const p3 = this.lex.peek(offset + 2)
+                    const kwd = p1.kwd()
+                    if (kwd === 'pub' || kwd == 'async' || kwd === 'shared') {
+                        offset++
+                        continue
+                    } else {
+                        offset = 0
+                    }
+                    if (p1.type_('EOF')) break
 
-            throw new Error(`Unkown type: ${offset} ${kwd} ${this.lex.info()}`)
-        }
-        return null
+                    if (kwd == 'package') {
+                        return this.parsePackageDecl()
+                    } else if (kwd == 'import') {
+                        return this.parseImportDecl()
+                    } else if (kwd === 'type') {
+                        if (p3.val_('=')) return this.parseAlias()
+                        return this.parseStruct()
+                    } else if (kwd === 'union') {
+                        return this.parseUnionDecl()
+                    } else if (kwd === 'fn') {
+                        return this.parseFuncDecl()
+                    } else if (kwd == 'var' || kwd === 'let') {
+                        return this.parseBinding()
+                    }
+
+                    throw new Error(`Unkown type: ${offset} ${kwd} ${this.lex.info()}`)
+                }
+
+                return null
+
+            }
+        )
     }
 
     private parsePackageDecl(): PackageDecl | 0 {
@@ -178,20 +187,27 @@ export class Parser {
     }
 
     private tryParseGenerics(): GenericsDecl | undefined {
-        // throw new Error('TODO')
-        if (this.lex.peek().val !== '[') return
-        this.saveStart()
-        this.lex.expect_('[')
-        const items = [] as AstType[]
-        while (this.lex.peek().val != ']') {
-            this.saveStart()
-            const item = this.parseType()
-            items.push(item)
-            // ParseLog.info("GenItem", item)
-            if (this.lex.peek().symb() != ']') this.lex.expect_(',')
-        }
-        this.lex.expect_(']')
-        return { kind: 'GenericDecl', items, span: this.gs() }
+        const res = this.rec.rec(
+            ['=', '{'],
+            0,
+            () => {
+                if (this.lex.peek().val !== '[') return
+                this.saveStart()
+                this.lex.expect_('[')
+                const items = [] as AstType[]
+                while (this.lex.peek().val != ']') {
+                    this.saveStart()
+                    const item = this.parseType()
+                    items.push(item)
+                    // ParseLog.info("GenItem", item)
+                    if (this.lex.peek().symb() != ']') this.lex.expect_(',')
+                }
+                this.lex.expect_(']')
+                return { kind: 'GenericDecl', items, span: this.gs() } satisfies GenericsDecl
+            }
+        )
+        if (res === 0) return undefined
+        return res
     }
 
     private parseStructFieldsList(): StructFieldsList {
@@ -199,18 +215,24 @@ export class Parser {
         this.lex.expect_('{')
         let fields = [] as (StructField | FuncDecl)[]
         while (this.lex.peek().val != '}') {
-            const p1 = this.lex.peek()
-            const p2 = this.lex.peek(1)
-            const p3 = this.lex.peek(2)
-            if (
-                p1.kwd_('fn') ||
-                (p1.kwd_('pub') && p2.kwd_('fn')) ||
-                (p1.kwd_('pub') && p2.kwd_('async') && p3.kwd_('fn'))
-            ) {
-                fields.push(this.parseFuncDecl())
-            } else {
-                fields.push(this.parseStructField())
-            }
+            this.rec.rec(
+                ['\n'],
+                0,
+                () => {
+                    const p1 = this.lex.peek()
+                    const p2 = this.lex.peek(1)
+                    const p3 = this.lex.peek(2)
+                    if (
+                        p1.kwd_('fn') ||
+                        (p1.kwd_('pub') && p2.kwd_('fn')) ||
+                        (p1.kwd_('pub') && p2.kwd_('async') && p3.kwd_('fn'))
+                    ) {
+                        fields.push(this.parseFuncDecl())
+                    } else {
+                        fields.push(this.parseStructField())
+                    }
+                }
+            )
         }
         this.lex.expect_('}')
         return { kind: "StructFieldsList", fields, span: this.gs() }
@@ -474,7 +496,7 @@ export class Parser {
                 const is_continue = p1.kwd_('continue')
                 this.lex.next()
                 let label = undefined as undefined | string
-                if (this.lex.peek().type_('ID')) {
+                if (!this.lex.peek().nl_before && this.lex.peek().type_('ID')) {
                     label = this.lex.expect('ID').val
                 }
                 items.push({ kind: is_continue ? 'Continue' : 'Break', label, span: this.gs() })

@@ -1,4 +1,5 @@
 import type { Lexer } from "../lexer/lexer";
+import { KEYWORDS, keywordSet } from "../lexer/lexer_utils";
 import { Diagnostic } from "../utils/diagnostics";
 import type { Parser } from "./parser";
 
@@ -39,7 +40,7 @@ export class Recover {
 
             const hasNl = safePoints.includes('\n')
             let depth = 0
-            let skips = 0
+            let skips = [] as string[]
             while (!this.lex.peek().type_('EOF')) {
                 const p1 = this.lex.peek()
                 if (hasNl && p1.nl_before) {
@@ -47,7 +48,7 @@ export class Recover {
                 }
                 if (p1.val.includes(closure)) {
                     if (depth == 0) {
-                        this.lex.next()
+                        skips.push(this.lex.next().val)
                         break
                     } else {
                         depth--
@@ -56,12 +57,18 @@ export class Recover {
                 if (p1.val.includes(openner!)) {
                     depth++
                 }
-                this.lex.next()
-                skips++
+                if (safePoints.includes(p1.val)) {
+                    if (!keywordSet.has(p1.val)) {
+                        skips.push(this.lex.next().val)
+                    }
+                    break
+                }
+                skips.push(this.lex.next().val)
             }
 
-            if (this.lex.peek().type_('EOF')) console.warn(`Skip to end ${skips}`)
-            else console.log(`Skips: ${skips}`)
+            let skipInfo = `${skips.length} ${skips.slice(0, 10)}${skips.length > 10 ? '...' : ''}`
+            if (this.lex.peek().type_('EOF')) console.warn(`Skip to end ${skipInfo}`)
+            else console.log(`Skips: ${skipInfo}`)
             return def
         }
     }

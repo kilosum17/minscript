@@ -3,6 +3,7 @@ import type { AstNode } from "../parser/ast_types";
 import { File } from "./file";
 import path from "node:path";
 import { Diagnostic } from "../utils/diagnostics";
+import { CheckTypes } from "./check_types";
 
 
 export class Checker {
@@ -34,6 +35,10 @@ export class Checker {
         const res = await Promise.allSettled(this.files.map(p => p.parse()))
         console.log('reads', res, this.files.map(f => f.nodes.length))
 
+        const check_type = new CheckTypes(
+            this.files,
+        )
+        check_type.runChecks()
     }
 }
 
