@@ -9,7 +9,7 @@ import {
     Diagnostic,
     DiagnosticSeverity
 } from "vscode-languageserver/node"
-import { compilerCheck } from "../../syntax/sem/check"
+import { lspCheck } from "../../syntax/sem/lsp_check"
 import { fileURLToPath } from "node:url"
 
 const connection = createConnection(ProposedFeatures.all)
@@ -46,7 +46,7 @@ connection.onInitialize(() => ({
 
 async function validate(document: TextDocument) {
     const path = fileURLToPath(document.uri)
-    const errors = compilerCheck({
+    const errors = await lspCheck({
         text: document.getText(),
         path,
     })

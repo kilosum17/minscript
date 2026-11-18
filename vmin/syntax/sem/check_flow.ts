@@ -9,9 +9,29 @@ export class CheckFlow {
     }
 
     runChecks() {
+        if (this.nodes.at(0)?.kind != 'PackageDecl') {
+            this.diagnostics.push(new Diagnostic(
+                'PACKAGE_AT_THE_VERY_TOP',
+                { start: 0, end: 2 },
+                ''
+            ))
+        }
+        let packageDecls = this.nodes.filter(n => n.kind == 'PackageDecl')
+        if (packageDecls.length > 0) {
+            packageDecls.forEach((p, idx) => {
+                if (idx == 0) return
+                this.diagnostics.push(new Diagnostic(
+                    'DUPLICATE_PACKAGE_DECLARATION',
+                    p.span,
+                    ''
+                ))
+            })
+        }
+
         for (const node of this.nodes) {
             this.checkFile(node)
         }
+        
     }
 
     checkFile(node: AstNode) {

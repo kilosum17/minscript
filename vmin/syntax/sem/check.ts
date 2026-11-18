@@ -37,21 +37,5 @@ export class Checker {
     }
 }
 
-export function compilerCheck({ text, path }: { text?: string, path: string }): Diagnostic[] {
-    const diags = [] as Diagnostic[]
-
-
-    diags.push(new Diagnostic(
-        'BREAK_OUTSIDE_LOOP',
-        { start: 10, end: 14 },
-        'Not allowed as test',
-    ))
-    
-    console.log('Got check', text?.substring(0, 10), 'path:', path)
-
-    return diags
-}
-
-
 
 

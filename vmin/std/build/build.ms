@@ -1,7 +1,8 @@
-ddss
-
 package build
 
+package fed
+
+import "std."
 
 
 // The toolchain API that `mod.ms` imports (`import "build.*"`, spec §17): the project's `Config`, its
