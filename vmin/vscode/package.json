@@ -21,7 +21,15 @@
         ],
         "extensions": [
           ".ms"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "minscript",
+        "scopeName": "source.minscript",
+        "path": "./syntaxes/minscript.tmLanguage.json"
       }
     ]
   },

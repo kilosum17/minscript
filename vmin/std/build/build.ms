@@ -147,4 +147,7 @@ pub type Env {
     pub async fn get(this, name: str) -> str? { std_env.get(name) }
 }
 
-pub let env = Env {}
+pub let env = Env {
+    a:23
+}
+
