@@ -8,11 +8,10 @@ import {
 let client: LanguageClient
 
 export function activate(context: vscode.ExtensionContext) {
-    const serverModule = context.asAbsolutePath(
-        "../lsp/dist/lsp/src/server.js"
-    )
 
-    // console.log("MinScript server:", serverModule)
+    const serverModule = context.asAbsolutePath("server/lsp/src/server.js")
+
+    console.log("MinScript server:", serverModule)
 
     const serverOptions: ServerOptions = {
         run: {
@@ -46,6 +45,22 @@ export function activate(context: vscode.ExtensionContext) {
             `MinScript LSP failed to start: ${error}`
         )
     })
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand("minscript.restartServer", async () => {
+            await client.restart()
+            vscode.window.showInformationMessage("MinScript language server restarted")
+        })
+    )
+
+    const watcher = vscode.workspace.createFileSystemWatcher("**/.minscript-reload")
+    watcher.onDidCreate(async uri => {
+        await vscode.workspace.fs.delete(uri)
+        await vscode.commands.executeCommand("minscript.restartServer")
+    })
+
+    context.subscriptions.push(watcher)
+
 }
 
 export function deactivate() {

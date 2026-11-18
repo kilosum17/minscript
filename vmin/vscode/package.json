@@ -3,9 +3,9 @@
   "displayName": "MinScript",
   "description": "MinScript language support",
   "version": "0.1.0",
-  "publisher": "your-name",
+  "publisher": "kilosum-teddy-shem",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.140.0"
   },
   "main": "./out/extension.js",
   "activationEvents": [
@@ -31,23 +31,36 @@
         "scopeName": "source.minscript",
         "path": "./syntaxes/minscript.tmLanguage.json"
       }
+    ],
+    "commands": [
+      {
+        "command": "minscript.restartServer",
+        "title": "MinScript: Restart Language Server"
+      }
     ]
   },
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:server": "npm --prefix ../lsp run build && rm -rf server && mkdir -p server && cp -R ../lsp/dist/. server/",
+    "build": "npm run build:server && tsc",
+    "package": "npm run build && vsce package --allow-missing-repository",
+    "install": "code --install-extension minscript-0.1.0.vsix --force",
+    "deploy": "npm run package && npm run install && touch .minscript-reload",
+    "watch": "tsc --watch"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "vscode-languageclient": "^11.0.0"
+    "picocolors": "^1.1.1",
+    "vscode-languageclient": "^11.0.0",
+    "vscode-languageserver": "^11.0.0",
+    "vscode-languageserver-textdocument": "^1.0.16"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "@types/vscode": "^1.146.0",
+    "@types/vscode": "^1.140.0",
+    "@vscode/vsce": "^4.1.1",
     "typescript": "^7.0.2"
   }
 }

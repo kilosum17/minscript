@@ -1,8 +1,9 @@
 package build2
 
+
 /// The project configuration that `mod.ms`'s `config()` returns (spec §17.2).
 pub type Config {
-    pub name: str
+    pub name: str,
     pub version: str
     /// The folder holding `package main`. Empty: `./src` if it exists, else the project root (§17.6).
     pub main: str = ""

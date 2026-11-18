@@ -20,6 +20,8 @@ export type AstNode = (
     | BlockDecl
     | Expr
     | StmtDecl
+    | ImplDecl
+    | InterDecl
 )
 
 export type PackageDecl = {
@@ -41,6 +43,7 @@ export type StructDecl = {
     name: string,
     is_pub: boolean,
     generics?: GenericsDecl,
+    suppers: AstType[]
     fields_list: StructFieldsList,
     span: AstSpan,
 }
@@ -56,7 +59,7 @@ export type AliasDecl = {
 
 export type GenericsDecl = {
     kind: 'GenericDecl',
-    items: AstType[]
+    items: (AstType | [AstType, AstType[]])[]
     span: AstSpan,
 }
 
@@ -71,6 +74,7 @@ export type StructField = {
     name: string,
     type: AstType,
     is_pub: boolean,
+    is_shared: boolean,
     init?: Expr
     span: AstSpan,
 }
@@ -78,6 +82,7 @@ export type StructField = {
 export type AstType = {
     kind: "AstType",
     is_option: boolean,
+    is_mut: boolean,
     span: AstSpan,
 } & (
         {
@@ -139,11 +144,19 @@ export type FuncDecl = {
 
 export type FuncParam = {
     kind: 'FuncParam',
-    name: string,
-    is_mut: boolean,
-    type?: AstType,
     span: AstSpan,
-}
+} & ({
+    mode: 'receiver',
+    is_mut: boolean,
+} | {
+    mode: 'variadic',
+    name: string
+    type: AstType,
+} | {
+    mode: 'var',
+    name: string,
+    type: AstType,
+})
 
 export type BlockDecl = {
     kind: 'BlockDecl',
@@ -179,6 +192,13 @@ export type StmtDecl = {
             expr: Expr,
         } | {
             mode: 'infinite',
+        } | {
+            mode: 'Cond',
+            cond: Expr,
+        } | {
+            mode: 'Let',
+            pattern: Expr,
+            expr: Expr,
         }
     )
     | {
@@ -234,6 +254,7 @@ export type Expr = {
     span: AstSpan,
 } | {
     kind: 'Literal',
+    mode: 'NUM' | 'CHAR' | 'BYTE'
     val: string,
     span: AstSpan,
 } | {
@@ -381,3 +402,23 @@ export type MatchArm = {
     block: BlockDecl,
 }
 
+
+export type ImplDecl = {
+    kind: 'ImplDecl',
+    generics?: GenericsDecl,
+    struct: string,
+    struct_generics?: GenericsDecl,
+    methods: FuncDecl[],
+    span: AstSpan,
+
+}
+
+export type InterDecl = {
+    kind: 'InterDecl',
+    name: string,
+    is_pub: boolean,
+    generics?: GenericsDecl
+    suppers: AstType[]
+    methods: FuncDecl[]
+    span: AstSpan,
+}

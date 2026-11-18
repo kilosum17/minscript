@@ -13,6 +13,7 @@ export const KEYWORDS = [
     'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'fn', 'var', 'let', 'const', 'as',
     'class', 'extends', 'super', 'this', 'new', 'delete', 'TypeOf', 'is', 'in', 'void', 'yield', 'await', 'package', 'import',
     'pub', 'type', 'async', 'union', 'match', 'select', 'recover', 'panic', 'lock', 'shared',
+    'impl', 'inter',
     // Add more keywords as needed
 ] as const
 

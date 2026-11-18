@@ -3,6 +3,8 @@ import { KEYWORDS, keywordSet } from "../lexer/lexer_utils";
 import { Diagnostic } from "../utils/diagnostics";
 import type { Parser } from "./parser";
 
+let RECOVER = false
+
 export class Recover {
     msg: string = ''
 
@@ -14,6 +16,8 @@ export class Recover {
     }
 
     rec<T>(safePoints: string[], def: T | 0, fn: () => T): T | 0 {
+        if (!RECOVER) return fn()
+
         if (safePoints.length == 0) throw new Error('No safepoints')
         let closure = safePoints.find(s => ['}', ')'].includes(s)) || ''
         const openner = {

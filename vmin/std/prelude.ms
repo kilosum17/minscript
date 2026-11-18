@@ -2,7 +2,7 @@ package prelude
 
 // The MinScript prelude (spec §14.1, §14.2): every `pub` name here is visible in every package
 // without an import. Functions whose body is `_builtin()` are the core, implemented by each back
-// end; `#[effects]` states their summary where they keep, consume or return a view (§9.5).
+// end; `//#[effects]` states their summary where they keep, consume or return a view (§9.5).
 // Everything else is MinScript on top of the core. Generated methods (`to_str`, `eq`, `hash`,
 // `default`, `same_fields`, §13.2) exist on every type that supports them and are not declared here.
 
@@ -132,7 +132,7 @@ pub union Result[T: Unique, E: Unique] {
     }
 }
 
-pub union Ordering { Less  Equal  Greater }
+pub union Ordering { Less,  Equal,  Greater }
 
 // ---- collections -------------------------------------------------------------------------------
 
@@ -155,7 +155,7 @@ pub type Vec[T: Unique] {
 
     pub fn len(this) -> int { _builtin() }
     pub fn is_empty(this) -> bool { this.len() == 0 }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this, i: int) -> T? { _builtin() }
     /// Like `get`, and a negative index counts from the end (`at(-1)` is the last item).
     pub fn at(this, i: int) -> T? {
@@ -171,10 +171,10 @@ pub type Vec[T: Unique] {
         None
     }
 
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub fn push(*this, v: T) { _builtin() }
     pub fn pop(*this) -> T? { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub fn insert(*this, i: int, v: T) { _builtin() }
     pub fn remove(*this, i: int) -> T { _builtin() }
     /// Keeps the first `n` items.
@@ -197,10 +197,10 @@ pub type Vec[T: Unique] {
         }
     }
     /// A write view of item `i` (§9.7).
-    #[effects(returns_view: [this])]
-    pub fn at_mut(*this, i: int) -> *T { _builtin() }
+    //#[effects(returns_view: [this])]
+    pub fn at_mut(*this, i: *int) -> *T { _builtin() }
 
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn iter(this) -> Iterator[T] { _builtin() }
 
     // pipeline callbacks receive (item, index); a callback may take fewer parameters (§13.5)
@@ -304,9 +304,9 @@ impl[T: Plus[T, T] & Default] Vec[T] {
 
 pub type Array[T: Unique, N] {
     pub fn len(this) -> int { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this, i: int) -> T? { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn iter(this) -> Iterator[T] { _builtin() }
     pub fn to_vec(this) -> Vec[T] {
         out :== [] as Vec[T]
@@ -318,9 +318,9 @@ pub type Array[T: Unique, N] {
 pub type Slice[T: Unique] {
     pub fn len(this) -> int { _builtin() }
     pub fn is_empty(this) -> bool { this.len() == 0 }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this, i: int) -> T? { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn iter(this) -> Iterator[T] { _builtin() }
     pub fn to_vec(this) -> Vec[T] {
         out :== [] as Vec[T]
@@ -333,17 +333,17 @@ pub type Map[K, V: Unique] {
     pub fn new() -> Map[K, V] { _builtin() }
     pub fn len(this) -> int { _builtin() }
     pub fn is_empty(this) -> bool { this.len() == 0 }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this, k: K) -> V? { _builtin() }
     pub fn has(this, k: K) -> bool { _builtin() }
-    #[effects(keeps: [k, v])]
+    //#[effects(keeps: [k, v])]
     pub fn insert(*this, k: K, v: V) -> V? { _builtin() }
     pub fn remove(*this, k: K) -> V? { _builtin() }
     pub fn clear(*this) { _builtin() }
     /// Moves every entry out into a new Map and leaves this one empty.
     pub fn drain(*this) -> Map[K, V] { _builtin() }
     /// A write view of the entry for `k`, inserting `v` first if it is missing (§9.7).
-    #[effects(keeps: [k, v], returns_view: [this])]
+    //#[effects(keeps: [k, v], returns_view: [this])]
     pub fn entry(*this, k: K, v: V) -> *V { _builtin() }
     pub fn keys(this) -> Vec[K] {
         out :== [] as Vec[K]
@@ -355,7 +355,7 @@ pub type Map[K, V: Unique] {
         for _, v in this { out.push(v) }
         out
     }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn iter(this) -> Iterator[t(K, V)] { _builtin() }
 }
 
@@ -364,41 +364,41 @@ pub type Set[T] {
     pub fn len(this) -> int { _builtin() }
     pub fn is_empty(this) -> bool { this.len() == 0 }
     pub fn has(this, v: T) -> bool { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub fn insert(*this, v: T) -> bool { _builtin() }
     pub fn remove(*this, v: T) -> bool { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn iter(this) -> Iterator[T] { _builtin() }
 }
 
 /// A persistent map (§12.5): `with` returns a new version in O(log n); older versions stay valid.
 pub type PMap[K, V] {
     pub fn new() -> PMap[K, V] { _builtin() }
-    #[effects(keeps: [this, k, v])]
+    //#[effects(keeps: [this, k, v])]
     pub fn with(this, k: K, v: V) -> PMap[K, V] { _builtin() }
-    #[effects(keeps: [this])]
+    //#[effects(keeps: [this])]
     pub fn without(this, k: K) -> PMap[K, V] { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this, k: K) -> V? { _builtin() }
     pub fn has(this, k: K) -> bool { _builtin() }
     pub fn len(this) -> int { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn iter(this) -> Iterator[t(K, V)] { _builtin() }
 }
 
 /// A persistent vector (§12.5): each change returns a new version.
 pub type PVec[T] {
     pub fn new() -> PVec[T] { _builtin() }
-    #[effects(keeps: [this, v])]
+    //#[effects(keeps: [this, v])]
     pub fn push(this, v: T) -> PVec[T] { _builtin() }
-    #[effects(keeps: [this, v])]
+    //#[effects(keeps: [this, v])]
     pub fn set(this, i: int, v: T) -> PVec[T] { _builtin() }
-    #[effects(keeps: [this])]
+    //#[effects(keeps: [this])]
     pub fn pop(this) -> PVec[T] { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this, i: int) -> T? { _builtin() }
     pub fn len(this) -> int { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn iter(this) -> Iterator[T] { _builtin() }
 }
 
@@ -472,7 +472,7 @@ impl str {
     /// The length in bytes (UTF-8).
     pub fn len(this) -> int { _builtin() }
     /// The bytes from `start` to `end` (clamped); an offset inside a character panics.
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn substring(this, start: int, end: int) -> str { _builtin() }
     /// The byte at offset `i` (panics out of bounds).
     pub fn byte_at(this, i: int) -> u8 { _builtin() }
@@ -481,7 +481,7 @@ impl str {
     pub fn to_lower(this) -> str { _builtin() }
     pub fn to_upper(this) -> str { _builtin() }
     pub fn to_float(this) -> Result[f64, str] { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn bytes(this) -> Slice[u8] { _builtin() }
     pub fn chars(this) -> Vec[char] { _builtin() }
     /// A copy in its own exact-size buffer, so a slice stops keeping its source alive (§7.3).
@@ -562,7 +562,7 @@ fn is_space(b: u8) -> bool { b == b' ' || b == b'\t' || b == b'\n' || b == b'\r'
 
 /// An interned string (§12.3): one object per distinct text, so `==` and `hash` are O(1).
 pub type Symbol: Identity {
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn text(this) -> str { _builtin() }
 }
 
@@ -577,9 +577,9 @@ pub type Weak[T] {
 /// A typed, generation-checked pool (§12.5).
 pub type Pool[T] {
     pub fn new() -> Pool[T] { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub fn add(*this, v: T) -> Id[T] { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this, id: Id[T]) -> T? { _builtin() }
     pub fn remove(*this, id: Id[T]) -> T? { _builtin() }
 }
@@ -596,9 +596,9 @@ pub type Timeout {}
 pub type Promise[T: Unique] {
     pub fn new() -> t(Promise[T], Resolver[T]) { _builtin() }
     pub fn all(promises: Vec[Promise[T]]) -> Promise[Vec[T]] { _builtin() }
-    #[effects(keeps: [this, f])]
+    //#[effects(keeps: [this, f])]
     pub fn then(this, f: (T) -> void) -> Promise[T] { _builtin() }
-    #[effects(keeps: [this, f])]
+    //#[effects(keeps: [this, f])]
     pub fn catch(this, f: (Panic) -> void) -> Promise[T] { _builtin() }
     pub fn ignore(this) { _builtin() }
     pub fn timeout(this, ms: int) -> Promise[Result[T, Timeout]] { _builtin() }
@@ -608,13 +608,14 @@ pub type Promise[T: Unique] {
 
 /// Completes its promise once (§11.1). Dropping it unresolved panics the awaiter (`ResolverDropped`).
 pub type Resolver[T: Unique]: Unique {
-    #[effects(consumes: [this])]
+    //#[effects(consumes: [this])]
     pub fn resolve(this, v: T) { _builtin() }
 }
 
 /// `all(p1, …, pn)` and `race(p1, …, pn)` take a fixed set of promises of any types; the checker
 /// types them as `Promise[t(T1, …, Tn)]` and `Promise[…]` of the winner (§11.1). The signatures
 /// below are only what the resolver needs.
+pub type TopicOptions2 { buffer: int = 64, replay: int = 0 }
 pub fn all[T](...promises: Promise[T]) -> Promise[Vec[T]] { _builtin() }
 pub fn race[T](...promises: Promise[T]) -> Promise[T] { _builtin() }
 
@@ -635,7 +636,7 @@ pub type Topic[T] {
 
     pub fn new() -> Topic[T] { _builtin() }
     pub fn with(opts: TopicOptions) -> Topic[T] { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub fn publish(this, v: T) -> int { _builtin() }
     pub fn subscribe(this) -> Sub[T] { _builtin() }
     pub fn subscribers(this) -> int { _builtin() }
@@ -647,11 +648,11 @@ pub type Queue[T: Unique] {
 
     pub fn new() -> Queue[T] { _builtin() }
     pub fn with(opts: QueueOptions) -> Queue[T] { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub async fn publish(this, v: T) -> Result[void, PublishError[T]] { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub fn try_publish(this, v: T) -> Result[void, PublishError[T]] { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub async fn publish_timeout(this, v: T, ms: int) -> Result[void, PublishError[T]] { _builtin() }
     pub fn subscribe(this) -> Sub[T] { _builtin() }
     pub fn len(this) -> int { _builtin() }
@@ -669,9 +670,9 @@ pub type Signal[T] {
     shared state: ChannelState[T] = ChannelState {}
 
     pub fn new(v: T) -> Signal[T] { _builtin() }
-    #[effects(returns_view: [this])]
+    //#[effects(returns_view: [this])]
     pub fn get(this) -> T { _builtin() }
-    #[effects(keeps: [v])]
+    //#[effects(keeps: [v])]
     pub fn set(this, v: T) { _builtin() }
     pub fn update[R](this, f: (*T) -> R) -> R { _builtin() }
     pub fn watch(this) -> Watcher[T] { _builtin() }
@@ -684,8 +685,8 @@ pub type Watcher[T]: Unique {
 // ---- panics (§13.3, §18.5) ---------------------------------------------------------------------
 
 pub union PanicKind {
-    User  Overflow  OutOfBounds  MissingKey  Unwrap  AlreadySet
-    SelectExhausted  Cancelled  ResolverDropped  Deadlock
+    User,  Overflow,  OutOfBounds,  MissingKey,  Unwrap,  AlreadySet,
+    SelectExhausted,  Cancelled,  ResolverDropped,  Deadlock,
 }
 
 pub type Panic {

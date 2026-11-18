@@ -2,7 +2,7 @@ import type { KEYWORDS, SYMBOLS } from "./lexer_utils";
 
 export type TokenType = 'UNK' | 'ID' | 'KWD' | 'OPER' | 'NUM' |
     'STR_PART' | 'STR_START' | 'STR_END' | 'STR_EXP_OPEN' | 'STR_EXP_CLOSE'
-    | 'COMMENT' | 'EOF' | 'SIGIL';
+    | 'COMMENT' | 'EOF' | 'SIGIL' | 'CHAR' | 'BYTE';
 
 export type Span = {
     start: number,

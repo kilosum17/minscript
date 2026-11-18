@@ -82,6 +82,28 @@ documents.onDidOpen(async ({ document }) => {
     })
 })
 
+connection.onHover(({ textDocument, position }) => {
+    const document = documents.get(textDocument.uri)
+    if (!document) return null
+
+    const offset = document.offsetAt(position)
+    const path = fileURLToPath(textDocument.uri)
+
+    console.log({
+        path,
+        line: position.line,
+        character: position.character,
+        offset
+    })
+
+    return {
+        contents: {
+            kind: "markdown",
+            value: `Position: ${position.line}:${position.character}\n\nOffset: ${offset}`
+        }
+    }
+})
+
 documents.listen(connection)
 connection.listen()
 

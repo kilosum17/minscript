@@ -220,7 +220,17 @@ export class Lexer {
             return getRet(text)
         }
 
-        if (isIdentStart(this.cur())) {
+        if (this.cur() == "'" || (this.cur() == 'b' && this.cur(1) === "'")) {
+            let is_byte = this.cur() === 'b'
+            let text = this.get()
+            if (is_byte) text += this.get()
+            while (!isNewline(this.cur()) && this.cur() != "'") {
+                text += this.get()
+            }
+            text += this.get()
+            type = is_byte ? 'BYTE' : 'CHAR'
+            return getRet(text)
+        } else if (isIdentStart(this.cur())) {
             // handle identifiers
             let text = ''
             while (isIdentPart(this.cur())) {
@@ -286,7 +296,6 @@ export class Lexer {
             if (is_multiline) text += this.get(3)
             type = 'STR_START'
             return getRet(text)
-
         } else {
             // unkowns error
             throw new Error("Unkown token: " + this.cur())

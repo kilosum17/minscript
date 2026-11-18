@@ -1,19 +1,26 @@
 import { Lexer } from "../lexer/lexer";
 import type { AstNode } from "../parser/ast_types";
 import { Parser } from "../parser/parser";
+import type { Diagnostic } from "../utils/diagnostics";
+import fs from "node:fs/promises"
 
 export class File {
     nodes = [] as AstNode[]
+    text = ''
+    diags: Diagnostic[] = []
 
     constructor(
         public path: string
     ) {
     }
 
+    async read() {
+        this.text = await fs.readFile(this.path, 'utf8')
+    }
+
     async parse() {
         try {
-            const text = await Bun.file(this.path).text()
-            const lexer = new Lexer(text)
+            const lexer = new Lexer(this.text)
             lexer.tokenize()
             const parser = new Parser(lexer)
             parser.parse()
@@ -23,4 +30,8 @@ export class File {
         }
     }
 
+}
+
+export function findFile(files: File[], path: string) {
+    return files.find(f => f.path === path)
 }

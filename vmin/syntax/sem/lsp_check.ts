@@ -1,10 +1,10 @@
-import { Lexer } from "../lexer/lexer"
-import { Parser } from "../parser/parser"
-import { CheckFlow } from "./check_flow"
 import { Diagnostic } from "../utils/diagnostics"
+import { dirname } from "node:path"
+import { Checker } from "./check"
+import { findFile } from "./file"
 
 export async function lspCheck({ text, path }: {
-    text?: string, path: string
+    text: string, path: string
 }): Promise<Diagnostic[]> {
     const diags = [] as Diagnostic[]
 
@@ -18,13 +18,12 @@ export async function lspCheck({ text, path }: {
 
     try {
         // const text = readFile(path, 'utf-8')
-        const lexer = new Lexer(text || '')
-        lexer.tokenize()
-        const parser = new Parser(lexer)
-        parser.parse()
-        const check_flow = new CheckFlow(parser.nodes)
-        check_flow.runChecks()
-        return [...parser.diags, ...check_flow.diagnostics]
+        const dir_path = dirname(path)
+        const checker = new Checker(dir_path)
+        await checker.runCheck({ [path]: text })
+        console.log(checker.files)
+        console.log('At path', findFile(checker.files, path)?.path)
+        return findFile(checker.files, path)?.diags || []
     } catch (e) {
         console.warn('Error', e)
     }

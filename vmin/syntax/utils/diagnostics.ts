@@ -15,6 +15,7 @@ export class Diagnostic {
         public code: DiagnosticCode,
         public span: AstSpan,
         public info: string,
+        public filepath?: string,
     ) {
 
     }

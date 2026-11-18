@@ -25,7 +25,14 @@ export function print(n?: AstNode, d?: number): string {
                 return `${n.is_pub ? 'pub ' : ''}${n.name}: ${print(n.type, 0)}${n.init ? '=' + print(n.init) : ''}`
             }
             case "GenericDecl": {
-                return '[' + n.items.map(t => print(t, 0)).join(',') + ']'
+                const items = n.items.map(t => {
+                    if (Array.isArray(t)) {
+                        const inner = t[1].length > 0 ? ':' + t[1].map(c => print(c)).join(',') : ''
+                        return `${print(t[0])}${inner}`
+                    }
+                    return print(t, 0)
+                }).join(',')
+                return `[${items}]`
             }
             case "AstType": {
                 if (n.mode == 'func') {
@@ -42,7 +49,7 @@ export function print(n?: AstNode, d?: number): string {
                     }).join(',\n')
                     return `r{${items}}`
                 }
-                return `${n.name}${print(n.generics, 0)}${n.is_option ? '?' : ''}`
+                return `${n.is_mut ? '*' : ''}${n.name}${print(n.generics, 0)}${n.is_option ? '?' : ''}`
             }
             case "UnionDecl": {
                 const parts = n.vars.map(v => print(v, d + 1)).join('\n')
@@ -65,8 +72,14 @@ export function print(n?: AstNode, d?: number): string {
                 return `\n${n.is_pub ? 'pub ' : ''}${n.is_async ? 'async ' : ''}fn ${n.name}${print(n.generics, 0)}(${params})${ret}\n${block}`
             }
             case "FuncParam": {
-                if (n.name == 'this') return n.is_mut ? '*this' : 'this'
-                return `${n.name}:${n.is_mut ? '*' : ''}${print(n.type)}`
+                if (n.mode == 'var') {
+                    return `${n.name}:${print(n.type)}`
+                } else if (n.mode == 'receiver') {
+                    return n.is_mut ? '*this' : 'this'
+                } else if (n.mode == 'variadic') {
+                    return `...${n.name}:${print(n.type)}`
+                }
+                return `TODO`
             }
             case "BlockDecl": {
                 const body = n.items.map(t => print(t, d + 1)).join('\n')
@@ -140,6 +153,10 @@ export function print(n?: AstNode, d?: number): string {
                     return `for ${n.is_await ? 'await ' : ''}${n.var_name} in ${print(n.expr)}\n${print(n.block, d + 1)}`
                 } else if (n.mode == 'infinite') {
                     return `for \n${print(n.block, d + 1)}`
+                } else if (n.mode == 'Cond') {
+                    return `for ${print(n.cond)}\n${print(n.block)}`
+                } else if (n.mode == 'Let') {
+                    return `for let ${print(n.pattern)}=${print(n.expr)}\n${print(n.block)}`
                 }
                 return `> for TODO`
             }
@@ -243,6 +260,14 @@ export function print(n?: AstNode, d?: number): string {
             }
             case "AliasDecl": {
                 return `${n.is_pub ? 'pub ' : ''}type ${n.name}${print(n.generics)}=${print(n.type)}`
+            }
+            case "ImplDecl": {
+                const methods = n.methods.map(m => print(m)).join('\n')
+                return `imp ${print(n.generics)} ${n.struct}${print(n.struct_generics)}\n${methods}`
+            }
+            case "InterDecl": {
+                const methods = n.methods.map(m => print(m)).join('\n')
+                return `inter ${print(n.generics)} ${n.name}\n${methods}`
             }
         }
         // return `> TODO [${n.kind}]`

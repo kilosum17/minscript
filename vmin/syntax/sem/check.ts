@@ -4,21 +4,21 @@ import { File } from "./file";
 import path from "node:path";
 import { Diagnostic } from "../utils/diagnostics";
 import { CheckTypes } from "./check_types";
+import { printDiag, printDiags } from "../utils/diag_utils";
 
 
 export class Checker {
     ast: AstNode[][] = []
     files: File[] = []
-    diagnostics: Diagnostic[] = []
 
     constructor(
-        public path: string
+        public packagePath: string
     ) {
 
     }
 
-    async runCheck() {
-        const entries = await readdir(this.path, { withFileTypes: true });
+    async runCheck(loadedText?: Record<string, string>): Promise<Diagnostic[]> {
+        const entries = await readdir(this.packagePath, { withFileTypes: true });
 
         for (const entry of entries) {
             console.log(entry.name, entry.isDirectory() ? "[Folder]" : "[File]");
@@ -32,13 +32,34 @@ export class Checker {
             this.files.push(file)
         }
 
-        const res = await Promise.allSettled(this.files.map(p => p.parse()))
+        const res = await Promise.allSettled(this.files.map(async (p) => {
+            if (loadedText?.[p.path]) {
+                p.text = loadedText[p.path]!
+                console.info('Skipped', p.path, p.text.substring(0, 10))
+            } else {
+                await p.read()
+                console.log("after-read", p.text.substring(0, 20))
+            }
+            await p.parse()
+        }))
         console.log('reads', res, this.files.map(f => f.nodes.length))
 
         const check_type = new CheckTypes(
+            this.packagePath,
             this.files,
         )
         check_type.runChecks()
+
+        this.files.forEach(f => {
+            printDiags(f.diags)
+        })
+
+        return this.files.flatMap(f => {
+            return f.diags.map(d => {
+                d.filepath = f.path
+                return d
+            })
+        })
     }
 }
 

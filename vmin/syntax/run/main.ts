@@ -41,7 +41,8 @@ async function main() {
         }
     } else if (runSemantic) {
         const checker = new Checker(path)
-        await checker.runCheck()
+        const diags = await checker.runCheck()
+        console.log(diags)
     }
 }
 
