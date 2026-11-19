@@ -20,7 +20,7 @@ export type BasicType = {
 export type VarType = {
     kind: 'VarType',
     name: string,
-    type: AstType
+    type: SemType
 }
 
 export type SemType = (
@@ -40,10 +40,10 @@ export class ScopeType {
     }
 
     addAll(nodes: AstNode[]) {
-        nodes.forEach(n => this.addType(n))
+        nodes.forEach(n => this.addNode(n))
     }
 
-    addType(node: AstNode) {
+    addNode(node: AstNode) {
         if (node.kind == 'FuncDecl' || node.kind == 'UnionDecl' ||
             node.kind == 'AliasDecl' || node.kind === 'StructDecl' ||
             node.kind == 'Binding' || node.kind == 'InterDecl' || node.kind === 'ImplDecl'
@@ -52,22 +52,34 @@ export class ScopeType {
         }
     }
 
-    get({ mode, name }: {
+    addType(t: SemType) {
+        this.types.push(t)
+    }
+
+    get(args: {
         mode: 'var',
         name: string,
     }): ScopeRet | null {
+        const { mode, name } = args
 
-        if (mode == 'var') {
-            for (const t of this.types) {
-                if (t.kind === 'VarType') {
-                    if (t.name === name) {
-                        return t
+        const run = (): ScopeRet | null => {
+            if (mode == 'var') {
+                for (const t of this.types) {
+                    if (t.kind === 'VarType') {
+                        if (t.name === name) {
+                            return t
+                        }
                     }
                 }
             }
+            return null
         }
 
-        return null
+        let res = run()
+        if (res == null && this.parent) {
+            res = this.parent?.get(args)
+        }
+        return res
     }
 
 }

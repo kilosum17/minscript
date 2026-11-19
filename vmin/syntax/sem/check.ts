@@ -19,7 +19,7 @@ export class Checker {
     }
 
     async runCheck(loadedText?: Record<string, string>): Promise<Diagnostic[]> {
-        const prelude = await getPreludeScope()
+        // const prelude = await getPreludeScope()
         // return []
         const entries = await readdir(this.packagePath, { withFileTypes: true });
 
@@ -51,7 +51,8 @@ export class Checker {
             this.packagePath,
             this.files,
         )
-        check_type.runChecks(prelude)
+        // check_type.runChecks(prelude)
+        check_type.runChecks(undefined)
 
         this.files.forEach(f => {
             printDiags(f.diags)

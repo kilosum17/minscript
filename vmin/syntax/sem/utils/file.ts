@@ -3,17 +3,19 @@ import type { AstNode } from "../../parser/ast_types";
 import { Parser } from "../../parser/parser";
 import type { Diagnostic } from "../../utils/diagnostics";
 import fs from "node:fs/promises"
-import type { SemType } from "./scope_type";
+import { ScopeType, type SemType } from "./scope_type";
 
 export class MsFile {
     nodes = [] as AstNode[]
     text = ''
     diags: Diagnostic[] = []
-    scopes = {} as Record<number, SemType[]>
+    fileScope: ScopeType
+    scopes = {} as Record<number, ScopeType>
 
     constructor(
         public path: string
     ) {
+        this.fileScope = new ScopeType(path)
     }
 
     async read() {
@@ -32,6 +34,11 @@ export class MsFile {
         }
     }
 
+    setPackageScope(scope: ScopeType) {
+        scope.parent = scope
+        scope.addAll(this.nodes)
+    }
+
     private cur_id = 0
     getId(node: AstNode): number {
         const n = (node as any) as { _id: number }
@@ -40,6 +47,13 @@ export class MsFile {
             this.cur_id++
         }
         return n._id
+    }
+
+    getScope(id: number, parent?: ScopeType) {
+        if (!this.scopes[id]) {
+            this.scopes[id] = parent || new ScopeType(`func:${id}`, this.fileScope)
+        }
+        return this.scopes[id]
     }
 
 }

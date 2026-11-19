@@ -2,6 +2,8 @@ import type { MsFile } from "../utils/file";
 import { Diagnostic } from "../../utils/diagnostics";
 import { ScopeType } from "../utils/scope_type";
 import type { BindingDecl, FuncDecl, StructDecl } from "../../parser/ast_types";
+import { printAstNode, printAstType } from "../../parser/ast_utils";
+import { resolveExprType } from "./resolve_expr";
 
 export class CheckTypes {
 
@@ -45,17 +47,16 @@ export class CheckTypes {
     }
 
     private checkFile(file: MsFile, packageScope: ScopeType) {
-        const fileScope = new ScopeType(file.path, packageScope)
-        fileScope.addAll(file.nodes)
+        file.setPackageScope(packageScope)
 
         file.nodes.forEach(n => {
             if (n.kind === 'FuncDecl') {
-                this.checkFunc({ file, func: n, fileScope })
+                this.checkFunc({ file, func: n })
             }
             if (n.kind == 'StructDecl') {
                 n.fields_list.fields.forEach(f => {
                     if (f.kind == 'FuncDecl') {
-                        this.checkFunc({ file, func: f, fileScope, struct: n })
+                        this.checkFunc({ file, func: f, struct: n })
                     }
                 })
             }
@@ -66,21 +67,27 @@ export class CheckTypes {
 
     }
 
-    private checkFunc({ file, func, fileScope, struct }: {
-        file: MsFile, func: FuncDecl, fileScope: ScopeType, struct?: StructDecl
+    private checkFunc({ file, func, struct }: {
+        file: MsFile, func: FuncDecl, struct?: StructDecl
     }) {
+        console.log('Checking func:', printAstType(func))
+        const scope = file.getScope(file.getId(func))
         for (const item of func.block.items) {
             if (item.kind == 'Binding') {
-
+                this.resolveBinding({ file, scope, binding: item })
             }
         }
     }
 
-    private resolveBinding({ file, scope, binding }: {
-        file: MsFile, scope: ScopeType, binding: BindingDecl
+    private resolveBinding({ file, binding, scope }: {
+        file: MsFile, binding: BindingDecl, scope: ScopeType,
     }) {
         if (binding.expr) {
-            // binding.
+            const typ = resolveExprType({
+                scope, expr: binding.expr,
+            })
+            console.log('Got type:', printAstNode(binding), { typ })
+            throw new Error('Stopped')
         }
         if (binding.name) {
             if (binding.type) {

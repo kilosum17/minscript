@@ -1,18 +1,16 @@
-package
-// main
+package main
 
 // Runs on the JS back end; the output must match basics.out.
 import "std.io"
 import pub "std.build.*" as bld
-import "std.fs" 
-as fs2
+import "std.fs" as fs2
 
-type Point { x: int, y: int, fns r{} }
+type Point { x: int, y: int }
 pub type Account {
-    owner: str+1, 
+    owner: str, 
     balance: i64, 
     tags: Vec[str],
-    tags2:Vec[str]=[],
+    tags2:Vec[str] = [],
     note: str? 
 }
 
@@ -56,8 +54,15 @@ fn classify(n: int) -> str {
 
 fn parse_all(items: Vec[str]) -> Result[int, str] {
     var total = 0
-    a := 10
+    a := 10.2
     b :== 20
+    var c = a + b
+    d := a > b
+
+    f := true
+    g := false
+    h := f || g
+    i := g && f
 
     var result:bool
     a = b = 40

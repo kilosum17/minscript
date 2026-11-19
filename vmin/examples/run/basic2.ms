@@ -1,5 +1,4 @@
-package
-// main
+package main
 
 // Runs on the JS back end; the output must match basics.out.
 import "std.io"

@@ -121,14 +121,18 @@ export class Pratt {
             const block = this.pa.parseBlockDecl()
             return { kind: 'Block', block, span: this.pa.gspan() }
         }
-        if (p1.type_('ID')) {
-            const name = this.le.expect('ID').val
-            return { kind: 'Var', name, span: this.pa.gspan() }
-        }
         if (p1.type_('NUM') || p1.type_('CHAR') || p1.type_('BYTE')) {
             const val = this.le.next().val
             const mode = p1.type as 'NUM'
             return { kind: 'Literal', mode, val, span: this.pa.gspan() }
+        }
+        if (p1.val_('false') || p1.val_('true')) {
+            const val = this.le.next().val
+            return { kind: 'Literal', mode: 'BOOL', val, span: this.pa.gspan() }
+        }
+        if (p1.type_('ID')) {
+            const name = this.le.expect('ID').val
+            return { kind: 'Var', name, span: this.pa.gspan() }
         }
         throw new Error(`NULL_EXP_MISSING ${this.le.info()}`)
     }

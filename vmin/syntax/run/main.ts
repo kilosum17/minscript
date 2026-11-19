@@ -1,6 +1,7 @@
 import { Lexer } from "../lexer/lexer"
 import { Parser } from "../parser/parser"
 import { Checker } from "../sem/check"
+import { Resolver } from "../sem/resolver/resolver"
 import { printDiag } from "../utils/diag_utils"
 
 async function main() {
@@ -8,6 +9,7 @@ async function main() {
     const path = process.argv[3]
     let runLexer = false
     let runParser = false
+    let runResolve = false
     let runSemantic = false
 
     if (operation === 'lex') {
@@ -16,6 +18,8 @@ async function main() {
         runParser = true
     } else if (operation === 'sem') {
         runSemantic = true
+    } else if (operation === 'res') {
+        runResolve = true
     }
 
     if (!path) {
@@ -23,21 +27,26 @@ async function main() {
         process.exit(1)
     }
 
-    if (runLexer || runParser) {
+    if (runLexer || runParser || runResolve) {
         const text = await Bun.file(path).text()
         const lexer = new Lexer(text)
         const parser = new Parser(lexer)
+        const resolver = new Resolver('')
 
         if (runLexer) {
             lexer.tokenize()
             console.log('Lexing completed. Tokens: ', lexer.toks.length)
 
         }
-        if (runParser) {
+        if (runParser || runResolve) {
             lexer.tokenize()
             parser.parse()
             const diags = parser.diags.map(d => printDiag(d)).join('\n')
             console.log(diags)
+        }
+        if (runResolve) {
+            resolver.resolve(parser.nodes, null)
+
         }
     } else if (runSemantic) {
         const checker = new Checker(path)

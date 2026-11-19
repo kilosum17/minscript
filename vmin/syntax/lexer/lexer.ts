@@ -61,8 +61,10 @@ export class Lexer {
     expect(val: typeof KEYWORDS[number] | TokenType, _tok?: Token, msg?: string, not_nl?: boolean) {
         const tok = _tok ?? this.toks[this.tok_pos]
         if (!tok ||
-            (tok.val != val && tok.type != val) ||
-            (not_nl != undefined && not_nl && tok.nl_before)
+            (tok.val != val && tok.type != val)
+            || (not_nl != undefined && (
+                not_nl && tok.nl_before
+            ))
         ) {
             const _msg = msg ? `[${msg}]` : ''
             throw new Error(`Expected--${val}--${_msg} got: ${this.info()}`)

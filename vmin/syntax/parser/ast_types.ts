@@ -256,7 +256,7 @@ export type Expr = {
     span: AstSpan,
 } | {
     kind: 'Literal',
-    mode: 'NUM' | 'CHAR' | 'BYTE'
+    mode: 'NUM' | 'CHAR' | 'BYTE' | 'BOOL'
     val: string,
     span: AstSpan,
 } | {

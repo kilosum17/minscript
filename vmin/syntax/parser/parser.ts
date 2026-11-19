@@ -580,7 +580,7 @@ export class Parser {
                 items.push(exp)
             }
 
-            ParseLog.info(printAstNode(items.at(-1)!))
+            // ParseLog.info(printAstNode(items.at(-1)!))
 
             if (this.lex.peek().val_(';')) {
                 this.saveStart()
