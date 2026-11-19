@@ -4,7 +4,7 @@ import { Parser } from "../parser/parser";
 import type { Diagnostic } from "../utils/diagnostics";
 import fs from "node:fs/promises"
 
-export class File {
+export class MsFile {
     nodes = [] as AstNode[]
     text = ''
     diags: Diagnostic[] = []
@@ -32,6 +32,6 @@ export class File {
 
 }
 
-export function findFile(files: File[], path: string) {
+export function findFile(files: MsFile[], path: string) {
     return files.find(f => f.path === path)
 }

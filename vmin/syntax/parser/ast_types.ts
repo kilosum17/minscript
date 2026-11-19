@@ -164,11 +164,7 @@ export type BlockDecl = {
     span: AstSpan,
 }
 
-export type StmtDecl = {
-    kind: 'Return',
-    expr?: Expr,
-    span: AstSpan,
-} | {
+export type BindingDecl = {
     kind: 'Binding',
     name?: string
     bind_expr?: Expr
@@ -178,6 +174,12 @@ export type StmtDecl = {
     is_shared: boolean
     expr?: Expr
     type?: AstType,
+    span: AstSpan,
+}
+
+export type StmtDecl = BindingDecl | {
+    kind: 'Return',
+    expr?: Expr,
     span: AstSpan,
 } | {
     kind: 'ForLoop',

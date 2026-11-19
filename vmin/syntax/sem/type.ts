@@ -1,9 +1,9 @@
 import path_ from 'node:path'
-import type { AliasDecl, AstNode, FuncDecl, StructDecl, UnionDecl } from '../parser/ast_types'
+import type { AliasDecl, AstNode, BindingDecl, FuncDecl, ImplDecl, InterDecl, StructDecl, UnionDecl } from '../parser/ast_types'
 
 export type SemType = (
     | FuncDecl | UnionDecl | AliasDecl
-    | StructDecl
+    | StructDecl | BindingDecl | InterDecl | ImplDecl
 ) & { file: string }
 
 export class TypeScope {
@@ -23,7 +23,8 @@ export class TypeScope {
 
     addType(node: AstNode, file: string | null) {
         if (node.kind == 'FuncDecl' || node.kind == 'UnionDecl' ||
-            node.kind == 'AliasDecl' || node.kind === 'StructDecl'
+            node.kind == 'AliasDecl' || node.kind === 'StructDecl' ||
+            node.kind == 'Binding' || node.kind == 'InterDecl' || node.kind === 'ImplDecl'
         ) {
             this.types.push({ ...node, file: file || this.path })
         }

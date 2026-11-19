@@ -1,15 +1,16 @@
 import { readdir } from "node:fs/promises";
 import type { AstNode } from "../parser/ast_types";
-import { File } from "./file";
+import { MsFile } from "./file";
 import path from "node:path";
 import { Diagnostic } from "../utils/diagnostics";
 import { CheckTypes } from "./check_types";
 import { printDiag, printDiags } from "../utils/diag_utils";
+import { getPreludeScope } from "./prelude_types";
 
 
 export class Checker {
     ast: AstNode[][] = []
-    files: File[] = []
+    files: MsFile[] = []
 
     constructor(
         public packagePath: string
@@ -18,6 +19,8 @@ export class Checker {
     }
 
     async runCheck(loadedText?: Record<string, string>): Promise<Diagnostic[]> {
+        const prelude = await getPreludeScope()
+        // return []
         const entries = await readdir(this.packagePath, { withFileTypes: true });
 
         for (const entry of entries) {
@@ -28,7 +31,7 @@ export class Checker {
             if (entry.name.endsWith('_test.ms')) continue
 
             const fullpath = path.join(entry.parentPath, entry.name)
-            const file = new File(fullpath)
+            const file = new MsFile(fullpath)
             this.files.push(file)
         }
 
@@ -42,13 +45,13 @@ export class Checker {
             }
             await p.parse()
         }))
-        console.log('reads', res, this.files.map(f => f.nodes.length))
+        // console.log('reads', res, this.files.map(f => f.nodes.length))
 
         const check_type = new CheckTypes(
             this.packagePath,
             this.files,
         )
-        check_type.runChecks()
+        check_type.runChecks(prelude)
 
         this.files.forEach(f => {
             printDiags(f.diags)
