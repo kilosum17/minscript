@@ -1,11 +1,11 @@
 import { readdir } from "node:fs/promises";
 import type { AstNode } from "../parser/ast_types";
-import { MsFile } from "./file";
+import { MsFile } from "./utils/file";
 import path from "node:path";
 import { Diagnostic } from "../utils/diagnostics";
-import { CheckTypes } from "./check_types";
+import { CheckTypes } from "./resolve/check_types";
 import { printDiag, printDiags } from "../utils/diag_utils";
-import { getPreludeScope } from "./prelude_types";
+import { getPreludeScope } from "./utils/prelude_types";
 
 
 export class Checker {

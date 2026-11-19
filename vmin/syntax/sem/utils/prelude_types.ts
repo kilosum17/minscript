@@ -1,11 +1,11 @@
-import { printAstNode } from "../parser/ast_utils";
-import { printDiags } from "../utils/diag_utils";
-import { CheckTypes } from "./check_types";
+import { printAstNode } from "../../parser/ast_utils";
+import { printDiags } from "../../utils/diag_utils";
+import { CheckTypes } from "../resolve/check_types";
 import { MsFile } from "./file";
-import { TypeScope } from "./type";
+import { ScopeType } from "./scope_type";
 import { printScope } from "./type_utils";
 
-let savedScope: TypeScope | null = null
+let savedScope: ScopeType | null = null
 let path = 'std/prelude.ms'
 
 export async function getPreludeScope() {
@@ -23,8 +23,8 @@ export async function getPreludeScope() {
         console.log('Prelude check diags:', printDiags(file.diags))
         throw new Error("Prelude should be clean")
     }
-    const scope = new TypeScope(file.path)
-    scope.addAll(file.nodes, file.path)
+    const scope = new ScopeType(file.path)
+    scope.addAll(file.nodes)
     console.log('Prelude Scope: ', printScope(scope))
     savedScope = scope
     return scope

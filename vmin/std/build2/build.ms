@@ -81,7 +81,10 @@ pub type Env {
 pub let env = Env {}
 
 fn tester(){
-    c := Config{}
+    b := 10
+    c := 15
+    d = a + b 
+    e := Config{}
     env2 := Env{}
     a := 20
     let c = a + 3

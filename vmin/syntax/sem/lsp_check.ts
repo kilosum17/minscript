@@ -1,7 +1,7 @@
 import { Diagnostic } from "../utils/diagnostics"
 import { dirname } from "node:path"
 import { Checker } from "./check"
-import { findFile } from "./file"
+import { findFile } from "./utils/file"
 
 export async function lspCheck({ text, path }: {
     text: string, path: string

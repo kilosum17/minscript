@@ -1,11 +1,7 @@
-import type { MsFile } from "./file";
-import { Diagnostic } from "../utils/diagnostics";
-import { TypeScope } from "./type";
-import type { FuncDecl, StructDecl } from "../parser/ast_types";
-import { file } from "bun";
-import { getPreludeScope } from "./prelude_types";
-
-
+import type { MsFile } from "../utils/file";
+import { Diagnostic } from "../../utils/diagnostics";
+import { ScopeType } from "../utils/scope_type";
+import type { BindingDecl, FuncDecl, StructDecl } from "../../parser/ast_types";
 
 export class CheckTypes {
 
@@ -16,7 +12,7 @@ export class CheckTypes {
 
     }
 
-    runChecks(prelude: TypeScope | undefined) {
+    runChecks(prelude: ScopeType | undefined) {
         if (this.files.length == 0) return
         const package_names = this.files
             .map(f => f.nodes.at(0))
@@ -37,9 +33,9 @@ export class CheckTypes {
             })
         }
 
-        const packageScope = new TypeScope(this.packagePath, prelude)
+        const packageScope = new ScopeType(this.packagePath, prelude)
         this.files.forEach(f => {
-            packageScope.addAll(f.nodes, f.path)
+            packageScope.addAll(f.nodes)
         })
 
         this.files.forEach(f => {
@@ -48,18 +44,18 @@ export class CheckTypes {
 
     }
 
-    private checkFile(file: MsFile, packageScope: TypeScope) {
-        const fileScope = new TypeScope(file.path, packageScope)
-        fileScope.addAll(file.nodes, null)
+    private checkFile(file: MsFile, packageScope: ScopeType) {
+        const fileScope = new ScopeType(file.path, packageScope)
+        fileScope.addAll(file.nodes)
 
         file.nodes.forEach(n => {
             if (n.kind === 'FuncDecl') {
-                this.checkFunc({ func: n, fileScope })
+                this.checkFunc({ file, func: n, fileScope })
             }
             if (n.kind == 'StructDecl') {
                 n.fields_list.fields.forEach(f => {
                     if (f.kind == 'FuncDecl') {
-                        this.checkFunc({ func: f, fileScope, struct: n })
+                        this.checkFunc({ file, func: f, fileScope, struct: n })
                     }
                 })
             }
@@ -67,12 +63,30 @@ export class CheckTypes {
 
             }
         })
+
     }
 
-    private checkFunc({ func, fileScope, struct }: {
-        func: FuncDecl, fileScope: TypeScope, struct?: StructDecl
+    private checkFunc({ file, func, fileScope, struct }: {
+        file: MsFile, func: FuncDecl, fileScope: ScopeType, struct?: StructDecl
     }) {
+        for (const item of func.block.items) {
+            if (item.kind == 'Binding') {
 
+            }
+        }
+    }
+
+    private resolveBinding({ file, scope, binding }: {
+        file: MsFile, scope: ScopeType, binding: BindingDecl
+    }) {
+        if (binding.expr) {
+            // binding.
+        }
+        if (binding.name) {
+            if (binding.type) {
+                // file.types[binding] = 9
+            }
+        }
     }
 
 }

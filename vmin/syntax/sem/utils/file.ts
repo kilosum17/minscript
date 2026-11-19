@@ -1,13 +1,15 @@
-import { Lexer } from "../lexer/lexer";
-import type { AstNode } from "../parser/ast_types";
-import { Parser } from "../parser/parser";
-import type { Diagnostic } from "../utils/diagnostics";
+import { Lexer } from "../../lexer/lexer";
+import type { AstNode } from "../../parser/ast_types";
+import { Parser } from "../../parser/parser";
+import type { Diagnostic } from "../../utils/diagnostics";
 import fs from "node:fs/promises"
+import type { SemType } from "./scope_type";
 
 export class MsFile {
     nodes = [] as AstNode[]
     text = ''
     diags: Diagnostic[] = []
+    scopes = {} as Record<number, SemType[]>
 
     constructor(
         public path: string
@@ -28,6 +30,16 @@ export class MsFile {
         } catch (e) {
             console.error(`Parsing: ${this.path} failed`, e)
         }
+    }
+
+    private cur_id = 0
+    getId(node: AstNode): number {
+        const n = (node as any) as { _id: number }
+        if (n._id == undefined) {
+            n._id = this.cur_id
+            this.cur_id++
+        }
+        return n._id
     }
 
 }

@@ -1,5 +1,5 @@
-import type { AstNode, BlockDecl, FuncDecl } from "../parser/ast_types";
-import { Diagnostic } from "../utils/diagnostics";
+import type { AstNode, BlockDecl, FuncDecl } from "../../parser/ast_types";
+import { Diagnostic } from "../../utils/diagnostics";
 
 export class CheckFlow {
     diagnostics: Diagnostic[] = []
@@ -64,13 +64,13 @@ export class CheckFlow {
 
     checkFun(node: FuncDecl, is_method = false) {
         node.params.forEach((p, idx) => {
-            if (p.name == 'this' && !is_method) {
+            if (p.mode == 'receiver' && !is_method) {
                 this.diagnostics.push(new Diagnostic(
                     'THIS_ONLY_IN_METHODS',
                     node.span,
                     ``
                 ))
-            } else if (p.name === 'this' && idx !== 0) {
+            } else if (p.mode == 'receiver' && idx !== 0) {
                 this.diagnostics.push(new Diagnostic(
                     'THIS_MUST_COME_FIRST',
                     node.span,
