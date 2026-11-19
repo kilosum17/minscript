@@ -41,8 +41,11 @@ export class ResScope {
                 const field = exp.mode.decl.fields_list.fields.find(f => {
                     return f.name == path
                 })
-                if (field?.kind == 'StructField') {
-                    // return field.type
+                if (field) {
+                    if(field.kind=='StructField'){
+                        return field.
+                    }
+                    return field.type
                 }
             }
             return undefined

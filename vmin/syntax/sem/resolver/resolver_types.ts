@@ -1,4 +1,4 @@
-import type { AliasDecl, AstType, BindingDecl, FuncDecl, ImplDecl, InterDecl, StructDecl, UnionDecl } from "../../parser/ast_types"
+import type { AliasDecl, AstType, BindingDecl, FuncDecl, GenericsDecl, ImplDecl, InterDecl, StructDecl, UnionDecl } from "../../parser/ast_types"
 
 const int_types = [
     'u8', 'u32', 'u64', 'int',
@@ -16,6 +16,11 @@ export type BasicType = {
     kind: 'BasicType'
     type: BasicTypeKind,
     val: string,
+}
+export type CustType = {
+    kind: 'CustType',
+    name: string,
+    generics?: GenericsDecl
 }
 
 // export type SemTypeKind = (
