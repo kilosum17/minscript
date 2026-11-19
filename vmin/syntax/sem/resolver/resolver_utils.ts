@@ -6,6 +6,9 @@ export function printSaveTypeKind(t: ResolvedTypeKind | undefined) {
         case "Basic": {
             return `${t.decl.type}(${t.decl.val})`
         }
+        case "ScopeRef": {
+            return `ref(${t.ref.name})`
+        }
         default: {
             return `TODO:`
         }

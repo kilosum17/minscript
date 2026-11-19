@@ -27,14 +27,32 @@ export class ResScope {
     clear() {
         this.saved = []
     }
-    get(args: { name: string }) {
-        const { name } = args
-        const exp = this.saved.find(f => f.name == name)
-        if (exp) {
-            return exp
+    get(args: { name: string, path?: string }): ResolveType | undefined {
+        const { name, path } = args
+        let exp = this.saved.find(f => f.name == name)
+        if (!exp) {
+            exp = this.parent?.get(args)
         }
+        if (!exp) {
+            console.log('VArs', this.parent?.saved.map(s => s.name))
+        }
+        if (path) {
+            if (exp?.mode.kind == 'Struct') {
+                const field = exp.mode.decl.fields_list.fields.find(f => {
+                    return f.name == path
+                })
+                if (field?.kind == 'StructField') {
+                    // return field.type
+                }
+            }
+            return undefined
+        }
+        return exp
     }
 
+    member(args: { path: string }) {
+
+    }
 
     resExpr(e: Expr): ResolvedTypeKind | undefined {
         switch (e.kind) {
@@ -83,12 +101,29 @@ export class ResScope {
                 })
             }
             case "StructInit": {
-                console.log(`>> `, printAstType(e.lhs), '{}')
-            }
-            case "Cast": {
-
+                // console.log(`>> `, printAstType(e.lhs), '{}')
+                if (e.lhs.kind == 'Var') {
+                    const t = this.get({ name: e.lhs.name })
+                    if (t?.mode.kind != 'Struct') {
+                        throw new Error('StructInit on invalid type:' + t + " " + e.lhs.name)
+                    }
+                    return ({
+                        kind: 'ScopeRef',
+                        ref: t,
+                    })
+                } else {
+                    throw new Error('Unexpected struct path: ' + printAstNode(e.lhs))
+                }
             }
             case "Member": {
+                if (e.lhs.kind === 'Var') {
+                    const t = this.get({ name: e.lhs.name })
+                    console.log('>>', t)
+                } else {
+                    throw new Error('Unexpected memebr path: ' + printAstNode(e.lhs))
+                }
+            }
+            case "Cast": {
 
             }
             case "Match": {

@@ -52,6 +52,9 @@ export type ResolvedTypeKind =
     } | {
         kind: 'Var',
         type: AstType,
+    } | {
+        kind: 'ScopeRef',
+        ref: ResolveType,
     }
 
 export function toBasicType(t: ResolvedTypeKind): { kind: 'Basic', decl: BasicType } | null {

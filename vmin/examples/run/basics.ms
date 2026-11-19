@@ -101,6 +101,10 @@ fn main() {
     // structs, defaults, to_str, equality
     let p = Point { x: 1, y: 2 }
     let q = Point { ...p, y: 5 }
+    
+    px := p.x
+    py := p.y
+
     log.println(p, q, p == Point { x: 1, y: 2 }, p == q)
     let acct = Account { owner: "ann", balance: 10 }
     log.println(acct.tags.len(), acct.note ?? "no note")
