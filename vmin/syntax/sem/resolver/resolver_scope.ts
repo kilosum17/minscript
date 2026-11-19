@@ -1,5 +1,5 @@
 import type { Expr } from "../../parser/ast_types";
-import { printAstNode } from "../../parser/ast_utils";
+import { printAstNode, printAstType } from "../../parser/ast_utils";
 import { checkOpers } from "./oper_utils";
 import { toBasicType, type ResolveType, type ResolvedTypeKind } from "./resolver_types";
 import { isBasicType, printSaveTypeKind } from "./resolver_utils";
@@ -82,6 +82,9 @@ export class ResScope {
                     decl: { kind: "BasicType", type: 'str', val: '' }
                 })
             }
+            case "StructInit": {
+                console.log(`>> `, printAstType(e.lhs), '{}')
+            }
             case "Cast": {
 
             }
@@ -101,9 +104,6 @@ export class ResScope {
 
             }
             case "ErrorProp": {
-
-            }
-            case "StructInit": {
 
             }
             case "RecordInit": {
