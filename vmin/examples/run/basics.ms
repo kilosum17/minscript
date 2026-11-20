@@ -158,5 +158,7 @@ fn main() {
 
     // recover
     let r = recover { [1, 2][5] }
-    if let Err(e) = r { log.println("caught:", e.message) }
+    if let Err(e) = r { 
+        log.println("caught:", e.message)
+    }
 }

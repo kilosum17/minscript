@@ -8,8 +8,6 @@ export class ResolveAdder {
         public r: Resolver
     ) { }
 
-    
-
     addAll(nodes: AstNode[]) {
         const funcDeclToType = (func: FuncDecl): SemType => {
             const args: SemType[] = func.params.map(p => {
@@ -47,6 +45,7 @@ export class ResolveAdder {
             if (n.kind == 'StructDecl') {
                 const type = structDeclToType(n)
                 this.r.f_scope.add(type)
+                this.r.addSymbol(n, type)
             }
             if (n.kind == 'FuncDecl') {
                 const type = funcDeclToType(n)
@@ -56,6 +55,7 @@ export class ResolveAdder {
                 } satisfies ResolveType
                 this.r.f_scope.add(resolve)
                 this.r.resolveFunc(n)
+                this.r.addSymbol(n, resolve)
             }
             if (n.kind == 'UnionDecl') {
                 const vars = n.vars.map(f => {
@@ -82,7 +82,7 @@ export class ResolveAdder {
                         throw new Error('Unkown union variant')
                     }
 
-                    return [{ key: f.name, is_pub: true, type }, type] as const
+                    return [{ key: f.name, is_pub: true, type }, type, f] as const
                 })
                 const methods = n.methods.map(m => {
                     const type = funcDeclToType(m)
@@ -95,9 +95,13 @@ export class ResolveAdder {
                 } satisfies ResolveType
 
                 this.r.f_scope.add(type)
+                this.r.addSymbol(n, type)
+
                 vars.forEach(v => {
                     this.r.f_scope.add(v[1])
+                    this.r.addSymbol(v[2], v[1])
                 })
+
             }
         })
     }

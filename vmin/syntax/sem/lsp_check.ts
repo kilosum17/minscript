@@ -2,6 +2,9 @@ import { Diagnostic } from "../utils/diagnostics"
 import { Lexer } from "../lexer/lexer"
 import { Parser } from "../parser/parser"
 import { Resolver } from "./resolver/resolver"
+import { walkAstTree } from "./resolver/walk_ast_tree"
+import { getNodeId } from "./utils/res_utils"
+import { printAstNode, printAstType } from "../parser/ast_utils"
 
 class LspChecker {
     res: Resolver
@@ -46,28 +49,11 @@ export async function lspCheck({ text, path }: {
 }
 
 export function lspGetSymbol({ offset }: { offset: number }) {
-    let foundId = -1
-    let minLen = Number.MAX_SAFE_INTEGER
-
-    for (const [strId, node] of Object.entries(checker.res.symbolMap)) {
-        const span = node?.span
-        if (!span) continue
-
-        const { start, end } = span
-        if (offset < start || offset > end) continue
-
-        const len = end - start
-        const id = Number(strId)
-        if (Number.isNaN(id)) continue
-
-        if (len < minLen) {
-            minLen = len
-            foundId = id
-        }
+    const node = walkAstTree(checker.res.astNodes, offset)
+    if (node) {
+        console.log(`Found `, printAstType(node))
     }
-
-    if (foundId >= 0) {
-        return checker.res.symbols[foundId]
-    }
-    return undefined
+    const nodeId = getNodeId(node)
+    return checker.res.symbols[nodeId]
 }
+

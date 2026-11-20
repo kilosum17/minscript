@@ -1,3 +1,4 @@
+import { printAstNode, printAstType } from "../../parser/ast_utils";
 import { type ResolveType, type SemType } from "./resolver_types";
 
 export function printSaveTypeKind(t: ResolveType | undefined) {
@@ -17,5 +18,10 @@ export function resTypeName(t: SemType | undefined) {
         const gens = t.gens ? `[${t.gens.join(',')}]` : ''
         return t.type_name + gens
     }
+    if (t?.mode == 'func') {
+        const args = t.args.map(t => printAstType(t)).join(',')
+        return `f(${args})`
+    }
+
     return ''
 }
