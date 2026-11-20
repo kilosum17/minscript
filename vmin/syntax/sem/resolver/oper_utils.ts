@@ -41,6 +41,8 @@ export const OPER_DATA = [
 }[]
 
 export function checkOpers(oper: string, a: string, b: string) {
+    console.log(`## Call oper oper:${oper} a:${a} b:${b}`)
+
     for (const d of OPER_DATA) {
         if (d.oper.includes(oper)) {
             const m = d.types.find(t => {

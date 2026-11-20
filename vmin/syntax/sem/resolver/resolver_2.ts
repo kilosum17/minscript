@@ -1,6 +1,6 @@
 import type { AstType } from "../../parser/ast_types"
 import type { Resolver } from "./resolver"
-import type { ResolvedTypeKind } from "./resolver_types"
+import type { SemType } from "./resolver_types"
 
 
 export class Resolver2 {
@@ -9,7 +9,7 @@ export class Resolver2 {
         public res: Resolver
     ) { }
 
-    isSame(a: ResolvedTypeKind, b: ResolvedTypeKind | AstType) {
+    isSame(a: SemType, b: SemType | AstType) {
         return false
     }
 

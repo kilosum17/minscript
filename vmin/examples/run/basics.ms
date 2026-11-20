@@ -5,7 +5,7 @@ import "std.io"
 import pub "std.build.*" as bld
 import "std.fs" as fs2
 
-type Point { x: int, y: int }
+type Point { x: int, y: int,name:str }
 pub type Account {
     owner: str, 
     balance: i64, 
@@ -82,6 +82,8 @@ fn first_even(items: Vec[int]) -> int? {
 
 fn bump(n: *int) { n += 1 }                    // writes [n]
 
+fn string(n: int) -> str{ "${n}" }
+
 fn main() {
     // numbers
     log.println(7 / 2, 7 % 3, -7 / 2, 2.5 * 2.0, 1 + 2 * 3)
@@ -104,6 +106,7 @@ fn main() {
     
     px := p.x
     py := p.y
+    pname := p.name
 
     log.println(p, q, p == Point { x: 1, y: 2 }, p == q)
     let acct = Account { owner: "ann", balance: 10 }
@@ -143,11 +146,15 @@ fn main() {
     var n = 1
     bump(n)
     bump(n)
-    var m = m{ "a": 1 }
+    var m = m{ "a": 1, string(1):20 }
     m["b"] = 2
     m["a"] += 10
     let set = s{ 3, 1, 3 }
     log.println(n, m, m.get("zz"), set.len(), [1, 2, 3].fold(0, #{ a, x => a + x }))
+
+    let nums = [1,2,3]
+    let grades = ['A','B','C']
+    let scores = [20.4, 45.78, 50.0]
 
     // recover
     let r = recover { [1, 2][5] }

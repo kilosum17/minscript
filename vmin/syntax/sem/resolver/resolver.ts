@@ -1,10 +1,10 @@
-import type { AstNode, FuncDecl } from "../../parser/ast_types";
+import type { AstNode, AstType, FuncDecl } from "../../parser/ast_types";
 import { printAstType } from "../../parser/ast_utils";
 import type { ScopeType } from "../utils/scope_type";
 import { Resolver2 } from "./resolver_2";
 import { ResScope } from "./resolver_scope";
-import type { ResolvedTypeKind } from "./resolver_types";
-import { printSaveTypeKind } from "./resolver_utils";
+import { type ResolveType, type SemType } from "./resolver_types";
+import { printSaveTypeKind, resTypeName } from "./resolver_utils";
 
 export class Resolver {
     astNodes: AstNode[] = []
@@ -31,20 +31,45 @@ export class Resolver {
     }
 
     resolveRoot() {
+        const funcDeclToType = (func: FuncDecl): SemType => {
+            const args: SemType[] = func.params.map(p => {
+                if (p.mode == 'receiver') {
+                    return {
+                        kind: 'AstType', mode: 'var', is_mut: p.is_mut,
+                        is_option: false, name: 'this',
+                    } satisfies SemType
+                } else {
+                    return p.type
+                }
+            })
+            return {
+                kind: 'AstType', mode: 'func',
+                args, is_mut: false, is_option: false, ret: func.return
+            }
+        }
         this.astNodes.forEach(n => {
             if (n.kind == 'StructDecl') {
-                this.f_scope.add({
-                    name: n.name, is_pub: n.is_pub,
-                    mode: {
-                        kind: 'Struct', decl: n,
-                    }
+                const fields = n.fields_list.fields.map(f => {
+                    let type: AstType
+                    if (f.kind === 'FuncDecl') type = funcDeclToType(f)
+                    else type = f.type
+                    return { key: f.name, type, is_pub: f.is_pub }
                 })
+
+                const type = {
+                    mode: 'struct', var_name: n.name, fields,
+                    is_mut: false, is_option: false,
+                } satisfies ResolveType
+
+                this.f_scope.add(type)
             }
             if (n.kind == 'FuncDecl') {
-                this.f_scope.add({
-                    name: n.name, is_pub: n.is_pub,
-                    mode: { kind: 'Func', decl: n },
-                })
+                const type = funcDeclToType(n)
+                const resolve = {
+                    ...type, kind: 'AstType', var_name: n.name,
+                    // generics: n.generics,
+                } satisfies ResolveType
+                this.f_scope.add(resolve)
                 this.resolveFunc(n,)
             }
 
@@ -56,15 +81,15 @@ export class Resolver {
         func.params.forEach(p => {
             if (p.mode == 'var') {
                 scope.add({
-                    name: p.name, is_param: true,
-                    mode: { kind: 'Var', type: p.type, }
+                    ...p.type,
+                    var_name: p.name, is_param: true,
                 })
             }
         })
         for (const s of func.block.items) {
             if (s.kind == 'Binding') {
                 console.log('Binding ', s.name)
-                let inferedType = undefined as undefined | ResolvedTypeKind
+                let inferedType = undefined as undefined | SemType
                 if (s.expr) {
                     inferedType = scope.resExpr(s.expr)
                 }
@@ -74,19 +99,19 @@ export class Resolver {
                         // error
                     }
                     scope.add({
-                        name: s.name || '',
-                        mode: { kind: 'Var', type: s.type }
-                    })
+                        ...s.type,
+                        var_name: s.name || '',
+                    } satisfies ResolveType)
                 } else {
                     if (inferedType) {
                         scope.add({
-                            name: s.name || '',
-                            mode: inferedType
-                        })
+                            ...inferedType,
+                            var_name: s.name || '',
+                        } satisfies ResolveType)
 
                     }
                 }
-                console.log(`${s.name}:${printAstType(s.type!)} Infered: ${printSaveTypeKind(inferedType)}`)
+                console.log(`${s.name}:${printAstType(s.type!)} Infered: ${resTypeName(inferedType!)}`)
             }
         }
     }

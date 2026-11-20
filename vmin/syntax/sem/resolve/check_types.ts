@@ -29,7 +29,7 @@ export class CheckTypes {
                 if (f.nodes.length == 0) return
                 f.diags.push(new Diagnostic(
                     "MULTIPLE_PACKAGE_NAMES",
-                    f.nodes.at(0)!.span,
+                    f.nodes.at(0)!.span!,
                     `Mutiple package names ${[...unique_name].join(',')}`
                 ))
             })

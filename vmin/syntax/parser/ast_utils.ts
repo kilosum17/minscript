@@ -40,6 +40,8 @@ export class AstPrint {
                     }).join(',')
                     return `[${items}]`
                 }
+
+                case undefined:
                 case "AstType": {
                     if (n.mode == 'func') {
                         const args = n.args.map(n => this.print(n)).join(',')
@@ -55,6 +57,10 @@ export class AstPrint {
                         }).join(',\n')
                         return `r{${items}}`
                     }
+                    if (n.mode == 'struct') {
+                        return `struct{...}`
+                    }
+
                     return `${n.is_mut ? '*' : ''}${n.name}${this.print(n.generics, 0)}${n.is_option ? '?' : ''}`
                 }
                 case "UnionDecl": {

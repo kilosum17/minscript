@@ -80,19 +80,15 @@ export type StructField = {
 }
 
 export type AstType = {
-    kind: "AstType",
-    is_option: boolean,
-    is_mut: boolean,
-    span: AstSpan,
+    kind?: "AstType",
+    is_option?: boolean,
+    is_mut?: boolean,
+    span?: AstSpan,
 } & (
         {
             mode: 'var',
             name: string,
             generics?: GenericsDecl,
-        } | {
-            mode: 'func',
-            args: AstType[],
-            ret: AstType,
         } | {
             mode: 'tuple',
             items: AstType[]
@@ -101,9 +97,24 @@ export type AstType = {
             fields: {
                 key: string,
                 type: AstType
-            }[]
-        }
+            }[],
+        } | AstTypeStruct
+        | AstTypeFunc
     )
+export type AstTypeStruct = {
+    mode: 'struct',
+    fields: {
+        is_pub: boolean
+        key: string,
+        type: AstType
+    }[]
+}
+
+export type AstTypeFunc = {
+    mode: 'func',
+    args: AstType[],
+    ret?: AstType,
+}
 
 export type UnionDecl = {
     kind: 'UnionDecl',

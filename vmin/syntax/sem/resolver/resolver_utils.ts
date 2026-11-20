@@ -1,13 +1,10 @@
-import { float_set, int_set, type ResolvedTypeKind } from "./resolver_types";
+import { type ResolveType, type SemType } from "./resolver_types";
 
-export function printSaveTypeKind(t: ResolvedTypeKind | undefined) {
+export function printSaveTypeKind(t: ResolveType | undefined) {
     if (!t) return ''
-    switch (t.kind) {
-        case "Basic": {
-            return `${t.decl.type}(${t.decl.val})`
-        }
-        case "ScopeRef": {
-            return `ref(${t.ref.name})`
+    switch (t.mode) {
+        case "var": {
+            return `${t.var_name}`
         }
         default: {
             return `TODO:`
@@ -15,11 +12,10 @@ export function printSaveTypeKind(t: ResolvedTypeKind | undefined) {
     }
 }
 
-
-export const isBasicType = (type: ResolvedTypeKind | undefined) => {
-    if (type?.kind === 'Basic') {
-        return type.decl
+export function resTypeName(t: SemType | undefined) {
+    if (t?.mode === 'var') {
+        const gens = t.gens ? `[${t.gens.join(',')}]` : ''
+        return t.name + gens
     }
-    return false
+    return ''
 }
-

@@ -1,8 +1,8 @@
 import type { Expr } from "../../parser/ast_types";
 import { printAstNode, printAstType } from "../../parser/ast_utils";
 import { checkOpers } from "./oper_utils";
-import { toBasicType, type ResolveType, type ResolvedTypeKind } from "./resolver_types";
-import { isBasicType, printSaveTypeKind } from "./resolver_utils";
+import { type ResolveType, type SemType } from "./resolver_types";
+import { printSaveTypeKind, resTypeName } from "./resolver_utils";
 
 export class ResScope {
     saved: ResolveType[] = []
@@ -15,13 +15,6 @@ export class ResScope {
     }
 
     add(...types: ResolveType[]) {
-        types = types.map(t => {
-            const b = toBasicType(t.mode)
-            if (b) {
-                return { ...t, mode: b }
-            }
-            return t
-        })
         this.saved.push(...types)
     }
     clear() {
@@ -29,54 +22,56 @@ export class ResScope {
     }
     get(args: { name: string, path?: string }): ResolveType | undefined {
         const { name, path } = args
-        let exp = this.saved.find(f => f.name == name)
+        let exp = this.saved.find(f => f.var_name == name)
         if (!exp) {
             exp = this.parent?.get(args)
         }
         if (!exp) {
-            console.log('VArs', this.parent?.saved.map(s => s.name))
+            console.log('VArs', this.parent?.saved.map(s => s.var_name))
         }
-        if (path) {
-            if (exp?.mode.kind == 'Struct') {
-                const field = exp.mode.decl.fields_list.fields.find(f => {
-                    return f.name == path
-                })
-                if (field) {
-                    if(field.kind=='StructField'){
-                        return field.
-                    }
-                    return field.type
-                }
+        if (exp && path != undefined) {
+            if (exp.mode == 'var') {
+                return this.path(exp.name, path)
             }
-            return undefined
         }
         return exp
     }
 
-    member(args: { path: string }) {
-
+    path(name: string, path: string): ResolveType | undefined {
+        const exp = this.get({ name })
+        if (exp?.mode == 'struct') {
+            const field = exp.fields.find(f => f.key == path)
+            if (field) {
+                return { ...field.type, var_name: '', } satisfies ResolveType
+            } else {
+                console.log('Stt', exp.var_name, exp.fields.map(f => f.key))
+            }
+        } else {
+            console.log('Dss', exp?.mode, exp)
+        }
+        return undefined
     }
 
-    resExpr(e: Expr): ResolvedTypeKind | undefined {
+    resExpr(e: Expr): SemType | undefined {
         switch (e.kind) {
             case "Literal": {
-                if (e.mode === 'BYTE') return ({ kind: 'Basic', decl: { kind: 'BasicType', type: 'byte', val: e.val } })
-                if (e.mode === 'CHAR') return ({ kind: 'Basic', decl: { kind: 'BasicType', type: 'char', val: e.val } })
+                if (e.mode === 'BYTE') return { mode: 'var', name: 'byte' } satisfies SemType
+                if (e.mode === 'CHAR') return { mode: 'var', name: 'char' } satisfies SemType
                 if (e.mode === 'NUM') {
-                    let type_name: 'int' | 'f64'
-                    if (e.val.includes('.')) type_name = 'f64'
-                    else type_name = 'int'
-                    return ({ kind: 'Basic', decl: { kind: "BasicType", type: type_name, val: e.val } })
+                    let name: 'int' | 'f64'
+                    if (e.val.includes('.')) name = 'f64'
+                    else name = 'int'
+                    return { mode: 'var', name } satisfies SemType
                 }
                 if (e.mode === 'BOOL') {
-                    return ({ kind: 'Basic', decl: { kind: "BasicType", type: 'bool', val: e.val } })
+                    return { mode: 'var', name: 'bool' } satisfies SemType
                 }
                 throw new Error(`Unkown literal kind ${printAstNode(e)}`)
             }
             case "Var": {
                 const t = this.get({ name: e.name })
-                console.log(`Get var ${e.name}=${t}`, this.saved.map(d => d.name))
-                return t?.mode
+                console.log(`Get var ${e.name}=${t}`, this.saved.map(d => d.var_name))
+                return t
             }
             case "Unary": {
                 return undefined
@@ -84,47 +79,78 @@ export class ResScope {
             case "Binary": {
                 const lhs = this.resExpr(e.lhs)
                 const rhs = this.resExpr(e.rhs)
-                const math_oper = ['+', '-', '/', '*']
-                console.log('got ', printSaveTypeKind(lhs), printSaveTypeKind(rhs))
-                const numLhs = isBasicType(lhs)
-                const numRhs = isBasicType(rhs)
-
-                if (numLhs && numRhs) {
-                    const oper = checkOpers(e.oper, numLhs.type, numRhs.type)
-                    return ({
-                        kind: 'Basic',
-                        decl: { kind: "BasicType", type: oper as any, val: '' }
-                    })
+                console.log('got ', printAstType(lhs!), printAstType(rhs!))
+                const nlhs = resTypeName(lhs)
+                const nrhs = resTypeName(rhs)
+                const type = checkOpers(e.oper, nlhs, nrhs)
+                if (type) {
+                    return {
+                        mode: 'var', name: type,
+                    } satisfies SemType
                 }
             }
             case "String": {
-                return ({
-                    kind: 'Basic',
-                    decl: { kind: "BasicType", type: 'str', val: '' }
-                })
+                return { mode: 'var', name: 'str', } satisfies SemType
             }
             case "StructInit": {
                 // console.log(`>> `, printAstType(e.lhs), '{}')
                 if (e.lhs.kind == 'Var') {
                     const t = this.get({ name: e.lhs.name })
-                    if (t?.mode.kind != 'Struct') {
+                    if (t?.mode != 'struct') {
                         throw new Error('StructInit on invalid type:' + t + " " + e.lhs.name)
                     }
-                    return ({
-                        kind: 'ScopeRef',
-                        ref: t,
-                    })
+                    return { mode: 'var', name: t.var_name } satisfies SemType
                 } else {
                     throw new Error('Unexpected struct path: ' + printAstNode(e.lhs))
                 }
             }
             case "Member": {
-                if (e.lhs.kind === 'Var') {
-                    const t = this.get({ name: e.lhs.name })
-                    console.log('>>', t)
+                if (e.lhs.kind === 'Var' && e.rhs.kind === 'Var') {
+                    const t = this.get({
+                        name: e.lhs.name,
+                        path: e.rhs.name,
+                    })
+                    if (t?.mode == 'var') {
+                        return t
+                    } else {
+                        throw new Error('Unexpected memebr kind: ' + printAstNode(e.lhs))
+                    }
                 } else {
                     throw new Error('Unexpected memebr path: ' + printAstNode(e.lhs))
                 }
+            }
+            case "MapInit": {
+                const f0 = e.fields[0]
+                if (f0 != undefined) {
+                    let ktype = ''
+                    let vtype = ''
+                    if (f0.mode == 'spread') {
+
+                    } else if (f0.mode == 'field') {
+                        ktype = resTypeName(this.resExpr(f0.key))
+                        vtype = resTypeName(this.resExpr(f0.val))
+                    } else {
+                        throw new Error('Unkown map field mode')
+                    }
+                    return { mode: 'var', name: 'Map', gens: [ktype, vtype] } as SemType
+                }
+                return undefined
+            }
+            case "VecInit": {
+                const f0 = e.items[0]
+                if (f0 != undefined) {
+                    const type = resTypeName(this.resExpr(f0))
+                    return { mode: 'var', name: 'Vec', gens: [type] }
+                }
+                return undefined
+            }
+            case "SetInit": {
+                const f0 = e.items[0]
+                if (f0 != undefined) {
+                    const type = resTypeName(this.resExpr(f0))
+                    return { mode: 'var', name: 'Set', gens: [type] }
+                }
+                return undefined
             }
             case "Cast": {
 
@@ -147,19 +173,11 @@ export class ResScope {
             case "RecordInit": {
 
             }
-            case "VecInit": {
-
-            }
             case "Closure": {
 
             }
-            case "MapInit": {
 
-            }
             case "Index": {
-
-            }
-            case "SetInit": {
 
             }
             case "Recover": {
