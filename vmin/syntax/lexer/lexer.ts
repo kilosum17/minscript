@@ -27,10 +27,10 @@ export class Lexer {
             LexLog.info(this.printPart(part))
 
             const span: Span = {
-                start: part?.start_pos || this.pos,
+                start: part?.start_pos ?? this.pos,
                 end: this.pos,
-                start_line: part?.start_line || this.line,
-                start_col: part?.start_col || this.col,
+                start_line: part?.start_line ?? this.line,
+                start_col: part?.start_col ?? this.col,
                 end_line: this.line,
                 end_col: this.col,
             }
@@ -92,7 +92,7 @@ export class Lexer {
         const span: Span = {
             start: this.pos, end: this.pos,
             start_line: this.line, start_col: this.col,
-            end_line: this.col, end_col: this.col
+            end_line: this.line, end_col: this.col
         }
         return new Token('EOF', "<eof>", false, false, span)
     }
@@ -178,7 +178,7 @@ export class Lexer {
                 if (saved_is_multiline == undefined) throw new Error('UNEXPECTED state')
                 while (
                     (!saved_is_multiline && this.cur() !== '"') ||
-                    (saved_is_multiline && this.cur() != '"' && this.cur(1) != '"' && this.cur(2) != '"')
+                    (saved_is_multiline && !(this.cur() == '"' && this.cur(1) == '"' && this.cur(2) == '"'))
                 ) {
                     if (!saved_is_multiline && isNewline(this.cur())) {
                         throw new Error('Unterminated string')

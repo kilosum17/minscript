@@ -60,19 +60,19 @@ export class Pratt {
     }
 
     parseNull(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         const p1 = this.le.peek()
         const p2 = this.le.peek(1)
         // console.log('p1', p1.kwd(), p1.type)
         if (p1.val_('-') || p1.val_('!')) {
             const oper = this.le.next().val
             const expr = this.parseExpr(70, null)
-            return { kind: 'Unary', oper, expr, span: this.pa.gspan() }
+            return { kind: 'Unary', oper, expr, span: this.pa.span(start) }
         }
         if (p1.kwd_('await')) {
             this.le.expect('await')
             const expr = this.parseExpr(75, null)
-            return { kind: 'Await', expr, span: this.pa.gspan() }
+            return { kind: 'Await', expr, span: this.pa.span(start) }
         }
         if (p1.kwd_('match')) {
             return this.parseMatchExpr()
@@ -111,28 +111,28 @@ export class Pratt {
             return this.parseLock()
         }
         if (p1.val_('(')) {
-            this.pa.saveStart()
+            const start = this.pa.getStart()
             this.le.expect_('(')
             const expr = this.parseExpr(0, null)
             this.le.expect_(')')
-            return { kind: 'Bracket', expr, span: this.pa.gspan() }
+            return { kind: 'Bracket', expr, span: this.pa.span(start) }
         }
         if (p1.val_('{')) {
             const block = this.pa.parseBlockDecl()
-            return { kind: 'Block', block, span: this.pa.gspan() }
+            return { kind: 'Block', block, span: this.pa.span(start) }
         }
         if (p1.type_('NUM') || p1.type_('CHAR') || p1.type_('BYTE')) {
             const val = this.le.next().val
             const mode = p1.type as 'NUM'
-            return { kind: 'Literal', mode, val, span: this.pa.gspan() }
+            return { kind: 'Literal', mode, val, span: this.pa.span(start) }
         }
         if (p1.val_('false') || p1.val_('true')) {
             const val = this.le.next().val
-            return { kind: 'Literal', mode: 'BOOL', val, span: this.pa.gspan() }
+            return { kind: 'Literal', mode: 'BOOL', val, span: this.pa.span(start) }
         }
         if (p1.type_('ID')) {
             const name = this.le.expect('ID').val
-            return { kind: 'Var', name, span: this.pa.gspan() }
+            return { kind: 'Var', name, span: this.pa.span(start) }
         }
         throw new Error(`NULL_EXP_MISSING ${this.le.info()}`)
     }
@@ -145,32 +145,31 @@ export class Pratt {
         ...this.assigns,
     ])
     parserInfixExp(tok: Token, minBp: number, lhs: Expr): Expr {
-        this.pa.saveStart()
         const oper = tok.symb()
         if (this.bins.has(oper) || this.conds.has(oper)) {
             const rhs = this.parseExpr(minBp, null)
-            return { kind: 'Binary', oper, lhs, rhs, span: this.pa.gspan() }
+            return { kind: 'Binary', oper, lhs, rhs, span: this.pa.span(lhs.span.start) }
         }
         if (tok.kwd_('as')) {
             const type = this.pa.parseType()
-            return { kind: 'Cast', oper, lhs, type, span: this.pa.gspan() }
+            return { kind: 'Cast', oper, lhs, type, span: this.pa.span(lhs.span.start) }
         }
         if (oper == '.' || tok.val == '?.') {
             let next = this.le.next()
             let rhs: Expr
             if (next.type_('ID')) {
-                rhs = { kind: 'Var', name: next.val, span: this.pa.gspan() }
+                rhs = { kind: 'Var', name: next.val, span: this.pa.span(lhs.span.start) }
             } else if (next.type_('NUM')) {
-                rhs = { kind: 'Literal', mode: 'NUM', val: next.val, span: this.pa.gspan() }
+                rhs = { kind: 'Literal', mode: 'NUM', val: next.val, span: this.pa.span(lhs.span.start) }
             } else if (next.val_('[')) {
                 const type = this.pa.parseType()
                 this.le.expect_(']')
-                return { kind: 'GenericExpr', type, span: this.pa.gspan() }
+                return { kind: 'GenericExpr', type, span: this.pa.span(lhs.span.start) }
             } else {
                 throw new Error(`Unexpected member value ${this.le.info()}`)
             }
             const is_optional = tok.val_('?.')
-            return { kind: 'Member', is_optional, lhs, rhs, span: this.pa.gspan() }
+            return { kind: 'Member', is_optional, lhs, rhs, span: this.pa.span(lhs.span.start) }
         }
         if (oper == '(') {
             return this.parseFuncCall(lhs, true)
@@ -178,19 +177,19 @@ export class Pratt {
         if (oper == '[') {
             const key = this.parseExpr(0, null)
             this.le.expect_(']')
-            return { kind: 'Index', lhs, key, span: this.pa.gspan() }
+            return { kind: 'Index', lhs, key, span: this.pa.span(lhs.span.start) }
         }
         if (oper == '{') {
             return this.parseStructInit(lhs)
         }
         if (oper == '?') {
-            return { kind: 'ErrorProp', lhs, span: this.pa.gspan() }
+            return { kind: 'ErrorProp', lhs, span: this.pa.span(lhs.span.start) }
         }
         throw new Error(`UNKOWn infix operator: ${oper}, ${this.le.info()}`)
     }
 
     parseMatchExpr(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect('match')
         let cond = undefined as undefined | Expr
         if (!this.le.peek().val_('{')) {
@@ -271,11 +270,11 @@ export class Pratt {
             if (this.le.peek().val_(',')) this.le.expect_(',')
         }
         this.le.expect_('}')
-        return { kind: 'Match', cond, arms, span: this.pa.gspan() }
+        return { kind: 'Match', cond, arms, span: this.pa.span(start) }
     }
 
     parseIfExpr(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect('if')
         let is_let = false
         if (this.le.peek().kwd_('let')) {
@@ -302,12 +301,12 @@ export class Pratt {
         }
         return {
             kind: 'If', is_let, cond, variant, then, else: else_,
-            span: this.pa.gspan()
+            span: this.pa.span(start)
         }
     }
 
     parseFuncCall(lhs: Expr, skip_bracket = false): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         if (!skip_bracket) this.le.expect_('(')
         const args = [] as Expr[]
         while (!this.le.peek().val_(')')) {
@@ -318,11 +317,11 @@ export class Pratt {
             }
         }
         this.le.expect_(')')
-        return { kind: 'Call', lhs, args, span: this.pa.gspan() }
+        return { kind: 'Call', lhs, args, span: this.pa.span(start) }
     }
 
     parseString(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect('STR_START')
         const parts = [] as (string | Expr)[]
         while (!this.le.peek().type_('STR_END')) {
@@ -340,14 +339,14 @@ export class Pratt {
             }
         }
         this.le.expect_('STR_END')
-        return { kind: 'String', parts, span: this.pa.gspan() }
+        return { kind: 'String', parts, span: this.pa.span(start) }
     }
 
     parseStructInit(lhs: Expr): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         // const name = this.le.expect('ID').val
         const fields = this.parseStructFields(true)
-        return { kind: 'StructInit', lhs, fields, span: this.pa.gspan() }
+        return { kind: 'StructInit', lhs, fields, span: this.pa.span(start) }
     }
 
     parseStructFields(skip_brace = false) {
@@ -377,7 +376,7 @@ export class Pratt {
     }
 
     parseVec(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect_('[')
         const items = [] as Expr[]
         while (!this.le.peek().val_(']')) {
@@ -385,11 +384,11 @@ export class Pratt {
             if (!this.le.peek().val_(']')) this.le.expect_(',')
         }
         this.le.expect_(']')
-        return { kind: 'VecInit', items, span: this.pa.gspan() }
+        return { kind: 'VecInit', items, span: this.pa.span(start) }
     }
 
     parseClosure(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect_('#{')
         let has_args = false
         let offset = 0
@@ -420,13 +419,13 @@ export class Pratt {
             this.le.expect_('=>')
         }
         const block = this.pa.parseBlockDecl({ openBraceOptional: true, hasClosingBrace: true })
-        return { kind: 'Closure', args, block, span: this.pa.gspan() }
+        return { kind: 'Closure', args, block, span: this.pa.span(start) }
     }
 
     parseMap(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         const fields = this.parseMapFields()
-        return { kind: 'MapInit', fields, span: this.pa.gspan() }
+        return { kind: 'MapInit', fields, span: this.pa.span(start) }
     }
 
     parseMapFields(): MapInitField[] {
@@ -453,7 +452,7 @@ export class Pratt {
     }
 
     parseSet(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect_('s{')
         const items = [] as Expr[]
         while (!this.le.peek().val_('}')) {
@@ -461,25 +460,25 @@ export class Pratt {
             if (!this.le.peek().val_('}')) this.le.expect_(',')
         }
         this.le.expect_('}')
-        return { kind: 'SetInit', items, span: this.pa.gspan() }
+        return { kind: 'SetInit', items, span: this.pa.span(start) }
     }
 
     parseRecover(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect('recover')
         const block = this.pa.parseBlockDecl()
-        return { kind: 'Recover', block, span: this.pa.gspan() }
+        return { kind: 'Recover', block, span: this.pa.span(start) }
     }
 
     parseRecord(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect_('r{')
         const fields = this.parseStructFields(true)
-        return { kind: 'RecordInit', fields, span: this.pa.gspan() }
+        return { kind: 'RecordInit', fields, span: this.pa.span(start) }
     }
 
     parseLock(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect('lock')
         const vars = [] as Expr[]
         while (!this.le.peek().val_('{')) {
@@ -487,16 +486,16 @@ export class Pratt {
             if (!this.le.peek().val_('{')) this.le.expect_(',')
         }
         const block = this.pa.parseBlockDecl()
-        return { kind: "Lock", vars, block, span: this.pa.gspan() }
+        return { kind: "Lock", vars, block, span: this.pa.span(start) }
     }
 
     parseSelect(): Expr {
-        this.pa.saveStart()
+        const start = this.pa.getStart()
         this.le.expect('select')
         this.le.expect_('{')
         const arms = [] as SelectArm[]
         while (!this.le.peek().val_('}')) {
-            this.pa.saveStart()
+            const start = this.pa.getStart()
             const p1 = this.le.peek()
             const p2 = this.le.peek(1)
             let var_name = undefined as undefined | string
@@ -507,15 +506,15 @@ export class Pratt {
             const expr = this.parseExpr(0, null)
             this.le.expect_('=>')
             const block = this.pa.parseBlockDecl({ bracesOptional: true })
-            arms.push({ var_name, expr, block, span: this.pa.gspan() })
+            arms.push({ var_name, expr, block, span: this.pa.span(start) })
             if (this.le.peek().val_(',')) this.le.expect_(',')
         }
         this.le.expect_('}')
-        return { kind: 'Select', arms, span: this.pa.gspan() }
+        return { kind: 'Select', arms, span: this.pa.span(start) }
     }
 
     parseTuple(): Expr {
-        this.pa.gspan()
+        const start = this.pa.getStart()
         this.le.expect_('t(')
         const items = [] as Expr[]
         while (!this.le.peek().val_(')')) {
@@ -523,7 +522,7 @@ export class Pratt {
             if (!this.le.peek().val_(')')) this.le.expect_(',')
         }
         this.le.expect_(')')
-        return { kind: 'TupleInit', items, span: this.pa.gspan() }
+        return { kind: 'TupleInit', items, span: this.pa.span(start) }
     }
 
 }
