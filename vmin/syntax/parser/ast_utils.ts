@@ -60,8 +60,13 @@ export class AstPrint {
                     if (n.mode == 'struct') {
                         return `struct{...}`
                     }
-
-                    return `${n.is_mut ? '*' : ''}${n.name}${this.print(n.generics, 0)}${n.is_option ? '?' : ''}`
+                    if (n.mode == 'union') {
+                        return `union{...}`
+                    }
+                    if (n.mode == 'union_bare') {
+                        return `bare(${n.type_name})`
+                    }
+                    return `${n.is_mut ? '*' : ''}${n.type_name}${this.print(n.generics, 0)}${n.is_option ? '?' : ''}`
                 }
                 case "UnionDecl": {
                     const parts = n.vars.map(v => this.print(v, d + 1)).join('\n')

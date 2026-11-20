@@ -3,7 +3,7 @@ import type { Diagnostic } from "../utils/diagnostics";
 import type {
     AliasDecl,
     AstNode, AstSpan, AstType, BlockDecl, Expr,
-    FuncDecl, FuncParam, GenericsDecl, ImplDecl, ImportDecl, InterDecl, PackageDecl,
+    FuncDecl, FuncParam, GenericsDecl, ImplDecl, ImportDecl, InterDecl, NameDecl, PackageDecl,
     StmtDecl, StructDecl, StructField, StructFieldsList, UnionDecl,
     UnionItem
 } from "./ast_types";
@@ -640,16 +640,19 @@ export class Parser {
             throw new Error('Unkown binding format')
         }
 
-        let name = undefined as undefined | string
+        let name = undefined as undefined | NameDecl
         let bind_expr = undefined as undefined | Expr
         if (is_short) {
-            name = this.lex.expect('ID').val
+            this.saveStart()
+            const text = this.lex.expect('ID').val
+            name = { kind: 'NameDecl', text, span: this.gspan() }
             this.lex.next() // consume :=
         } else {
             if (this.lex.peek().type_('ID') &&
                 (this.lex.peek(1).val_('=') || this.lex.peek(1).val_(':'))
             ) {
-                name = this.lex.expect('ID').val
+                const text = this.lex.expect('ID').val
+                name = { kind: 'NameDecl', text, span: this.gspan() }
             } else {
                 bind_expr = this.pratt.parseExpr(0, { avoidBrace: false, avoidAssign: true })
             }

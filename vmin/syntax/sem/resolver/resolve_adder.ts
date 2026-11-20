@@ -3,9 +3,12 @@ import type { Resolver } from "./resolver";
 import type { ResolveType, SemType } from "./resolver_types";
 
 export class ResolveAdder {
+
     constructor(
         public r: Resolver
     ) { }
+
+    
 
     addAll(nodes: AstNode[]) {
         const funcDeclToType = (func: FuncDecl): SemType => {
@@ -52,7 +55,7 @@ export class ResolveAdder {
                     // generics: n.generics,
                 } satisfies ResolveType
                 this.r.f_scope.add(resolve)
-                this.r.resolveFunc(n,)
+                this.r.resolveFunc(n)
             }
             if (n.kind == 'UnionDecl') {
                 const vars = n.vars.map(f => {

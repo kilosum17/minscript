@@ -22,6 +22,7 @@ export type AstNode = (
     | StmtDecl
     | ImplDecl
     | InterDecl
+    | NameDecl
 )
 
 export type PackageDecl = {
@@ -191,7 +192,7 @@ export type BlockDecl = {
 
 export type BindingDecl = {
     kind: 'Binding',
-    name?: string
+    name?: NameDecl,
     bind_expr?: Expr
     is_pub: boolean,
     is_short: boolean
@@ -199,6 +200,12 @@ export type BindingDecl = {
     is_shared: boolean
     expr?: Expr
     type?: AstType,
+    span: AstSpan,
+}
+
+export type NameDecl = {
+    kind: 'NameDecl',
+    text: string,
     span: AstSpan,
 }
 
