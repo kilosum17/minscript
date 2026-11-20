@@ -49,10 +49,11 @@ export type ResolveType = {
     var_name: string,
     is_pub?: boolean,
     is_param?: boolean,
+    is_uniontag?: boolean,
+    parent_union?: string,
 } & SemType //, 'kind'>
 
 export type SemType = AstType & {
-    kind?: string,
     gens?: string[]
 }
 

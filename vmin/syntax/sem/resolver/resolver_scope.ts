@@ -31,7 +31,7 @@ export class ResScope {
         }
         if (exp && path != undefined) {
             if (exp.mode == 'var') {
-                return this.path(exp.name, path)
+                return this.path(exp.type_name, path)
             }
         }
         return exp
@@ -55,16 +55,16 @@ export class ResScope {
     resExpr(e: Expr): SemType | undefined {
         switch (e.kind) {
             case "Literal": {
-                if (e.mode === 'BYTE') return { mode: 'var', name: 'byte' } satisfies SemType
-                if (e.mode === 'CHAR') return { mode: 'var', name: 'char' } satisfies SemType
+                if (e.mode === 'BYTE') return { mode: 'var', type_name: 'byte' } satisfies SemType
+                if (e.mode === 'CHAR') return { mode: 'var', type_name: 'char' } satisfies SemType
                 if (e.mode === 'NUM') {
                     let name: 'int' | 'f64'
                     if (e.val.includes('.')) name = 'f64'
                     else name = 'int'
-                    return { mode: 'var', name } satisfies SemType
+                    return { mode: 'var', type_name: name } satisfies SemType
                 }
                 if (e.mode === 'BOOL') {
-                    return { mode: 'var', name: 'bool' } satisfies SemType
+                    return { mode: 'var', type_name: 'bool' } satisfies SemType
                 }
                 throw new Error(`Unkown literal kind ${printAstNode(e)}`)
             }
@@ -85,12 +85,12 @@ export class ResScope {
                 const type = checkOpers(e.oper, nlhs, nrhs)
                 if (type) {
                     return {
-                        mode: 'var', name: type,
+                        mode: 'var', type_name: type,
                     } satisfies SemType
                 }
             }
             case "String": {
-                return { mode: 'var', name: 'str', } satisfies SemType
+                return { mode: 'var', type_name: 'str', } satisfies SemType
             }
             case "StructInit": {
                 // console.log(`>> `, printAstType(e.lhs), '{}')
@@ -99,7 +99,7 @@ export class ResScope {
                     if (t?.mode != 'struct') {
                         throw new Error('StructInit on invalid type:' + t + " " + e.lhs.name)
                     }
-                    return { mode: 'var', name: t.var_name } satisfies SemType
+                    return { mode: 'var', type_name: t.var_name } satisfies SemType
                 } else {
                     throw new Error('Unexpected struct path: ' + printAstNode(e.lhs))
                 }
@@ -132,7 +132,7 @@ export class ResScope {
                     } else {
                         throw new Error('Unkown map field mode')
                     }
-                    return { mode: 'var', name: 'Map', gens: [ktype, vtype] } as SemType
+                    return { mode: 'var', type_name: 'Map', gens: [ktype, vtype] } as SemType
                 }
                 return undefined
             }
@@ -140,7 +140,7 @@ export class ResScope {
                 const f0 = e.items[0]
                 if (f0 != undefined) {
                     const type = resTypeName(this.resExpr(f0))
-                    return { mode: 'var', name: 'Vec', gens: [type] }
+                    return { mode: 'var', type_name: 'Vec', gens: [type] }
                 }
                 return undefined
             }
@@ -148,7 +148,7 @@ export class ResScope {
                 const f0 = e.items[0]
                 if (f0 != undefined) {
                     const type = resTypeName(this.resExpr(f0))
-                    return { mode: 'var', name: 'Set', gens: [type] }
+                    return { mode: 'var', type_name: 'Set', gens: [type] }
                 }
                 return undefined
             }

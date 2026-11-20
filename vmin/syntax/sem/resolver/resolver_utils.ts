@@ -15,7 +15,7 @@ export function printSaveTypeKind(t: ResolveType | undefined) {
 export function resTypeName(t: SemType | undefined) {
     if (t?.mode === 'var') {
         const gens = t.gens ? `[${t.gens.join(',')}]` : ''
-        return t.name + gens
+        return t.type_name + gens
     }
     return ''
 }

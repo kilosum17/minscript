@@ -375,7 +375,7 @@ export class Parser {
                 this.lex.expect_('?')
             }
             return {
-                kind: 'AstType', mode: 'var', name, generics,
+                kind: 'AstType', mode: 'var', type_name: name, generics,
                 is_option, is_mut, span: this.gspan()
             }
         }

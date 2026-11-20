@@ -1,6 +1,7 @@
 import type { AstNode, AstType, FuncDecl } from "../../parser/ast_types";
 import { printAstType } from "../../parser/ast_utils";
 import type { ScopeType } from "../utils/scope_type";
+import { ResolveAdder } from "./resolve_adder";
 import { Resolver2 } from "./resolver_2";
 import { ResScope } from "./resolver_scope";
 import { type ResolveType, type SemType } from "./resolver_types";
@@ -11,11 +12,13 @@ export class Resolver {
     parentScope: ScopeType | null = null
     f_scope = new ResScope()
     r2: Resolver2
+    r_add: ResolveAdder
 
     constructor(
         public name: string
     ) {
         this.r2 = new Resolver2(this)
+        this.r_add = new ResolveAdder(this)
 
     }
 
@@ -31,49 +34,7 @@ export class Resolver {
     }
 
     resolveRoot() {
-        const funcDeclToType = (func: FuncDecl): SemType => {
-            const args: SemType[] = func.params.map(p => {
-                if (p.mode == 'receiver') {
-                    return {
-                        kind: 'AstType', mode: 'var', is_mut: p.is_mut,
-                        is_option: false, name: 'this',
-                    } satisfies SemType
-                } else {
-                    return p.type
-                }
-            })
-            return {
-                kind: 'AstType', mode: 'func',
-                args, is_mut: false, is_option: false, ret: func.return
-            }
-        }
-        this.astNodes.forEach(n => {
-            if (n.kind == 'StructDecl') {
-                const fields = n.fields_list.fields.map(f => {
-                    let type: AstType
-                    if (f.kind === 'FuncDecl') type = funcDeclToType(f)
-                    else type = f.type
-                    return { key: f.name, type, is_pub: f.is_pub }
-                })
-
-                const type = {
-                    mode: 'struct', var_name: n.name, fields,
-                    is_mut: false, is_option: false,
-                } satisfies ResolveType
-
-                this.f_scope.add(type)
-            }
-            if (n.kind == 'FuncDecl') {
-                const type = funcDeclToType(n)
-                const resolve = {
-                    ...type, kind: 'AstType', var_name: n.name,
-                    // generics: n.generics,
-                } satisfies ResolveType
-                this.f_scope.add(resolve)
-                this.resolveFunc(n,)
-            }
-
-        })
+        this.r_add.addAll(this.astNodes)
     }
 
     resolveFunc(func: FuncDecl) {
