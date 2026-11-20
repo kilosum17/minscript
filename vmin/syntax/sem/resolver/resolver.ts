@@ -74,7 +74,7 @@ export class Resolver {
         })
         for (const s of func.block.items) {
             if (s.kind == 'Binding') {
-                console.log('Binding ', s.name?.text)
+                console.log('Binding ', s.name?.text, `start:${s?.name?.span.start} end:${s?.name?.span.end}`)
                 let inferedType = undefined as undefined | SemType
                 if (s.expr) {
                     inferedType = scope.resExpr(s.expr)

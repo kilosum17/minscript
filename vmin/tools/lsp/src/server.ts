@@ -10,7 +10,8 @@ import {
     DiagnosticSeverity
 } from "vscode-languageserver/node"
 import { fileURLToPath } from "node:url"
-import { lspCheck } from "../../../syntax/sem/lsp_check"
+import { lspCheck, lspGetSymbol } from "../../../syntax/sem/lsp_check"
+import { resTypeName } from "../../../syntax/sem/resolver/resolver_utils"
 
 const connection = createConnection(ProposedFeatures.all)
 const documents = new TextDocuments(TextDocument)
@@ -88,20 +89,23 @@ connection.onHover(({ textDocument, position }) => {
 
     const offset = document.offsetAt(position)
     const path = fileURLToPath(textDocument.uri)
-
-    console.log({
-        path,
-        line: position.line,
-        character: position.character,
-        offset
-    })
-
-    return {
-        contents: {
-            kind: "markdown",
-            value: `Position: ${position.line}:${position.character}\n\nOffset: ${offset}`
-        }
+    const sym = lspGetSymbol({ offset })
+    if (sym) {
+        console.log(`Found`, sym)
+    } else {
+        console.log({
+            version:'2',
+            path,
+            line: position.line,
+            character: position.character,
+            offset
+        })
     }
+    let value = `Position:77 ${position.line}:${position.character}\n\nOffset: ${offset}`
+    if (sym) {
+        value = `${sym.var_name}:${resTypeName(sym)}`
+    }
+    return { contents: { kind: "markdown", value, } }
 })
 
 documents.listen(connection)

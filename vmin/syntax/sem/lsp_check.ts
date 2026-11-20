@@ -41,8 +41,33 @@ export async function lspCheck({ text, path }: {
     } catch (e) {
         console.log('LSP-CHECK Error', e)
     }
-    
+
     return checker.diags
 }
 
+export function lspGetSymbol({ offset }: { offset: number }) {
+    let foundId = -1
+    let minLen = Number.MAX_SAFE_INTEGER
 
+    for (const [strId, node] of Object.entries(checker.res.symbolMap)) {
+        const span = node?.span
+        if (!span) continue
+
+        const { start, end } = span
+        if (offset < start || offset > end) continue
+
+        const len = end - start
+        const id = Number(strId)
+        if (Number.isNaN(id)) continue
+
+        if (len < minLen) {
+            minLen = len
+            foundId = id
+        }
+    }
+
+    if (foundId >= 0) {
+        return checker.res.symbols[foundId]
+    }
+    return undefined
+}
