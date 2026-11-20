@@ -56,8 +56,8 @@ export class CheckFlow {
         } else {
             this.diagnostics.push(new Diagnostic(
                 'NOT_VALID_IN_TOP_LEVEL',
-                node.span,
-                node.kind,
+                node.span!,
+                node.kind!,
             ))
         }
     }

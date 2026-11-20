@@ -287,6 +287,9 @@ export class AstPrint {
                     const methods = n.methods.map(m => this.print(m)).join('\n')
                     return `${n.is_pub ? 'pub ' : ''}inter ${n.name}${this.print(n.generics)} \n${methods}`
                 }
+                case "NameDecl":{
+                    return `${n.text}`
+                }
             }
             // return `> TODO [${n.kind}]`
         }

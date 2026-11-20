@@ -35,11 +35,14 @@ export async function lspCheck({ text, path }: {
     text: string, path: string
 }): Promise<Diagnostic[]> {
 
-    console.log('Got check', text?.substring(0, 10), 'path:', path)
-    checker.check({ path, text })
-
+    try {
+        console.log('Got check', text?.substring(0, 10), 'path:', path)
+        checker.check({ path, text })
+    } catch (e) {
+        console.log('LSP-CHECK Error', e)
+    }
+    
     return checker.diags
-
 }
 
 

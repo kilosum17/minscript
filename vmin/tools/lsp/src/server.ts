@@ -9,8 +9,8 @@ import {
     Diagnostic,
     DiagnosticSeverity
 } from "vscode-languageserver/node"
-import { lspCheck } from "../../syntax/sem/lsp_check"
 import { fileURLToPath } from "node:url"
+import { lspCheck } from "../../../syntax/sem/lsp_check"
 
 const connection = createConnection(ProposedFeatures.all)
 const documents = new TextDocuments(TextDocument)
