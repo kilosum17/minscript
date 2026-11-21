@@ -1,4 +1,6 @@
-import type { AstNode, BindingDecl, BlockDecl, FuncDecl } from "../../parser/ast_types";
+import type { AstNode, BindingDecl, BlockDecl, ForLoopDecl, FuncDecl, StmtDecl } from "../../parser/ast_types";
+import { printAstNode } from "../../parser/ast_utils";
+import { getIterItemType } from "./generic_utils";
 import { getExpType } from "./scope_get_exp_type";
 import { printBinding } from "./scope_utils";
 import { TODO } from "./sem_utils";
@@ -45,6 +47,8 @@ export class SemAnalysis {
         for (const stmt of block.items) {
             if (stmt.kind === 'Binding') {
                 this.handleBinding(scope, stmt)
+            } else if (stmt.kind === 'ForLoop') {
+                this.handleForLoop(scope, stmt)
             }
         }
     }
@@ -70,7 +74,7 @@ export class SemAnalysis {
         } else if (binding.bind_expr) {
             if (binding.bind_expr.kind == 'TupleInit') {
                 const exprType = getExpType(scope, binding.expr!)
-                console.log('Got type', exprType)
+                // console.log('Got type', exprType)
                 const astType = exprType?.ast_type
                 if (astType?.mode !== 'tuple') TODO('Expresion not returning tuple', exprType)
 
@@ -90,6 +94,24 @@ export class SemAnalysis {
         } else if (binding.name) {
 
         }
+    }
+
+    handleForLoop(funcScope: SemScope, forNode: ForLoopDecl) {
+        const forScope = new SemScope(funcScope)
+        if (forNode.mode == 'in') {
+            const iterType = getExpType(forScope, forNode.expr)
+            if (!iterType) TODO('in expected iterator', iterType, printAstNode(forNode))
+            const itemType = getIterItemType(forScope, iterType)
+            console.log('Iter', forNode.var_name, itemType)
+            if (itemType) {
+                const bind: Binding = {
+                    var_name: forNode.var_name,
+                    ...itemType,
+                }
+                forScope.addBinding(bind)
+            }
+        }
+        this.handleBlock(forScope, forNode.block)
     }
 
 }

@@ -32,12 +32,13 @@ export const OPER_DATA = [
     {
         oper: ['+'],
         types: [
-            ['str', 'str', 'str']
+            ['str', 'str', 'str'],
+            ['str', 'int', 'str'],
         ]
-    }
+    },
 ] as {
     oper: string[],
-    types: [string, string, string, boolean?][]
+    types: [string, string, string, boolean?][],
 }[]
 
 export function checkOpers(oper: string, a: string, b: string) {

@@ -5,6 +5,10 @@ export function getId() {
 }
 
 export function TODO(...msg: any[]): never {
-    throw new Error(`TODO:` + msg.map(String).join(' '))
+    const info = msg.map(m => {
+        if (typeof m === 'object') return JSON.stringify(m)
+        return String(m)
+    }).join(' ')
+    throw new Error(`TODO:` + info)
 }
 

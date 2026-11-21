@@ -214,6 +214,23 @@ export type StmtDecl = BindingDecl | {
     expr?: Expr,
     span: AstSpan,
 } | {
+    kind: 'Label',
+    name: string,
+    span: AstSpan,
+} | {
+    kind: 'SemiColon',
+    span: AstSpan,
+} | {
+    kind: 'Continue',
+    label?: string
+    span: AstSpan,
+} | {
+    kind: 'Break',
+    label?: string
+    span: AstSpan,
+} | ForLoopDecl
+
+export type ForLoopDecl = {
     kind: 'ForLoop',
     block: BlockDecl,
     span: AstSpan,
@@ -235,22 +252,6 @@ export type StmtDecl = BindingDecl | {
             expr: Expr,
         }
     )
-    | {
-        kind: 'Label',
-        name: string,
-        span: AstSpan,
-    } | {
-        kind: 'SemiColon',
-        span: AstSpan,
-    } | {
-        kind: 'Continue',
-        label?: string
-        span: AstSpan,
-    } | {
-        kind: 'Break',
-        label?: string
-        span: AstSpan,
-    }
 
 export type SelectArm = {
     var_name?: string,

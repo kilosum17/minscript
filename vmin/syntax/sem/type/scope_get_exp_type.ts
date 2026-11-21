@@ -11,7 +11,7 @@ export function getExpType(scope: SemScope, e: Expr): BindingType | undefined {
     if (e.kind === 'Call') {
         if (e.lhs.kind !== 'Var') TODO('Function call without Var type', e)
         const lhsType = getScopeName(scope, e.lhs.name)
-        console.log('LhsType', lhsType?.ast_type?.mode)
+        // console.log('LhsType', lhsType?.ast_type?.mode)
         return getReturnType(lhsType)
     }
     // if(e.)
@@ -41,11 +41,20 @@ export function getExpType(scope: SemScope, e: Expr): BindingType | undefined {
         const rhs = getExpType(scope, e.rhs)
         const lhsStr = printBindingType(scope, lhs) || ''
         const rhsStr = printBindingType(scope, rhs) || ''
+
+        if (e.oper == '..' || e.oper === '..=') {
+            return {
+                type_hints: [lhsStr, rhsStr],
+                ast_type: { mode: 'var', type_name: 'Range' }
+            }
+        }
+
         const resType = checkOpers(e.oper, lhsStr, rhsStr)
         // console.log('lhs', lhs, lhsStr, rhsStr)
         if (resType) {
             return { ast_type: { mode: 'var', type_name: resType } }
         }
+
     }
 
     if (e.kind == 'String') {
@@ -128,5 +137,5 @@ export function getExpType(scope: SemScope, e: Expr): BindingType | undefined {
             ast_type: { mode: 'var', type_name: 'Vec', }
         }
     }
-
+    console.log("other", e)
 }

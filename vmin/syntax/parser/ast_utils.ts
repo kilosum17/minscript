@@ -160,7 +160,7 @@ export class AstPrint {
                     const symb = n.is_short ? (n.is_mut ? ':==' : ':=') : (n.is_mut ? 'var' : 'let')
                     const type = !n.is_short && n.type ? ':' + this.print(n.type) : ''
                     const shared = n.is_shared ? 'shared ' : ''
-                    const name = n.name ? n.name : this.print(n.bind_expr)
+                    const name = n.name ? n.name.text : this.print(n.bind_expr)
                     return `${shared}${n.is_short ? '' : symb} ${name}${type}${n.is_short ? symb : '='} ${this.print(n.expr)}`
                 }
                 case "Range": {

@@ -75,6 +75,11 @@ fn parse_all(items: Vec[str]) -> Result[int, str] {
 
     for s in items {
         total += s.to_int()?
+        ds := s
+        k := ds + 3
+        l := a > b
+        var m = a + b
+  
     }
     Ok(total)
 }
@@ -162,10 +167,14 @@ fn main() {
     let grades = ['A','B','C']
     let scores = [20.4, 45.78, 50.0]
 
-    
+
     // recover
     let r = recover { [1, 2][5] }
     if let Err(e) = r { 
+        ppx := p.x
+        ppy :== p.y
+        ppname := p.name
+
         log.println("caught:", e.message)
     }
 }
