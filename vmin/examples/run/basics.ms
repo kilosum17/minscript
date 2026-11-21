@@ -5,7 +5,7 @@ import "std.io"
 import pub "std.build.*" as bld
 import "std.fs" as fs2
 
-type Point { x: int, y: int,name:str }
+type Point { x: int, y: int, name:str }
 pub type Account {
     owner: str, 
     balance: i64, 
@@ -52,12 +52,18 @@ fn classify(n: int) -> str {
     }
 }
 
+fn get_pair()->t(int,int){
+    return t(10, 20)
+}
+
 fn parse_all(items: Vec[str]) -> Result[int, str] {
     var total = 0
     a := 10.2
     b :== 20
     var c = a + b
     d := a > b
+
+    let (p1, p2) = get_pair();
 
     f := true
     g := false

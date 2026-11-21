@@ -103,7 +103,7 @@ connection.onHover(({ textDocument, position }) => {
     }
     let value = `Position:77 ${position.line}:${position.character}\n\nOffset: ${offset}`
     if (sym) {
-        value = `${sym.var_name}:${resTypeName(sym)}`
+        value = `${sym.var_name}: ${resTypeName(sym)}`
     }
     return { contents: { kind: "markdown", value, } }
 })

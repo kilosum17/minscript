@@ -66,10 +66,12 @@ export class Resolver {
 
         func.params.forEach(p => {
             if (p.mode == 'var') {
-                scope.add({
+                const type = {
                     ...p.type,
                     var_name: p.name, is_param: true,
-                })
+                } satisfies ResolveType
+                scope.add(type)
+                this.addSymbol(p, type)
             }
         })
         for (const s of func.block.items) {
