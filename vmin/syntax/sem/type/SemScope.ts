@@ -1,4 +1,5 @@
 import type { AstNode } from "../../parser/ast_types";
+import { printBinding } from "./scope_utils";
 import { getId } from "./sem_utils";
 import type { Binding, TypeDecl } from "./symbol";
 
@@ -22,8 +23,9 @@ export class SemScope {
         })
     }
 
-    addBinding(binding: Binding) {
-        this.bindings.push(binding)
+    addBinding(bind: Binding) {
+        this.bindings.push(bind)
+        console.log(`Add `, printBinding(this, bind))
     }
 
 }

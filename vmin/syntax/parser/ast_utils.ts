@@ -287,7 +287,7 @@ export class AstPrint {
                     const methods = n.methods.map(m => this.print(m)).join('\n')
                     return `${n.is_pub ? 'pub ' : ''}inter ${n.name}${this.print(n.generics)} \n${methods}`
                 }
-                case "NameDecl":{
+                case "NameDecl": {
                     return `${n.text}`
                 }
             }
@@ -302,10 +302,10 @@ export class AstPrint {
 const nodePrinter = new AstPrint(false)
 const typePrinter = new AstPrint(true)
 
-export function printAstNode(n: AstNode): string {
+export function printAstNode(n: AstNode | undefined): string {
     return nodePrinter.print(n, 0)
 }
 
-export function printAstType(n: AstNode): string {
+export function printAstType(n: AstNode | undefined): string {
     return typePrinter.print(n, 0)
 }

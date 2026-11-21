@@ -21,7 +21,10 @@ function declToBindingType(node: TypeDecl): BindingType | undefined {
     }
 
     if (node.kind === 'FuncDecl') {
-        return { ast_type: funcToType(node), type_id: node.type_id }
+        return {
+            ast_type: funcToType(node), decl_hint: node.name,
+            type_id: node.type_id,
+        }
     }
     if (node.kind === 'StructDecl') {
         const fields = node.fields_list.fields.map(f => {
@@ -38,33 +41,45 @@ function declToBindingType(node: TypeDecl): BindingType | undefined {
             fields,
         }
         return {
-            type_id: node.type_id,
+            type_id: node.type_id, decl_hint: node.name,
             ast_type,
         }
     }
     return undefined
 }
 
-export function getTypeOf(scope: SemScope, name: string) {
+const run = (scope: SemScope, arg: { name?: string, id?: number }) => {
+    const { name, id } = arg
+    if (!name && (id == undefined || id === null)) throw new Error('Scope Resolution expects name|id')
 
-    const run = (scope: SemScope, name: string) => {
-
-        const type_decl = scope.type_decls.find(f => f.name == name)
-        if (type_decl) {
-            const bindType = declToBindingType(type_decl)
-            if (bindType) return bindType
-        }
-        const bind = scope.bindings.find(b => b.var_name == name)
-        if (bind) return bind
-        if (scope.parent) {
-            return run(scope.parent, name)
-        }
-        return undefined
-
+    const type_decl = scope.type_decls.find(f => {
+        if (name) return f.name === name
+        if (Number.isSafeInteger(id)) return f.type_id == id
+        return false
+    })
+    if (type_decl) {
+        const bindType = declToBindingType(type_decl)
+        if (bindType) return bindType
     }
 
-    return run(scope, name)
+    const bind = scope.bindings.find(f => {
+        if (name) return f.var_name === name
+        // if (Number.isSafeInteger(id)) return f.type_id == id
+        return false
+    })
+    if (bind) return bind
+    if (scope.parent) {
+        return run(scope.parent, arg)
+    }
+
+    return undefined
 }
 
-export type GetTypeOf = ReturnType<typeof getTypeOf>
+export function getScopeName(scope: SemScope, name: string) {
+    return run(scope, { name })
+}
+
+export function getScopeTypeDecl(scope: SemScope, id: number) {
+    return run(scope, { id })
+}
 

@@ -17,5 +17,7 @@ export type Binding = {
 
 export type BindingType = {
     type_id?: number,
-    ast_type: AstType,
+    decl_hint?: string,
+    type_hints?: string[],
+    ast_type: AstType | null,
 }

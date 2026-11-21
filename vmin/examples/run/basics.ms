@@ -63,7 +63,7 @@ fn parse_all(items: Vec[str]) -> Result[int, str] {
     var c = a + b
     d := a > b
 
-    let (p1, p2) = get_pair();
+    let t(p1, p2) = get_pair();
 
     f := true
     g := false
@@ -162,6 +162,7 @@ fn main() {
     let grades = ['A','B','C']
     let scores = [20.4, 45.78, 50.0]
 
+    
     // recover
     let r = recover { [1, 2][5] }
     if let Err(e) = r { 

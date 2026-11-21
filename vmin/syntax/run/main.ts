@@ -2,6 +2,7 @@ import { Lexer } from "../lexer/lexer"
 import { Parser } from "../parser/parser"
 import { Checker } from "../sem/check"
 import { Resolver } from "../sem/resolver/resolver"
+import { SemAnalysis } from "../sem/type/SemAnalysis"
 import { printDiag } from "../utils/diag_utils"
 
 async function main() {
@@ -31,7 +32,7 @@ async function main() {
         const text = await Bun.file(path).text()
         const lexer = new Lexer(text)
         const parser = new Parser(lexer)
-        const resolver = new Resolver('')
+        const resolver = new SemAnalysis()
 
         if (runLexer) {
             lexer.tokenize()
@@ -45,7 +46,7 @@ async function main() {
             console.log(diags)
         }
         if (runResolve) {
-            resolver.resolve(parser.nodes, null)
+            resolver.analyze(parser.nodes)
 
         }
     } else if (runSemantic) {

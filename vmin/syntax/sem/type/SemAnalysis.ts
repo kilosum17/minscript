@@ -1,5 +1,6 @@
 import type { AstNode, BindingDecl, BlockDecl, FuncDecl } from "../../parser/ast_types";
 import { getExpType } from "./scope_get_exp_type";
+import { printBinding } from "./scope_utils";
 import { TODO } from "./sem_utils";
 import { SemScope } from "./SemScope";
 import type { Binding } from "./symbol";
@@ -7,7 +8,11 @@ import type { Binding } from "./symbol";
 export class SemAnalysis {
     file_scope: SemScope
 
-    constructor(
+    constructor() {
+        this.file_scope = new SemScope()
+    }
+
+    analyze(
         astNodes: AstNode[],
     ) {
         this.file_scope = new SemScope()
@@ -58,9 +63,8 @@ export class SemAnalysis {
             if (!binding.expr) TODO('Binding with out type and init', binding)
             const exprType = getExpType(scope, binding.expr)!
             const bind: Binding = {
+                ...exprType,
                 var_name: binding.name.text,
-                ast_type: exprType.ast_type,
-                type_id: exprType.type_id,
             }
             scope.addBinding(bind)
         } else if (binding.bind_expr) {
