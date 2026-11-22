@@ -1,5 +1,7 @@
 import type { Expr } from "../../parser/ast_types";
 import { checkOpers } from "../resolver/oper_utils";
+import { getBlockType } from "./block_utils";
+import { getIterItemType } from "./generic_utils";
 import { getScopeName, getScopeTypeDecl } from "./scope_get_type_of";
 import { areTypesSame } from "./scope_types_same";
 import { getMemberType, getReturnType, printBindingType } from "./scope_utils";
@@ -9,9 +11,8 @@ import type { BindingType } from "./symbol";
 
 export function getExpType(scope: SemScope, e: Expr): BindingType | undefined {
     if (e.kind === 'Call') {
-        if (e.lhs.kind !== 'Var') TODO('Function call without Var type', e)
-        const lhsType = getScopeName(scope, e.lhs.name)
-        // console.log('LhsType', lhsType?.ast_type?.mode)
+        const lhsType = getExpType(scope, e.lhs)
+        // console.log('CallLhsp', lhsType, getReturnType(lhsType))
         return getReturnType(lhsType)
     }
     // if(e.)
@@ -136,6 +137,18 @@ export function getExpType(scope: SemScope, e: Expr): BindingType | undefined {
             type_hints: [printBindingType(scope, prevValType)!],
             ast_type: { mode: 'var', type_name: 'Vec', }
         }
+    }
+    if (e.kind == 'Recover') {
+        const resType = getBlockType(scope, e.block)
+        return {
+            type_hints: [printBindingType(scope, resType)!, 'PanicResult'],
+            ast_type: { mode: 'var', type_name: 'Result' }
+        }
+    }
+    if (e.kind === 'Index') {
+        const lhsType = getExpType(scope, e.lhs)
+        if (!lhsType) TODO('Unkown lhs in index', lhsType)
+        return getIterItemType(scope, lhsType!)
     }
     console.log("other", e)
 }

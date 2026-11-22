@@ -89,12 +89,12 @@ connection.onHover(({ textDocument, position }) => {
 
     const offset = document.offsetAt(position)
     const path = fileURLToPath(textDocument.uri)
-    const sym = lspGetSymbol({ offset })
+    const sym = lspGetSymbol({ offset, path })
     if (sym) {
         console.log(`Found`, sym)
     } else {
         console.log({
-            version:'2',
+            version: '2',
             path,
             line: position.line,
             character: position.character,
@@ -103,7 +103,7 @@ connection.onHover(({ textDocument, position }) => {
     }
     let value = `Position:77 ${position.line}:${position.character}\n\nOffset: ${offset}`
     if (sym) {
-        value = `${sym.var_name}: ${resTypeName(sym)}`
+        value = `${sym.name}: ${sym.info}`
     }
     return { contents: { kind: "markdown", value, } }
 })

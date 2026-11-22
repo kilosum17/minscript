@@ -3,6 +3,9 @@ let cur_id = 1
 export function getId() {
     return cur_id++
 }
+export function resetId() {
+    cur_id = 1
+}
 
 export function TODO(...msg: any[]): never {
     const info = msg.map(m => {

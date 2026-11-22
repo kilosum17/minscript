@@ -19,7 +19,8 @@ type Point2 {
     y: int 
 
     fn dist(this)->int{
-        this.x + this.y
+        let res = this.x + this.y
+        res
     }
 
 }
@@ -39,7 +40,11 @@ union Shape {
 }
 
 fn fib(n: int) -> int {
-    if n < 2 { return n }
+    if n < 2 {
+        a1 := 34
+        a2 :== n + 10.5
+        return n
+    }
     fib(n - 1) + fib(n - 2)
 }
 
@@ -52,8 +57,8 @@ fn classify(n: int) -> str {
     }
 }
 
-fn get_pair()->t(int,int){
-    return t(10, 20)
+fn get_pair()->t(int,str,f32){
+    return t(10, "Ted", 0.56)
 }
 
 fn parse_all(items: Vec[str]) -> Result[int, str] {
@@ -63,7 +68,7 @@ fn parse_all(items: Vec[str]) -> Result[int, str] {
     var c = a + b
     d := a > b
 
-    let t(p1, p2) = get_pair();
+    let t(p1,name, p2) = get_pair();
 
     f := true
     g := false
@@ -148,7 +153,14 @@ fn main() {
         hits += 1
         if hits % 7 == 0 { 
             found = hits
+            dd := found
             break 
+        }else if(hits>10){
+           let b1 = b'2'
+           b3 := b1
+        }else {
+            cc := "Desa"
+            c2 := cc+ ": Kil"
         }
     }
     log.println("hits", hits, "found", found)
@@ -177,4 +189,5 @@ fn main() {
 
         log.println("caught:", e.message)
     }
+    
 }
